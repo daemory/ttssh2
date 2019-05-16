@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 1998-2001, Robert O'Callahan
- * (C) 2004-2019 TeraTerm Project
+ * (C) 2004-2017 TeraTerm Project
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -33,7 +33,6 @@
    Tera Term by Takashi Teranishi (teranishi@rikaxp.riken.go.jp)
 */
 
-#include "teraterm_conf.h"
 #include "ttxssh.h"
 #include "fwdui.h"
 #include "util.h"
@@ -42,7 +41,6 @@
 #include "ttlib.h"
 #include "keyfiles.h"
 #include "arc4random.h"
-#include "auth.h"
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -59,7 +57,7 @@
 #include <winsock2.h>
 static char *ProtocolFamilyList[] = { "UNSPEC", "IPv6", "IPv4", NULL };
 
-#include <lmcons.h>
+#include <Lmcons.h>
 
 // include OpenSSL header file
 #include <openssl/evp.h>
@@ -77,21 +75,12 @@ static char *ProtocolFamilyList[] = { "UNSPEC", "IPv6", "IPv4", NULL };
 #include "buffer.h"
 #include "cipher.h"
 #include "key.h"
-#include "dlglib.h"
 
 #include "sftp.h"
 
 #include "compat_w95.h"
-#include "compat_win.h"
 
 #include "libputty.h"
-
-#undef DialogBoxParam
-#define DialogBoxParam(p1,p2,p3,p4,p5) \
-	TTDialogBoxParam(p1,p2,p3,p4,p5)
-#undef EndDialog
-#define EndDialog(p1,p2) \
-	TTEndDialog(p1, p2)
 
 #define MATCH_STR(s, o) strncmp((s), (o), NUM_ELEM(o) - 1)
 #define MATCH_STR_I(s, o) _strnicmp((s), (o), NUM_ELEM(o) - 1)
@@ -105,11 +94,11 @@ static HICON SecureSmallIcon = NULL;
 static HICON SecureNotifyIcon = NULL;
 static HICON OldNotifyIcon = NULL;
 
-//static HFONT DlgHostFont;
-//static HFONT DlgAboutFont;
+static HFONT DlgHostFont;
+static HFONT DlgAboutFont;
 static HFONT DlgAboutTextFont;
-//static HFONT DlgSetupFont;
-//static HFONT DlgKeygenFont;
+static HFONT DlgSetupFont;
+static HFONT DlgKeygenFont;
 
 static TInstVar *pvar;
 
@@ -275,7 +264,6 @@ static void normalize_generic_order(char *buf, char default_strings[], int defau
 
 		if (!listed[num]) {
 			buf[i] = num + '0';
-			listed[num] = 1;
 			i++;
 		}
 	}
@@ -446,8 +434,6 @@ static void read_ssh_options(PTInstVar pvar, PCHAR fileName)
 	}
 
 	READ_STD_STRING_OPTION(DefaultUserName);
-	settings->DefaultUserType = GetPrivateProfileInt("TTSSH", "DefaultUserType", 1, fileName);
-
 	READ_STD_STRING_OPTION(DefaultForwarding);
 	READ_STD_STRING_OPTION(DefaultRhostsLocalUserName);
 	READ_STD_STRING_OPTION(DefaultRhostsHostPrivateKeyFile);
@@ -572,8 +558,6 @@ static void write_ssh_options(PTInstVar pvar, PCHAR fileName,
 	_itoa(settings->CompressionLevel, buf, 10);
 	WritePrivateProfileString("TTSSH", "Compression", buf, fileName);
 
-	_itoa(settings->DefaultUserType, buf, 10);
-	WritePrivateProfileString("TTSSH", "DefaultUserType", buf, fileName);
 	WritePrivateProfileString("TTSSH", "DefaultUserName",
 	                          settings->DefaultUserName, fileName);
 
@@ -977,11 +961,7 @@ void logputs(int level, char *msg)
 	}
 }
 
-#if defined(_MSC_VER)
-void logprintf(int level, _Printf_format_string_ const char *fmt, ...)
-#else
-void logprintf(int level, const char *fmt, ...)
-#endif
+void logprintf(int level, char *fmt, ...)
 {
 	char buff[4096];
 	va_list params;
@@ -1035,11 +1015,7 @@ static void format_line_hexdump(char *buf, int buflen, int addr, int *bytes, int
 	//strncat_s(buf, buflen, "\n", _TRUNCATE);
 }
 
-#if defined(_MSC_VER)
-void logprintf_hexdump(int level, const char *data, int len, _Printf_format_string_ const char *fmt, ...)
-#else
-void logprintf_hexdump(int level, const char *data, int len, const char *fmt, ...)
-#endif
+void logprintf_hexdump(int level, char *data, int len, char *fmt, ...)
 {
 	char buff[4096];
 	va_list params;
@@ -1270,8 +1246,8 @@ static BOOL CALLBACK TTXHostDlg(HWND dlg, UINT msg, WPARAM wParam,
 	static char *ComPortDesc[MAXCOMPORT];
 	int comports;
 	BOOL Ok;
-//	LOGFONT logfont;
-//	HFONT font;
+	LOGFONT logfont;
+	HFONT font;
 	char uimsg[MAX_UIMSG];
 	static HWND hwndHostname     = NULL; // HOSTNAME dropdown
 	static HWND hwndHostnameEdit = NULL; // Edit control on HOSTNAME dropdown
@@ -1475,7 +1451,6 @@ static BOOL CALLBACK TTXHostDlg(HWND dlg, UINT msg, WPARAM wParam,
 			SetFocus(hwnd);
 		}
 
-#if 0
 		font = (HFONT)SendMessage(dlg, WM_GETFONT, 0, 0);
 		GetObject(font, sizeof(LOGFONT), &logfont);
 		if (UTIL_get_lang_font("DLG_SYSTEM_FONT", dlg, &logfont, &DlgHostFont, pvar)) {
@@ -1503,9 +1478,6 @@ static BOOL CALLBACK TTXHostDlg(HWND dlg, UINT msg, WPARAM wParam,
 		else {
 			DlgHostFont = NULL;
 		}
-#endif
-
-		CenterWindow(dlg, GetParent(dlg));
 
 		// SetFocus()でフォーカスをあわせた場合、FALSEを返す必要がある。
 		// TRUEを返すと、TABSTOP対象の一番はじめのコントロールが選ばれる。
@@ -1584,21 +1556,21 @@ static BOOL CALLBACK TTXHostDlg(HWND dlg, UINT msg, WPARAM wParam,
 			}
 			SetWindowLong(hwndHostnameEdit, GWL_WNDPROC, (LONG)OrigHostnameEditProc);
 			EndDialog(dlg, 1);
-#if 0
+
 			if (DlgHostFont != NULL) {
 				DeleteObject(DlgHostFont);
 			}
-#endif
+
 			return TRUE;
 
 		case IDCANCEL:
 			SetWindowLong(hwndHostnameEdit, GWL_WNDPROC, (LONG)OrigHostnameEditProc);
 			EndDialog(dlg, 0);
-#if 0
+
 			if (DlgHostFont != NULL) {
 				DeleteObject(DlgHostFont);
 			}
-#endif
+
 			return TRUE;
 
 		case IDC_HOSTTCPIP:
@@ -1682,17 +1654,10 @@ hostssh_enabled:
 	return FALSE;
 }
 
-static void UTIL_SetDialogFont()
-{
-	SetDialogFont(pvar->ts->SetupFName, pvar->ts->UILanguageFile, "TTSSH", "DLG_TAHOMA_FONT");
-}
-
 static BOOL PASCAL TTXGetHostName(HWND parent, PGetHNRec rec)
 {
-	SetDialogFont(pvar->ts->SetupFName,
-				  pvar->ts->UILanguageFile, "TTSSH", "DLG_SYSTEM_FONT");
 	return (BOOL) DialogBoxParam(hInst, MAKEINTRESOURCE(IDD_HOSTDLG),
-	                             parent, TTXHostDlg, (LPARAM)rec);
+	                             parent, TTXHostDlg, (LONG) rec);
 }
 
 static void PASCAL TTXGetUIHooks(TTXUIHooks *hooks)
@@ -2438,13 +2403,11 @@ static void init_about_dlg(PTInstVar pvar, HWND dlg)
 	SendMessage(GetDlgItem(dlg, IDC_PUTTY_VERSION), WM_SETTEXT, 0, (LPARAM)buf);
 }
 
-#if 0
 // WM_MOUSEWHEEL は winuser.h ヘッダで宣言されていますが、#define _WIN32_WINNT 0x0400 が宣言されていないと認識されません。
-#define WM_MOUSEWHEEL                   0x020A1
+#define WM_MOUSEWHEEL                   0x020A
 #define WHEEL_DELTA                     120
 #define GET_WHEEL_DELTA_WPARAM(wParam)  ((short)HIWORD(wParam))
 #define GET_KEYSTATE_WPARAM(wParam)     (LOWORD(wParam))
-#endif
 
 static WNDPROC g_defAboutDlgEditWndProc;  // Edit Controlのサブクラス化用
 static int g_deltaSumAboutDlg = 0;        // マウスホイールのDelta累積用
@@ -2491,12 +2454,11 @@ static LRESULT CALLBACK AboutDlgEditWindowProc(HWND hWnd, UINT msg, WPARAM wp, L
 static BOOL CALLBACK TTXAboutDlg(HWND dlg, UINT msg, WPARAM wParam,
                                  LPARAM lParam)
 {
-//	LOGFONTA logfont;
-//	HFONT font;
+	LOGFONT logfont;
+	HFONT font;
 
 	switch (msg) {
 	case WM_INITDIALOG:
-#if 0
 		font = (HFONT)SendMessage(dlg, WM_GETFONT, 0, 0);
 		GetObject(font, sizeof(LOGFONT), &logfont);
 		if (UTIL_get_lang_font("DLG_TAHOMA_FONT", dlg, &logfont, &DlgAboutFont, pvar)) {
@@ -2517,23 +2479,25 @@ static BOOL CALLBACK TTXAboutDlg(HWND dlg, UINT msg, WPARAM wParam,
 		else {
 			DlgAboutFont = NULL;
 		}
-#endif
 
 		// Edit controlは等幅フォントで表示したいので、別設定情報からフォントをセットする。
 		// (2014.5.5. yutaka)
-		if (!UTIL_get_lang_font("DLG_ABOUT_FONT", dlg, NULL, &DlgAboutTextFont, pvar)) {
+		if (UTIL_get_lang_font("DLG_ABOUT_FONT", dlg, &logfont, &DlgAboutTextFont, pvar)) {
+			SendDlgItemMessage(dlg, IDC_ABOUTTEXT, WM_SETFONT, (WPARAM)DlgAboutTextFont, MAKELPARAM(TRUE,0));
+		} else {
 			// 読み込めなかった場合は等幅フォントを指定する。
 			// エディットコントロールはダイアログと同じフォントを持っており
 			// 等幅フォントではないため。
-			LOGFONTA logfont = {0};
 			strncpy_s(logfont.lfFaceName, sizeof(logfont.lfFaceName), "Courier New", _TRUNCATE);
 			logfont.lfCharSet = 0;
 			logfont.lfHeight = MulDiv(8, GetDeviceCaps(GetDC(dlg),LOGPIXELSY) * -1, 72);
 			logfont.lfWidth = 0;
-			DlgAboutTextFont = CreateFontIndirect(&logfont);	// エラー時 NULL
-		}
-		if (DlgAboutTextFont != NULL) {
-			SendDlgItemMessage(dlg, IDC_ABOUTTEXT, WM_SETFONT, (WPARAM)DlgAboutTextFont, MAKELPARAM(TRUE,0));
+			if ((DlgAboutTextFont = CreateFontIndirect(&logfont)) != NULL) {
+				SendDlgItemMessage(dlg, IDC_ABOUTTEXT, WM_SETFONT, (WPARAM)DlgAboutTextFont, MAKELPARAM(TRUE,0));
+			}
+			else {
+				DlgAboutTextFont = NULL;
+			}
 		}
 
 		// アイコンを動的にセット
@@ -2559,19 +2523,15 @@ static BOOL CALLBACK TTXAboutDlg(HWND dlg, UINT msg, WPARAM wParam,
 		g_deltaSumAboutDlg = 0;
 		g_defAboutDlgEditWndProc = (WNDPROC)SetWindowLongPtr(GetDlgItem(dlg, IDC_ABOUTTEXT), GWLP_WNDPROC, (LONG_PTR)AboutDlgEditWindowProc);
 
-		CenterWindow(dlg, GetParent(dlg));
-
 		return FALSE;
 
 	case WM_COMMAND:
 		switch (LOWORD(wParam)) {
 		case IDOK:
 			EndDialog(dlg, 1);
-#if 0
 			if (DlgAboutFont != NULL) {
 				DeleteObject(DlgAboutFont);
 			}
-#endif
 			if (DlgAboutTextFont != NULL) {
 				DeleteObject(DlgAboutTextFont);
 			}
@@ -2579,11 +2539,9 @@ static BOOL CALLBACK TTXAboutDlg(HWND dlg, UINT msg, WPARAM wParam,
 		case IDCANCEL:			/* there isn't a cancel button, but other Windows
 								   UI things can send this message */
 			EndDialog(dlg, 0);
-#if 0
 			if (DlgAboutFont != NULL) {
 				DeleteObject(DlgAboutFont);
 			}
-#endif
 			if (DlgAboutTextFont != NULL) {
 				DeleteObject(DlgAboutTextFont);
 			}
@@ -3336,14 +3294,14 @@ static void choose_read_only_file(HWND dlg)
 static BOOL CALLBACK TTXSetupDlg(HWND dlg, UINT msg, WPARAM wParam,
                                  LPARAM lParam)
 {
-//	LOGFONT logfont;
-//	HFONT font;
+	LOGFONT logfont;
+	HFONT font;
 
 	switch (msg) {
 	case WM_INITDIALOG:
 		SetWindowLong(dlg, DWL_USER, lParam);
 		init_setup_dlg((PTInstVar) lParam, dlg);
-#if 0
+
 		font = (HFONT)SendMessage(dlg, WM_GETFONT, 0, 0);
 		GetObject(font, sizeof(LOGFONT), &logfont);
 		if (UTIL_get_lang_font("DLG_TAHOMA_FONT", dlg, &logfont, &DlgSetupFont, pvar)) {
@@ -3400,9 +3358,6 @@ static BOOL CALLBACK TTXSetupDlg(HWND dlg, UINT msg, WPARAM wParam,
 		else {
 			DlgSetupFont = NULL;
 		}
-#endif
-
-		CenterWindow(dlg, GetParent(dlg));
 
 		return TRUE;
 	case WM_COMMAND:
@@ -3410,20 +3365,16 @@ static BOOL CALLBACK TTXSetupDlg(HWND dlg, UINT msg, WPARAM wParam,
 		case IDOK:
 			complete_setup_dlg((PTInstVar) GetWindowLong(dlg, DWL_USER), dlg);
 			EndDialog(dlg, 1);
-#if 0
 			if (DlgSetupFont != NULL) {
 				DeleteObject(DlgSetupFont);
 			}
-#endif
 			return TRUE;
 		case IDCANCEL:			/* there isn't a cancel button, but other Windows
 								   UI things can send this message */
 			EndDialog(dlg, 0);
-#if 0
 			if (DlgSetupFont != NULL) {
 				DeleteObject(DlgSetupFont);
 			}
-#endif
 			return TRUE;
 		// Cipher order
 		case IDC_SSHMOVECIPHERUP:
@@ -3966,7 +3917,6 @@ static BOOL CALLBACK TTXScpDialog(HWND dlg, UINT msg, WPARAM wParam,
 #ifdef SFTP_DEBUG
 		ShowWindow(GetDlgItem(dlg, IDC_SFTP_TEST), SW_SHOW);
 #endif
-		CenterWindow(dlg, GetParent(dlg));
 
 		return TRUE;
 
@@ -4176,6 +4126,15 @@ static void keygen_progress(int phase, int count, cbarg_t *cbarg) {
 	return;
 }
 
+static void init_password_control(HWND dlg, int item)
+{
+	HWND passwordControl = GetDlgItem(dlg, item);
+
+	SetWindowLong(passwordControl, GWL_USERDATA,
+	              SetWindowLong(passwordControl, GWL_WNDPROC,
+	                            (LONG) password_wnd_proc));
+}
+
 // bcrypt KDF形式で秘密鍵を保存する
 // based on OpenSSH 6.5:key_save_private(), key_private_to_blob2()
 static void save_bcrypt_private_key(char *passphrase, char *filename, char *comment, HWND dlg, PTInstVar pvar, int rounds)
@@ -4334,8 +4293,8 @@ static BOOL CALLBACK TTXKeyGenerator(HWND dlg, UINT msg, WPARAM wParam,
 	static ssh_keytype key_type;
 	static int saved_key_bits;
 	char uimsg[MAX_UIMSG];
-//	LOGFONT logfont;
-//	HFONT font;
+	LOGFONT logfont;
+	HFONT font;
 
 	switch (msg) {
 	case WM_INITDIALOG:
@@ -4376,7 +4335,7 @@ static BOOL CALLBACK TTXKeyGenerator(HWND dlg, UINT msg, WPARAM wParam,
 		GetDlgItemText(dlg, IDC_BCRYPT_KDF_ROUNDS_LABEL, uimsg, sizeof(uimsg));
 		UTIL_get_lang_msg("DLG_KEYGEN_BCRYPT_ROUNDS", pvar, uimsg);
 		SetDlgItemText(dlg, IDC_BCRYPT_KDF_ROUNDS_LABEL, pvar->ts->UIMsg);
-#if 0
+
 		font = (HFONT)SendMessage(dlg, WM_GETFONT, 0, 0);
 		GetObject(font, sizeof(LOGFONT), &logfont);
 		if (UTIL_get_lang_font("DLG_TAHOMA_FONT", dlg, &logfont, &DlgKeygenFont, pvar)) {
@@ -4408,10 +4367,9 @@ static BOOL CALLBACK TTXKeyGenerator(HWND dlg, UINT msg, WPARAM wParam,
 		else {
 			DlgHostFont = NULL;
 		}
-#endif
 
-		init_password_control(pvar, dlg, IDC_KEY_EDIT, NULL);
-		init_password_control(pvar, dlg, IDC_CONFIRM_EDIT, NULL);
+		init_password_control(dlg, IDC_KEY_EDIT);
+		init_password_control(dlg, IDC_CONFIRM_EDIT);
 
 		// default key type
 		SendMessage(GetDlgItem(dlg, IDC_RSA_TYPE), BM_SETCHECK, BST_CHECKED, 0);
@@ -4439,8 +4397,6 @@ static BOOL CALLBACK TTXKeyGenerator(HWND dlg, UINT msg, WPARAM wParam,
 		EnableWindow(GetDlgItem(dlg, IDC_BCRYPT_KDF_ROUNDS), TRUE);
 		SetDlgItemInt(dlg, IDC_BCRYPT_KDF_ROUNDS, DEFAULT_ROUNDS, FALSE);
 		SendDlgItemMessage(dlg, IDC_BCRYPT_KDF_ROUNDS, EM_LIMITTEXT, 4, 0);
-
-		CenterWindow(dlg, GetParent(dlg));
 
 		}
 		return TRUE;
@@ -4568,11 +4524,9 @@ static BOOL CALLBACK TTXKeyGenerator(HWND dlg, UINT msg, WPARAM wParam,
 			// don't forget to free SSH resource!
 			free_ssh_key();
 			EndDialog(dlg, 0); // dialog close
-#if 0
 			if (DlgKeygenFont != NULL) {
 				DeleteObject(DlgKeygenFont);
 			}
-#endif
 			return TRUE;
 
 		// if radio button pressed...
@@ -5170,7 +5124,6 @@ static int PASCAL TTXProcessCommand(HWND hWin, WORD cmd)
 			return 0;  // SSH2で処理されなかった場合は、本来の動作を行うべく、ゼロを返す。
 
 	case ID_SSHSCPMENU:
-		UTIL_SetDialogFont();
 		if (DialogBoxParam(hInst, MAKEINTRESOURCE(IDD_SSHSCP), hWin, TTXScpDialog,
 			(LPARAM) pvar) == -1) {
 			UTIL_get_lang_msg("MSG_CREATEWINDOW_SCP_ERROR", pvar,
@@ -5182,7 +5135,6 @@ static int PASCAL TTXProcessCommand(HWND hWin, WORD cmd)
 		return 1;
 
 	case ID_SSHKEYGENMENU:
-		UTIL_SetDialogFont();
 		if (DialogBoxParam(hInst, MAKEINTRESOURCE(IDD_SSHKEYGEN), hWin, TTXKeyGenerator,
 			(LPARAM) pvar) == -1) {
 			UTIL_get_lang_msg("MSG_CREATEWINDOW_KEYGEN_ERROR", pvar,
@@ -5194,7 +5146,6 @@ static int PASCAL TTXProcessCommand(HWND hWin, WORD cmd)
 		return 1;
 
 	case ID_ABOUTMENU:
-		UTIL_SetDialogFont();
 		if (DialogBoxParam(hInst, MAKEINTRESOURCE(IDD_ABOUTDIALOG),
 		                   hWin, TTXAboutDlg, (LPARAM) pvar) == -1) {
 			UTIL_get_lang_msg("MSG_CREATEWINDOW_ABOUT_ERROR", pvar,
@@ -5205,11 +5156,9 @@ static int PASCAL TTXProcessCommand(HWND hWin, WORD cmd)
 		}
 		return 1;
 	case ID_SSHAUTH:
-		UTIL_SetDialogFont();
 		AUTH_do_cred_dialog(pvar);
 		return 1;
 	case ID_SSHSETUPMENU:
-		UTIL_SetDialogFont();
 		if (DialogBoxParam(hInst, MAKEINTRESOURCE(IDD_SSHSETUP),
 		                   hWin, TTXSetupDlg, (LPARAM) pvar) == -1) {
 			UTIL_get_lang_msg("MSG_CREATEWINDOW_SETUP_ERROR", pvar,
@@ -5220,19 +5169,15 @@ static int PASCAL TTXProcessCommand(HWND hWin, WORD cmd)
 		}
 		return 1;
 	case ID_SSHAUTHSETUPMENU:
-		UTIL_SetDialogFont();
 		AUTH_do_default_cred_dialog(pvar);
 		return 1;
 	case ID_SSHFWDSETUPMENU:
-		UTIL_SetDialogFont();
 		FWDUI_do_forwarding_dialog(pvar);
 		return 1;
 	case ID_SSHUNKNOWNHOST:
-		UTIL_SetDialogFont();
 		HOSTS_do_unknown_host_dialog(hWin, pvar);
 		return 1;
 	case ID_SSHDIFFERENTKEY:
-		UTIL_SetDialogFont();
 		HOSTS_do_different_key_dialog(hWin, pvar);
 		return 1;
 	case ID_SSHASYNCMESSAGEBOX:

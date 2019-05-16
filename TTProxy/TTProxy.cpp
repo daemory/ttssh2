@@ -17,8 +17,7 @@ namespace yebisuya {
 	}
 }
 
-extern "C" __declspec(dllexport) BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID reserved) {
-	(void)reserved;
+BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID reserved) {
 	switch (reason) {
 	case DLL_PROCESS_ATTACH:
 		myInstance = instance;
@@ -29,9 +28,6 @@ extern "C" __declspec(dllexport) BOOL WINAPI DllMain(HINSTANCE instance, DWORD r
 		return TTProxy::getInstance().threadAttach();
 	case DLL_THREAD_DETACH:
 		return TTProxy::getInstance().threadDetach();
-	default:
-		TTXBind(0, NULL);	// dummy TODO ñ¢égópÇ≈çÌèúÇ≥ÇÍÇ»Ç¢ÇÊÇ§Ç…Ç∑ÇÈ
-		break;
 	}
 	return FALSE;
 }

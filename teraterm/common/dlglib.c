@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 1994-1998 T. Teranishi
- * (C) 2008-2019 TeraTerm Project
+ * (C) 2008-2018 TeraTerm Project
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -28,21 +28,11 @@
  */
 
 /* Routines for dialog boxes */
-#include "dlglib.h"
-
-#include "i18n.h"
 #include <windows.h>
-#include <assert.h>
+#include "dlglib.h"
+#include "i18n.h"		// for MAX_UIMSG
 #include <stdio.h>
 #include <commctrl.h>
-#include <tchar.h>
-#include <crtdbg.h>
-#include "ttlib.h"	// for get_lang_font()
-
-#if defined(_DEBUG) && !defined(_CRTDBG_MAP_ALLOC)
-#define malloc(l) _malloc_dbg((l), _NORMAL_BLOCK, __FILE__, __LINE__)
-#define free(p)   _free_dbg((p), _NORMAL_BLOCK)
-#endif
 
 void EnableDlgItem(HWND HDlg, int FirstId, int LastId)
 {
@@ -90,8 +80,8 @@ void SetRB(HWND HDlg, int R, int FirstId, int LastId)
 	}
 	HControl = GetDlgItem(HDlg, FirstId + R - 1);
 	SendMessage(HControl, BM_SETCHECK, 1, 0);
-	Style = GetClassLongPtr(HControl, GCL_STYLE);
-	SetClassLongPtr(HControl, GCL_STYLE, Style | WS_TABSTOP);
+	Style = GetClassLong(HControl, GCL_STYLE);
+	SetClassLong(HControl, GCL_STYLE, Style | WS_TABSTOP);
 }
 
 void GetRB(HWND HDlg, LPWORD R, int FirstId, int LastId)
@@ -101,7 +91,7 @@ void GetRB(HWND HDlg, LPWORD R, int FirstId, int LastId)
 	*R = 0;
 	for (i = FirstId ; i <= LastId ; i++) {
 		if (SendDlgItemMessage(HDlg, i, BM_GETCHECK, 0, 0) != 0) {
-			*R = (WORD)(i - FirstId + 1);
+			*R = i - FirstId + 1;
 			return;
 		}
 	}
@@ -109,10 +99,10 @@ void GetRB(HWND HDlg, LPWORD R, int FirstId, int LastId)
 
 void SetDlgNum(HWND HDlg, int id_Item, LONG Num)
 {
-	TCHAR Temp[16];
+	char Temp[16];
 
 	/* In Win16, SetDlgItemInt can not be used to display long integer. */
-	_sntprintf_s(Temp, _countof(Temp), _TRUNCATE, _T("%d"), Num);
+	_snprintf_s(Temp,sizeof(Temp),_TRUNCATE,"%d",Num);
 	SetDlgItemText(HDlg,id_Item,Temp);
 }
 
@@ -135,17 +125,17 @@ void SetDlgPercent(HWND HDlg, int id_Item, int id_Progress, LONG a, LONG b, int 
 	// 20MB以上のファイルをアップロードしようとすると、buffer overflowで
 	// 落ちる問題への対処。(2005.3.18 yutaka)
 	// cf. http://sourceforge.jp/tracker/index.php?func=detail&aid=5713&group_id=1412&atid=5333
-	double Num;
-	TCHAR NumStr[10];
+	double Num; 
+	char NumStr[10]; 
 
 	if (b==0) {
-		Num = 100.0;
+		Num = 100.0; 
 	}
 	else {
-		Num = 100.0 * (double)a / (double)b;
+		Num = 100.0 * (double)a / (double)b; 
 	}
-	_sntprintf_s(NumStr, _countof(NumStr),_TRUNCATE,_T("%3.1f%%"),Num);
-	SetDlgItemText(HDlg, id_Item, NumStr);
+	_snprintf_s(NumStr,sizeof(NumStr),_TRUNCATE,"%3.1f%%",Num); 
+	SetDlgItemText(HDlg, id_Item, NumStr); 
 
 	if (id_Progress != 0 && p != NULL && *p >= 0 && (double)*p < Num) {
 		*p = (int)Num;
@@ -157,13 +147,13 @@ void SetDlgTime(HWND HDlg, int id_Item, DWORD stime, int bytes)
 {
 	static int prev_elapsed;
 	int elapsed, rate;
-	TCHAR buff[64];
+	char buff[64];
 
 	elapsed = (GetTickCount() - stime) / 1000;
 
 	if (elapsed == 0) {
 		prev_elapsed = 0;
-		SetDlgItemText(HDlg, id_Item, _T("0:00"));
+		SetDlgItemText(HDlg, id_Item, "0:00");
 		return;
 	}
 
@@ -174,49 +164,34 @@ void SetDlgTime(HWND HDlg, int id_Item, DWORD stime, int bytes)
 
 	rate = bytes / elapsed;
 	if (rate < 1200) {
-		_sntprintf_s(buff, _countof(buff), _TRUNCATE, _T("%d:%02d (%dBytes/s)"), elapsed / 60, elapsed % 60, rate);
+		_snprintf_s(buff, sizeof(buff), _TRUNCATE, "%d:%02d (%dBytes/s)", elapsed / 60, elapsed % 60, rate); 
 	}
 	else if (rate < 1200000) {
-		_sntprintf_s(buff, _countof(buff), _TRUNCATE, _T("%d:%02d (%d.%02dKB/s)"), elapsed / 60, elapsed % 60, rate / 1000, rate / 10 % 100);
+		_snprintf_s(buff, sizeof(buff), _TRUNCATE, "%d:%02d (%d.%02dKB/s)", elapsed / 60, elapsed % 60, rate / 1000, rate / 10 % 100); 
 	}
 	else {
-		_sntprintf_s(buff, _countof(buff), _TRUNCATE, _T("%d:%02d (%d.%02dMB/s)"), elapsed / 60, elapsed % 60, rate / (1000 * 1000), rate / 10000 % 100);
+		_snprintf_s(buff, sizeof(buff), _TRUNCATE, "%d:%02d (%d.%02dMB/s)", elapsed / 60, elapsed % 60, rate / (1000 * 1000), rate / 10000 % 100); 
 	}
 
 	SetDlgItemText(HDlg, id_Item, buff);
 }
 
-void SetDropDownList(HWND HDlg, int Id_Item, const char *List[], int nsel)
+void SetDropDownList(HWND HDlg, int Id_Item, const TCHAR **List, int nsel)
 {
 	int i;
 
 	i = 0;
 	while (List[i] != NULL) {
-		SendDlgItemMessageA(HDlg, Id_Item, CB_ADDSTRING,
-							0, (LPARAM)List[i]);
+		SendDlgItemMessage(HDlg, Id_Item, CB_ADDSTRING,
+		                   0, (LPARAM)List[i]);
 		i++;
 	}
 	SendDlgItemMessage(HDlg, Id_Item, CB_SETCURSEL,nsel-1,0);
 }
-
-#if defined(UNICODE)
-void SetDropDownListW(HWND HDlg, int Id_Item, const wchar_t *List[], int nsel)
-{
-	int i;
-
-	i = 0;
-	while (List[i] != NULL) {
-		SendDlgItemMessageW(HDlg, Id_Item, CB_ADDSTRING,
-							0, (LPARAM)List[i]);
-		i++;
-	}
-	SendDlgItemMessage(HDlg, Id_Item, CB_SETCURSEL,nsel-1,0);
-}
-#endif
 
 LONG GetCurSel(HWND HDlg, int Id_Item)
 {
-	LRESULT n;
+	LONG n;
 
 	n = SendDlgItemMessage(HDlg, Id_Item, CB_GETCURSEL, 0, 0);
 	if (n==CB_ERR) {
@@ -226,7 +201,7 @@ LONG GetCurSel(HWND HDlg, int Id_Item)
 		n++;
 	}
 
-	return (LONG)n;
+	return n;
 }
 
 typedef struct {
@@ -243,11 +218,9 @@ typedef struct {
 static LRESULT CALLBACK HostnameEditProc(HWND dlg, UINT msg,
                                          WPARAM wParam, LPARAM lParam)
 {
-	EditSubclassData *data = (EditSubclassData *)GetWindowLongPtr(dlg, GWLP_USERDATA);
+	EditSubclassData *data = (EditSubclassData *)GetWindowLong(dlg, GWLP_USERDATA);
 	LRESULT Result;
-	LRESULT select;
-	LRESULT max;
-	int len;
+	int  max, select, len;
 	char *str, *orgstr;
 
 	switch (msg) {
@@ -301,7 +274,7 @@ static LRESULT CALLBACK HostnameEditProc(HWND dlg, UINT msg,
 						max++; // '\0'
 						orgstr = str = (char *)malloc(max);
 						if (str != NULL) {
-							len = GetWindowTextA(dlg, str, (int)max);
+							len = GetWindowText(dlg, str, max);
 							if (select >= 0 && select < len) {
 								if (wParam == 0x44) { // カーソル配下の文字のみを削除する
 									memmove(&str[select], &str[select + 1], len - select - 1);
@@ -322,7 +295,7 @@ static LRESULT CALLBACK HostnameEditProc(HWND dlg, UINT msg,
 								select = 0;
 							}
 
-							SetWindowTextA(dlg, str);
+							SetWindowText(dlg, str);
 							SendMessage(dlg, EM_SETSEL, select, select);
 							free(orgstr);
 							return 0;
@@ -377,63 +350,29 @@ void SetEditboxSubclass(HWND hDlg, int nID, BOOL ComboBox)
 		hWndEdit = GetWindow(hWndEdit, GW_CHILD);
 	}
 	data = (EditSubclassData *)malloc(sizeof(EditSubclassData));
-	data->OrigProc = (WNDPROC)GetWindowLongPtr(hWndEdit, GWLP_WNDPROC);
-	data->OrigUser = (LONG_PTR)GetWindowLongPtr(hWndEdit, GWLP_USERDATA);
+	data->OrigProc = (WNDPROC)GetWindowLong(hWndEdit, GWLP_WNDPROC);
+	data->OrigUser = (LONG_PTR)GetWindowLong(hWndEdit, GWLP_USERDATA);
 	data->ComboBox = ComboBox;
-	SetWindowLongPtr(hWndEdit, GWLP_WNDPROC, (LONG_PTR)HostnameEditProc);
+	SetWindowLongPtr(hWndEdit, GWL_WNDPROC, (LONG_PTR)HostnameEditProc);
 	SetWindowLongPtr(hWndEdit, GWLP_USERDATA, (LONG_PTR)data);
 }
 
-typedef struct {
-	BOOL found;
-	const char *face;
-	BYTE charset;
-} IsExistFontInfoA;
-
-int CALLBACK IsExistFontSubA(
-	ENUMLOGFONTA* lpelf, NEWTEXTMETRICA* lpntm,
-	int nFontType, LPARAM lParam)
+void SetDlgTexts(HWND hDlgWnd, const DlgTextInfo *infos, int infoCount, const char *UILanguageFile)
 {
-	IsExistFontInfoA *info = (IsExistFontInfoA *)lParam;
-	(void)lpntm;
-	if (nFontType != DEVICE_FONTTYPE &&
-		_stricmp(lpelf->elfLogFont.lfFaceName, info->face) == 0 &&
-		lpelf->elfLogFont.lfCharSet == info->charset)
-	{
-		info->found = TRUE;
-		return 0;
+	int i;
+	for (i = 0 ; i < infoCount; i++) {
+		char *key = infos[i].key;
+		char uimsg[MAX_UIMSG];
+		get_lang_msg(key, uimsg, sizeof(uimsg), "", UILanguageFile);
+		if (uimsg[0] != '\0') {
+			const int nIDDlgItem = infos[i].nIDDlgItem;
+			if (nIDDlgItem == 0) {
+				SetWindowText(hDlgWnd, uimsg);
+			} else {
+				SetDlgItemText(hDlgWnd, nIDDlgItem, uimsg);
+			}
+		}
 	}
-	return 1;
-}
-
-/**
- *	IsExistFont
- *	フォントが存在しているかチェックする
- *
- *	@param[in]	face		フォント名(ファイル名ではない)
- *	@param[in]	charset		SHIFTJIS_CHARSETなど
- *	@param[in]	strict		TRUE	フォントリンクは検索に含めない
- *							FALSE	フォントリンクも検索に含める
- *	@retval		FALSE		フォントはしない
- *	@retval		TRUE		フォントは存在する
- *
- *	strict = FALSE時、存在しないフォントでも表示できるならTRUEが返る
- */
-BOOL IsExistFontA(const char *face, BYTE charset, BOOL strict)
-{
-	HDC hDC = GetDC(NULL);
-	LOGFONTA lf;
-	IsExistFontInfoA info;
-	memset(&lf, 0, sizeof(lf));
-	lf.lfCharSet = !strict ? DEFAULT_CHARSET : charset;
-	// ↑DEFAULT_CHARSETとするとフォントリンクも有効になるようだ
-	lf.lfPitchAndFamily = 0;
-	info.found = FALSE;
-	info.face = face;
-	info.charset = charset;
-	EnumFontFamiliesExA(hDC, &lf, (FONTENUMPROCA)IsExistFontSubA, (LPARAM)&info, 0);
-	ReleaseDC(NULL, hDC);
-	return info.found;
 }
 
 HFONT SetDlgFonts(HWND hDlg, const int nIDDlgItems[], int nIDDlgItemCount,

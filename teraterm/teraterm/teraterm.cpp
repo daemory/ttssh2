@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 1994-1998 T. Teranishi
- * (C) 2006-2019 TeraTerm Project
+ * (C) 2006-2017 TeraTerm Project
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -29,10 +29,7 @@
 
 /* TERATERM.EXE, main */
 
-#include "teraterm_conf.h"
-
-#include <crtdbg.h>
-#include <tchar.h>
+#include "stdafx.h"
 #include "teraterm.h"
 #include "tttypes.h"
 #include "commlib.h"
@@ -48,66 +45,67 @@
 #include "tekwin.h"
 #include "ttdde.h"
 #include "keyboard.h"
-#include "dllutil.h"
-#include "compat_win.h"
-#include "compat_w95.h"
-#include "dlglib.h"
-#include "teraterml.h"
 
-#if defined(_DEBUG) && defined(_MSC_VER)
-#define new ::new(_NORMAL_BLOCK, __FILE__, __LINE__)
+#include "teraapp.h"
+
+#include "compat_w95.h"
+
+#ifdef _DEBUG
+#define new DEBUG_NEW
+#undef THIS_FILE
+static char THIS_FILE[] = __FILE__;
 #endif
 
-static BOOL AddFontFlag;
-static TCHAR TSpecialFont[MAX_PATH];
+BEGIN_MESSAGE_MAP(CTeraApp, CWinApp)
+	//{{AFX_MSG_MAP(CTeraApp)
+	//}}AFX_MSG_MAP
+END_MESSAGE_MAP()
 
-static void LoadSpecialFont()
+CTeraApp::CTeraApp()
 {
-	if (!IsExistFontA("Tera Special", SYMBOL_CHARSET, TRUE)) {
-		int r;
+	typedef BOOL (WINAPI *pSetDllDir)(LPCSTR);
+	typedef BOOL (WINAPI *pSetDefDllDir)(DWORD);
 
-		if (GetModuleFileName(NULL, TSpecialFont,_countof(TSpecialFont)) == 0) {
-			AddFontFlag = FALSE;
-			return;
-		}
-		*_tcsrchr(TSpecialFont, _T('\\')) = 0;
-		_tcscat_s(TSpecialFont, _T("\\TSPECIAL1.TTF"));
+	HMODULE module;
+	pSetDllDir setDllDir;
+	pSetDefDllDir setDefDllDir;
 
-		if (pAddFontResourceEx != NULL) {
-			// teraterm.exeのみで有効なフォントとなる。
-			// removeしなくても終了するとOSからなくなる
-			r = pAddFontResourceEx(TSpecialFont, FR_PRIVATE, NULL);
-		} else {
-			// システム全体で使えるフォントとなる
-			// removeしないとOSが掴んだままとなる
-			r = AddFontResource(TSpecialFont);
+	if ((module = GetModuleHandle("kernel32.dll")) != NULL) {
+		if ((setDefDllDir = (pSetDefDllDir)GetProcAddress(module, "SetDefaultDllDirectories")) != NULL) {
+			// SetDefaultDllDirectories() が使える場合は、検索パスを %WINDOWS%\system32 のみに設定する
+			(*setDefDllDir)((DWORD)0x00000800); // LOAD_LIBRARY_SEARCH_SYSTEM32
 		}
-		if (r != 0) {
-			AddFontFlag = TRUE;
+		else if ((setDllDir = (pSetDllDir)GetProcAddress(module, "SetDllDirectoryA")) != NULL) {
+			// SetDefaultDllDirectories() が使えなくても、SetDllDirectory() が使える場合は
+			// カレントディレクトリだけでも検索パスからはずしておく。
+			(*setDllDir)("");
 		}
 	}
 }
 
-static void UnloadSpecialFont()
+// CTeraApp instance
+CTeraApp theApp;
+
+
+
+
+
+// CTeraApp initialization
+BOOL CTeraApp::InitInstance()
 {
-	if (AddFontFlag) {
-		if (pRemoveFontResourceEx != NULL) {
-			pRemoveFontResourceEx(TSpecialFont, FR_PRIVATE, NULL);
-		} else {
-			RemoveFontResource(TSpecialFont);
-		}
-	}
+	hInst = m_hInstance;
+	m_pMainWnd = new CVTWindow();
+	pVTWin = m_pMainWnd;
+	return TRUE;
 }
 
-static void init()
+int CTeraApp::ExitInstance()
 {
-	DLLInit();
-	WinCompatInit();
-	LoadSpecialFont();
+	return CWinApp::ExitInstance();
 }
 
 // Tera Term main engine
-static BOOL OnIdle(LONG lCount)
+BOOL CTeraApp::OnIdle(LONG lCount)
 {
 	static int Busy = 2;
 	int Change, nx, ny;
@@ -233,97 +231,12 @@ static BOOL OnIdle(LONG lCount)
 	return (Busy>0);
 }
 
-BOOL CallOnIdle(LONG lCount)
+BOOL CTeraApp::PreTranslateMessage(MSG* pMsg)
 {
-	return OnIdle(lCount);
-}
-
-HINSTANCE GetInstance()
-{
-	return hInst;
-}
-
-static HWND main_window;
-HWND GetHWND()
-{
-	return main_window;
-}
-
-static HWND hModalWnd;
-
-void AddModalHandle(HWND hWnd)
-{
-	hModalWnd = hWnd;
-}
-
-void RemoveModalHandle(HWND hWnd)
-{
-	hModalWnd = 0;
-}
-
-int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPreInst,
-                   LPSTR lpszCmdLine, int nCmdShow)
-{
-#ifdef _DEBUG
-	_CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
-#endif
-
-	LONG lCount = 0;
-	DWORD SleepTick = 1;
-	init();
-	hInst = hInstance;
-	CVTWindow *m_pMainWnd = new CVTWindow();
-	pVTWin = m_pMainWnd;
-	main_window = m_pMainWnd->m_hWnd;
-	// [Tera Term]セクションのDLG_SYSTEM_FONTをとりあえずセットする
-	SetDialogFont(ts.SetupFName, ts.UILanguageFile, "Tera Term", "DLG_SYSTEM_FONT");
-
-	MSG msg;
-	while (GetMessage(&msg, NULL, 0, 0)) {
-		if (hModalWnd != 0) {
-			if (IsDialogMessage(hModalWnd, &msg)) {
-				continue;
-			}
-		}
-
-		bool message_processed = false;
-
-		if (m_pMainWnd->m_hAccel != NULL) {
-			if (!MetaKey(ts.MetaKey)) {
-				// matakeyが押されていない
-				if (TranslateAccelerator(m_pMainWnd->m_hWnd , m_pMainWnd->m_hAccel, &msg)) {
-					// アクセラレーターキーを処理した
-					message_processed = true;
-				}
-			}
-		}
-
-		if (!message_processed) {
-			TranslateMessage(&msg);
-			DispatchMessage(&msg);
-		}
-
-		while (!PeekMessage(&msg, NULL, NULL, NULL, PM_NOREMOVE)) {
-			// メッセージがない
-			if (!OnIdle(lCount)) {
-				// idle不要
-				if (SleepTick < 500) {	// 最大 501ms未満
-					SleepTick += 2;
-				}
-				lCount = 0;
-				Sleep(SleepTick);
-			} else {
-				// 要idle
-				SleepTick = 0;
-				lCount++;
-			}
-		}
+	if (MetaKey(ts.MetaKey)) {
+		return FALSE; /* ignore accelerator keys */
 	}
-	delete m_pMainWnd;
-	m_pMainWnd = NULL;
-
-	UnloadSpecialFont();
-	DLLExit();
-
-    return msg.wParam;
+	else {
+		return CWinApp::PreTranslateMessage(pMsg);
+	}
 }

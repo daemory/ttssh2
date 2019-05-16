@@ -30,7 +30,7 @@
 
 /* TERATERM.EXE, VT window */
 
-#include "teraterm_conf.h"
+#include "stdafx.h"
 #include "teraterm.h"
 #include "tttypes.h"
 
@@ -49,32 +49,28 @@
 #include "filesys.h"
 #include "telnet.h"
 #include "tektypes.h"
+#include "tekwin.h"
 #include "ttdde.h"
 #include "ttlib.h"
-#include "dlglib.h"
 #include "helpid.h"
 #include "teraprn.h"
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include "ttplug.h"  /* TTPLUG */
-#include "teraterml.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <locale.h>
-#include <tchar.h>
 
 #include <shlobj.h>
 #include <io.h>
 #include <errno.h>
 #include <imagehlp.h>
-#include <crtdbg.h>
 
 #include <windowsx.h>
 #include <imm.h>
-#include <dbt.h>
-#include <assert.h>
+#include <Dbt.h>
 
 #include "tt_res.h"
 #include "vtwin.h"
@@ -82,46 +78,18 @@
 #include "winjump.h"
 #include "sizetip.h"
 #include "dnddlg.h"
-#include "tekwin.h"
-#include <htmlhelp.h>
-#include "compat_win.h"
 
 #include "initguid.h"
 //#include "Usbiodef.h"
 DEFINE_GUID(GUID_DEVINTERFACE_USB_DEVICE, 0xA5DCBF10L, 0x6530, 0x11D2, 0x90, 0x1F, 0x00, \
              0xC0, 0x4F, 0xB9, 0x51, 0xED);
 
-#define CFrameWnd	TTCFrameWnd
-
-#define VTClassName _T("VTWin32")
-
-#undef SetDlgItemText
-#define SetDlgItemText SetDlgItemTextA
-#undef CreateProcess
-#define CreateProcess CreateProcessA
-#undef STARTUPINFO
-#define STARTUPINFO STARTUPINFOA
-#undef GetStartupInfo
-#define GetStartupInfo GetStartupInfoA
-
-#if defined(UNICODE)
-#define CreateProcessT CreateProcessW
-#define GetStartupInfoT GetStartupInfoW
-#define STARTUPINFOT STARTUPINFOW
-#define SetDlgItemTextT SetDlgItemTextW
-#else
-#define CreateProcessT CreateProcessA
-#define GetStartupInfoT GetStartupInfoA
-#define STARTUPINFOT STARTUPINFOA
-#define SetDlgItemTextT SetDlgItemTextA
-#endif
+#define VTClassName "VTWin32"
 
 #ifdef _DEBUG
-#define malloc(l)	_malloc_dbg((l), _NORMAL_BLOCK, __FILE__, __LINE__)
-#define free(p)		_free_dbg((p), _NORMAL_BLOCK)
-#if defined(_MSC_VER)
-#define new  		::new(_NORMAL_BLOCK, __FILE__, __LINE__)
-#endif
+#define new DEBUG_NEW
+#undef THIS_FILE
+static char THIS_FILE[] = __FILE__;
 #endif
 
 // ウィンドウ最大化ボタンを有効にする (2005.1.15 yutaka)
@@ -133,6 +101,10 @@ DEFINE_GUID(GUID_DEVINTERFACE_USB_DEVICE, 0xA5DCBF10L, 0x6530, 0x11D2, 0x90, 0x1
 
 #define BROADCAST_LOGFILE "broadcast.log"
 
+static HFONT DlgBroadcastFont;
+static HFONT DlgCommentFont;
+static HFONT DlgSetupdirFont;
+
 static BOOL TCPLocalEchoUsed = FALSE;
 static BOOL TCPCRSendUsed = FALSE;
 
@@ -142,14 +114,12 @@ static HDEVNOTIFY hDevNotify = NULL;
 
 static int AutoDisconnectedPort = -1;
 
-#ifndef WM_IME_COMPOSITION
-#define WM_IME_COMPOSITION              0x010F
-#endif
+// 本体は addsetting.cpp
+extern mouse_cursor_t MouseCursor[];
 
 /////////////////////////////////////////////////////////////////////////////
 // CVTWindow
 
-#if 0
 BEGIN_MESSAGE_MAP(CVTWindow, CFrameWnd)
 	//{{AFX_MSG_MAP(CVTWindow)
 	ON_WM_ACTIVATE()
@@ -190,7 +160,6 @@ BEGIN_MESSAGE_MAP(CVTWindow, CFrameWnd)
 	ON_WM_VSCROLL()
 	ON_WM_DEVICECHANGE()
 	ON_MESSAGE(WM_IME_STARTCOMPOSITION,OnIMEStartComposition)
-	ON_MESSAGE(WM_IME_ENDCOMPOSITION,OnIMEEndComposition)
 	ON_MESSAGE(WM_IME_COMPOSITION,OnIMEComposition)
 	ON_MESSAGE(WM_INPUTLANGCHANGE,OnIMEInputChange)
 	ON_MESSAGE(WM_IME_NOTIFY,OnIMENotify)
@@ -288,18 +257,43 @@ BEGIN_MESSAGE_MAP(CVTWindow, CFrameWnd)
 	ON_COMMAND(ID_HELP_INDEX2, OnHelpIndex)
 	ON_COMMAND(ID_HELP_ABOUT, OnHelpAbout)
 	ON_MESSAGE(WM_USER_DROPNOTIFY, OnDropNotify)
-	ON_MESSAGE(WM_DPICHANGED, OnDpiChanged)
 	//}}AFX_MSG_MAP
 END_MESSAGE_MAP()
-#endif
 
-static HINSTANCE AfxGetInstanceHandle()
+typedef BOOL(WINAPI *_SetLayeredWindowAttributes)(HWND, COLORREF, BYTE, DWORD);
+static _SetLayeredWindowAttributes g_pSetLayeredWindowAttributes = NULL;
+
+static void MySetLayeredWindowAttributes_init()
 {
-	return hInst;
+	static HMODULE g_hmodUser32 = NULL;
+	char user32_dll[MAX_PATH];
+
+	GetSystemDirectory(user32_dll, sizeof(user32_dll));
+	strncat_s(user32_dll, sizeof(user32_dll), "\\user32.dll", _TRUNCATE);
+	if (g_hmodUser32 == NULL) {
+		g_hmodUser32 = LoadLibrary(user32_dll);
+		if (g_hmodUser32 == NULL) {
+			return;
+		}
+
+		g_pSetLayeredWindowAttributes =
+			(_SetLayeredWindowAttributes)GetProcAddress(g_hmodUser32, "SetLayeredWindowAttributes");
+	}
 }
 
+static BOOL MySetLayeredWindowAttributes(HWND hwnd, COLORREF crKey, BYTE bAlpha, DWORD dwFlags)
+{
+	if (g_pSetLayeredWindowAttributes == NULL) {
+		return FALSE;
+	}
+
+	return g_pSetLayeredWindowAttributes(hwnd, crKey,
+	                                     bAlpha, dwFlags);
+}
+
+
 // Tera Term起動時とURL文字列mouse over時に呼ばれる (2005.4.2 yutaka)
-static void SetMouseCursor(const char *cursor)
+void SetMouseCursor(char *cursor)
 {
 	HCURSOR hc;
 	LPCTSTR name = NULL;
@@ -328,13 +322,10 @@ static void SetMouseCursor(const char *cursor)
  */
 void CVTWindow::SetWindowAlpha(BYTE alpha)
 {
-	if (pSetLayeredWindowAttributes == NULL) {
-		return;	// レイヤードウインドウのサポートなし
-	}
 	if (Alpha == alpha) {
 		return;	// 変化なしなら何もしない
 	}
-	LONG_PTR lp = GetWindowLongPtr(GWL_EXSTYLE);
+	LONG_PTR lp = ::GetWindowLongPtr(HVTWin, GWL_EXSTYLE);
 	if (lp == 0) {
 		return;
 	}
@@ -345,7 +336,7 @@ void CVTWindow::SetWindowAlpha(BYTE alpha)
 	// 呼び出し元で、値が変更されたときのみ設定を反映する。(2007.10.19 maya)
 	if (alpha < 255) {
 		::SetWindowLongPtr(HVTWin, GWL_EXSTYLE, lp | WS_EX_LAYERED);
-		pSetLayeredWindowAttributes(HVTWin, 0, alpha, LWA_ALPHA);
+		MySetLayeredWindowAttributes(HVTWin, 0, alpha, LWA_ALPHA);
 	}
 	else {
 		// アルファ値が 255 の場合、透明化属性を削除して再描画する。(2007.10.22 maya)
@@ -400,7 +391,7 @@ void SetAutoConnectPort(int port)
 // (2007.9.30 yutaka)
 //
 // 例外コードを文字列へ変換する
-static const char *GetExceptionString(DWORD exception)
+static char *GetExceptionString(int exception)
 {
 #define EXCEPTION(x) case EXCEPTION_##x: return (#x);
 	static char buf[16];
@@ -693,6 +684,10 @@ CVTWindow::CVTWindow()
 	int fuLoad = LR_DEFAULTCOLOR;
 	BOOL isFirstInstance;
 
+#ifdef _DEBUG
+  ::_CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
+#endif
+
 	// 例外ハンドラのフック (2007.9.30 yutaka)
 	SetUnhandledExceptionFilter(ApplicationFaultHandler);
 
@@ -770,18 +765,6 @@ CVTWindow::CVTWindow()
 	}
 	FreeTTSET();
 
-	// DPI Aware (高DPI対応)
-	{
-		int dip_aware = 0;
-		dip_aware = GetPrivateProfileInt("Tera Term", "DPIAware", dip_aware, ts.SetupFName);
-		if (dip_aware != 0) {
-			if (pSetThreadDpiAwarenessContext != NULL) {
-				// TODO Windows 10 Version 1703以降のチェックを入れるべきか?
-				pSetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
-			}
-		}
-	}
-
 	// duplicate sessionの指定があるなら、共有メモリからコピーする (2004.12.7 yutaka)
 	if (ts.DuplicateSession == 1) {
 		CopyShmemToTTSet(&ts);
@@ -803,6 +786,7 @@ CVTWindow::CVTWindow()
 	FirstPaint = TRUE;
 	ScrollLock = FALSE;  // 初期値は無効 (2006.11.14 yutaka)
 	Alpha = 255;
+	MySetLayeredWindowAttributes_init();
 
 	/* Initialize scroll buffer */
 	InitBuffer();
@@ -830,7 +814,7 @@ CVTWindow::CVTWindow()
 #endif
 
 	wc.style = CS_DBLCLKS | CS_HREDRAW | CS_VREDRAW;
-	wc.lpfnWndProc = (WNDPROC)ProcStub;
+	wc.lpfnWndProc = AfxWndProc;
 	wc.cbClsExtra = 0;
 	wc.cbWndExtra = 0;
 	wc.hInstance = AfxGetInstanceHandle();
@@ -842,7 +826,7 @@ CVTWindow::CVTWindow()
 	wc.lpszClassName = VTClassName;
 
 	RegisterClass(&wc);
-	m_hAccel = ::LoadAccelerators(hInst, MAKEINTRESOURCE(IDR_ACC));
+	LoadAccelTable(MAKEINTRESOURCE(IDR_ACC));
 
 	if (ts.VTPos.x==CW_USEDEFAULT) {
 		rect = rectDefault;
@@ -853,7 +837,7 @@ CVTWindow::CVTWindow()
 		rect.right = rect.left + 100;
 		rect.bottom = rect.top + 100;
 	}
-	Create(hInst, VTClassName, _T("Tera Term"), Style, rect, NULL, NULL);
+	Create(VTClassName, "Tera Term", Style, rect, NULL, NULL);
 
 	/*--------- Init2 -----------------*/
 	HVTWin = GetSafeHwnd();
@@ -870,9 +854,9 @@ CVTWindow::CVTWindow()
 #ifdef ALPHABLEND_TYPE2
 //<!--by AKASI
 	if(BGNoFrame && ts.HideTitle > 0) {
-		ExStyle  = ::GetWindowLongPtr(HVTWin,GWL_EXSTYLE);
+		ExStyle  = GetWindowLong(HVTWin,GWL_EXSTYLE);
 		ExStyle &= ~WS_EX_CLIENTEDGE;
-		::SetWindowLongPtr(HVTWin,GWL_EXSTYLE,ExStyle);
+		SetWindowLong(HVTWin,GWL_EXSTYLE,ExStyle);
 	}
 //-->
 #endif
@@ -952,7 +936,7 @@ CVTWindow::CVTWindow()
 
 /////////////////////////////////////////////////////////////////////////////
 
-#if 0 //def _DEBUG
+#ifdef _DEBUG
 void CVTWindow::AssertValid() const
 {
 	CFrameWnd::AssertValid();
@@ -1058,9 +1042,8 @@ void CVTWindow::ButtonDown(POINT p, int LMR)
 		return;
 	}
 
-	mousereport = MouseReport(IdMouseEventBtnDown, LMR, p.x, p.y);
-	if (mousereport) {
-		::SetCapture(m_hWnd);
+	if (mousereport = MouseReport(IdMouseEventBtnDown, LMR, p.x, p.y)) {
+		SetCapture();
 		return;
 	}
 
@@ -1373,12 +1356,6 @@ void CVTWindow::InitMenu(HMENU *Menu)
 	GetMenuString(SetupMenu, ID_SETUP_FONT, uimsg, sizeof(uimsg), MF_BYCOMMAND);
 	get_lang_msg("MENU_SETUP_FONT", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
 	ModifyMenu(SetupMenu, ID_SETUP_FONT, MF_BYCOMMAND, ID_SETUP_FONT, ts.UIMsg);
-	GetMenuString(SetupMenu, ID_SETUP_DLG_FONT, uimsg, sizeof(uimsg), MF_BYCOMMAND);
-	get_lang_msg("MENU_SETUP_DIALOG_FONT", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
-	ModifyMenu(SetupMenu, ID_SETUP_DLG_FONT, MF_BYCOMMAND, ID_SETUP_DLG_FONT, ts.UIMsg);
-	GetMenuString(SetupMenu, 2, uimsg, sizeof(uimsg), MF_BYPOSITION);
-	get_lang_msg("MENU_SETUP_FONT_SUBMENU", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
-	ModifyMenu(SetupMenu, 2, MF_BYPOSITION, 2, ts.UIMsg);
 	GetMenuString(SetupMenu, ID_SETUP_KEYBOARD, uimsg, sizeof(uimsg), MF_BYCOMMAND);
 	get_lang_msg("MENU_SETUP_KEYBOARD", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
 	ModifyMenu(SetupMenu, ID_SETUP_KEYBOARD, MF_BYCOMMAND, ID_SETUP_KEYBOARD, ts.UIMsg);
@@ -1906,7 +1883,7 @@ BOOL CVTWindow::OnCommand(WPARAM wParam, LPARAM lParam)
 	}
 }
 
-void CVTWindow::OnActivate(UINT nState, HWND pWndOther, BOOL bMinimized)
+void CVTWindow::OnActivate(UINT nState, CWnd* pWndOther, BOOL bMinimized)
 {
 	DispSetActive(nState!=WA_INACTIVE);
 	if (nState == WA_INACTIVE) {
@@ -2039,12 +2016,10 @@ void CVTWindow::OnDestroy()
 
 	OpenHelp(HH_CLOSE_ALL, 0, ts.UILanguageFile);
 
-	FreeIME(HVTWin);
+	FreeIME();
 	FreeTTSET();
-#if 0	// freeに失敗するまでfreeし続ける
 	do { }
 	while (FreeTTDLG());
-#endif
 
 	do { }
 	while (FreeTTFILE());
@@ -2171,9 +2146,10 @@ LONG CVTWindow::OnDropNotify(UINT ShowDialog, LONG lParam)
 	for (int i = 0; i < DropListCount; i++) {
 		const char *FileName = DropLists[i];
 		const DWORD attr = GetFileAttributes(FileName);
-		if (attr == INVALID_FILE_ATTRIBUTES) {
-			FileCount++;
-		} else if (attr & FILE_ATTRIBUTE_DIRECTORY) {
+		if (attr == -1 ) {
+			goto finish;
+		}
+		if (attr & FILE_ATTRIBUTE_DIRECTORY) {
 			DirectoryCount++;
 		} else {
 			FileCount++;
@@ -2253,8 +2229,6 @@ LONG CVTWindow::OnDropNotify(UINT ShowDialog, LONG lParam)
 		if (!DoSameProcess) {
 			bool DoSameProcessNextDrop;
 			bool DoNotShowDialog = !DefaultShowDialog;
-			SetDialogFont(ts.SetupFName,
-						  ts.UILanguageFile, "Tera Term", "DLG_SYSTEM_FONT");
 			DropType =
 				ShowDropDialogBox(hInst, HVTWin,
 								  FileName, DropType,
@@ -2292,7 +2266,6 @@ LONG CVTWindow::OnDropNotify(UINT ShowDialog, LONG lParam)
 				ts.TransBin = DropType == DROP_TYPE_SEND_FILE ? 0 : 1;
 				FileSendStart();
 #if 0
-#if 0
 				goto finish;	// send fileは連続してできない
 #else
 				{
@@ -2305,7 +2278,6 @@ LONG CVTWindow::OnDropNotify(UINT ShowDialog, LONG lParam)
 						app->OnIdle(lCount++);
 					}
 				}
-#endif
 #endif
 			}
 			break;
@@ -2376,7 +2348,7 @@ void CVTWindow::OnGetMinMaxInfo(MINMAXINFO *lpMMI)
 #endif
 }
 
-void CVTWindow::OnHScroll(UINT nSBCode, UINT nPos, HWND pScrollBar)
+void CVTWindow::OnHScroll(UINT nSBCode, UINT nPos, CScrollBar* pScrollBar)
 {
 	int Func;
 
@@ -2411,9 +2383,9 @@ void CVTWindow::OnHScroll(UINT nSBCode, UINT nPos, HWND pScrollBar)
 	DispHScroll(Func,nPos);
 }
 
-void CVTWindow::OnInitMenuPopup(HMENU hPopupMenu, UINT nIndex, BOOL bSysMenu)
+void CVTWindow::OnInitMenuPopup(CMenu* pPopupMenu, UINT nIndex, BOOL bSysMenu)
 {
-	InitMenuPopup(hPopupMenu);
+	InitMenuPopup(pPopupMenu->m_hMenu);
 }
 
 void CVTWindow::OnKeyDown(UINT nChar, UINT nRepCnt, UINT nFlags)
@@ -2455,18 +2427,18 @@ void CVTWindow::OnKeyUp(UINT nChar, UINT nRepCnt, UINT nFlags)
 	KeyUp(nChar);
 }
 
-void CVTWindow::OnKillFocus(HWND hNewWnd)
+void CVTWindow::OnKillFocus(CWnd* pNewWnd)
 {
 	DispDestroyCaret();
 	FocusReport(FALSE);
-//	CFrameWnd::OnKillFocus(hNewWnd);		// TODO
+	CFrameWnd::OnKillFocus(pNewWnd);
 
 	if (IsCaretOn()) {
 		CaretKillFocus(TRUE);
 	}
 }
 
-void CVTWindow::OnLButtonDblClk(UINT nFlags, POINTS point)
+void CVTWindow::OnLButtonDblClk(UINT nFlags, CPoint point)
 {
 	if (LButton || MButton || RButton) {
 		return;
@@ -2495,7 +2467,7 @@ void CVTWindow::OnLButtonDblClk(UINT nFlags, POINTS point)
 	::SetTimer(HVTWin, IdScrollTimer, 100, NULL);
 }
 
-void CVTWindow::OnLButtonDown(UINT nFlags, POINTS point)
+void CVTWindow::OnLButtonDown(UINT nFlags, CPoint point)
 {
 	POINT p;
 
@@ -2504,7 +2476,7 @@ void CVTWindow::OnLButtonDown(UINT nFlags, POINTS point)
 	ButtonDown(p,IdLeftButton);
 }
 
-void CVTWindow::OnLButtonUp(UINT nFlags, POINTS point)
+void CVTWindow::OnLButtonUp(UINT nFlags, CPoint point)
 {
 	if (IgnoreRelease)
 		IgnoreRelease = FALSE;
@@ -2519,7 +2491,7 @@ void CVTWindow::OnLButtonUp(UINT nFlags, POINTS point)
 	ButtonUp(FALSE);
 }
 
-void CVTWindow::OnMButtonDown(UINT nFlags, POINTS point)
+void CVTWindow::OnMButtonDown(UINT nFlags, CPoint point)
 {
 	POINT p;
 
@@ -2528,7 +2500,7 @@ void CVTWindow::OnMButtonDown(UINT nFlags, POINTS point)
 	ButtonDown(p,IdMiddleButton);
 }
 
-void CVTWindow::OnMButtonUp(UINT nFlags, POINTS point)
+void CVTWindow::OnMButtonUp(UINT nFlags, CPoint point)
 {
 	if (IgnoreRelease)
 		IgnoreRelease = FALSE;
@@ -2549,7 +2521,7 @@ void CVTWindow::OnMButtonUp(UINT nFlags, POINTS point)
 	}
 }
 
-int CVTWindow::OnMouseActivate(HWND pDesktopWnd, UINT nHitTest, UINT message)
+int CVTWindow::OnMouseActivate(CWnd* pDesktopWnd, UINT nHitTest, UINT message)
 {
 	if ((ts.SelOnActive==0) && (nHitTest==HTCLIENT)) { //disable mouse event for text selection
 		IgnoreRelease = TRUE;
@@ -2560,7 +2532,7 @@ int CVTWindow::OnMouseActivate(HWND pDesktopWnd, UINT nHitTest, UINT message)
 	}
 }
 
-void CVTWindow::OnMouseMove(UINT nFlags, POINTS point)
+void CVTWindow::OnMouseMove(UINT nFlags, CPoint point)
 {
 	int i;
 	BOOL mousereport;
@@ -2606,16 +2578,12 @@ void CVTWindow::OnMove(int x, int y)
 BOOL CVTWindow::OnMouseWheel(
 	UINT nFlags,   // 仮想キー
 	short zDelta,  // 回転距離
-	POINTS pts     // カーソル位置
+	CPoint pt      // カーソル位置
 )
 {
-	POINT pt;
-	pt.x = pts.x;
-	pt.y = pts.y;
-
 	int line, i;
 
-	if (pSetLayeredWindowAttributes != NULL) {
+	if (g_pSetLayeredWindowAttributes != NULL) {
 		BOOL InTitleBar;
 		POINT point = pt;
 		GetPositionOnWindow(HVTWin, &point,
@@ -2666,23 +2634,23 @@ BOOL CVTWindow::OnMouseWheel(
 	return (TRUE);
 }
 
-#if 0
-// 何もしていない
 void CVTWindow::OnNcCalcSize(BOOL valid, NCCALCSIZE_PARAMS *sizeinfo)
 {
 	CWnd::OnNcCalcSize(valid, sizeinfo);
 	return;
 }
-#endif
 
-void CVTWindow::OnNcLButtonDblClk(UINT nHitTest, POINTS point)
+void CVTWindow::OnNcLButtonDblClk(UINT nHitTest, CPoint point)
 {
 	if (! Minimized && !ts.TermIsWin && (nHitTest == HTCAPTION)) {
 		DispRestoreWinSize();
 	}
+	else {
+		CFrameWnd::OnNcLButtonDblClk(nHitTest,point);
+	}
 }
 
-void CVTWindow::OnNcRButtonDown(UINT nHitTest, POINTS point)
+void CVTWindow::OnNcRButtonDown(UINT nHitTest, CPoint point)
 {
 	if ((nHitTest==HTCAPTION) &&
 	    (ts.HideTitle>0) &&
@@ -2694,11 +2662,12 @@ void CVTWindow::OnNcRButtonDown(UINT nHitTest, POINTS point)
 void CVTWindow::OnPaint()
 {
 	PAINTSTRUCT ps;
+	CDC *cdc;
 	HDC PaintDC;
 	int Xs, Ys, Xe, Ye;
 
 	// 表示されていなくてもWM_PAINTが発生するケース対策
-	if (::IsWindowVisible(m_hWnd) == 0) {
+	if (IsWindowVisible() == 0) {
 		return;
 	}
 
@@ -2708,7 +2677,8 @@ void CVTWindow::OnPaint()
 //-->
 #endif
 
-	PaintDC = BeginPaint(&ps);
+	cdc = BeginPaint(&ps);
+	PaintDC = cdc->GetSafeHdc();
 
 	PaintWindow(PaintDC,ps.rcPaint,ps.fErase, &Xs,&Ys,&Xe,&Ye);
 	LockBuffer();
@@ -2728,7 +2698,7 @@ void CVTWindow::OnPaint()
 	}
 }
 
-void CVTWindow::OnRButtonDown(UINT nFlags, POINTS point)
+void CVTWindow::OnRButtonDown(UINT nFlags, CPoint point)
 {
 	POINT p;
 
@@ -2737,7 +2707,7 @@ void CVTWindow::OnRButtonDown(UINT nFlags, POINTS point)
 	ButtonDown(p,IdRightButton);
 }
 
-void CVTWindow::OnRButtonUp(UINT nFlags, POINTS point)
+void CVTWindow::OnRButtonUp(UINT nFlags, CPoint point)
 {
 	if (IgnoreRelease)
 		IgnoreRelease = FALSE;
@@ -2762,10 +2732,11 @@ void CVTWindow::OnRButtonUp(UINT nFlags, POINTS point)
 	}
 }
 
-void CVTWindow::OnSetFocus(HWND hOldWnd)
+void CVTWindow::OnSetFocus(CWnd* pOldWnd)
 {
 	ChangeCaret();
 	FocusReport(TRUE);
+	CFrameWnd::OnSetFocus(pOldWnd);
 }
 
 void CVTWindow::OnSize(UINT nType, int cx, int cy)
@@ -2919,7 +2890,7 @@ void CVTWindow::OnSizing(UINT fwSide, LPRECT pRect)
 		break;
 	}
 
-//TODO	CFrameWnd::OnSizing(fwSide, pRect);
+	CFrameWnd::OnSizing(fwSide, pRect);
 }
 
 void CVTWindow::OnSysChar(UINT nChar, UINT nRepCnt, UINT nFlags)
@@ -2932,7 +2903,7 @@ void CVTWindow::OnSysChar(UINT nChar, UINT nRepCnt, UINT nFlags)
 	// ALT + xを押下すると WM_SYSCHAR が飛んでくる。
 	// ALT + Enterでウィンドウの最大化 (2005.4.24 yutaka)
 	if ((nFlags&0x2000) != 0 && nChar == CR) {
-		if (::IsZoomed(m_hWnd)) { // window is maximum
+		if (IsZoomed()) { // window is maximum
 			ShowWindow(SW_RESTORE);
 		} else {
 			ShowWindow(SW_MAXIMIZE);
@@ -2971,16 +2942,13 @@ void CVTWindow::OnSysChar(UINT nChar, UINT nRepCnt, UINT nFlags)
 		return;
 	}
 
-	CFrameWnd::DefWindowProc(WM_SYSCHAR, nChar, MAKELONG(nRepCnt, nFlags));
+	CFrameWnd::OnSysChar(nChar, nRepCnt, nFlags);
 }
 
-// 何もしていない、不要
-#if 0
 void CVTWindow::OnSysColorChange()
 {
 	CFrameWnd::OnSysColorChange();
 }
-#endif
 
 void CVTWindow::OnSysCommand(UINT nID, LPARAM lParam)
 {
@@ -2993,11 +2961,9 @@ void CVTWindow::OnSysCommand(UINT nID, LPARAM lParam)
 		// now getting host address (see CommOpen() in commlib.c)
 		::PostMessage(HVTWin,WM_SYSCOMMAND,nID,lParam);
 	}
-#if 0
 	else {
 		CFrameWnd::OnSysCommand(nID,lParam);
 	}
-#endif
 }
 
 void CVTWindow::OnSysKeyDown(UINT nChar, UINT nRepCnt, UINT nFlags)
@@ -3021,7 +2987,7 @@ void CVTWindow::OnSysKeyUp(UINT nChar, UINT nRepCnt, UINT nFlags)
 	}
 }
 
-void CVTWindow::OnTimer(UINT_PTR nIDEvent)
+void CVTWindow::OnTimer(UINT nIDEvent)
 {
 	POINT Point;
 	WORD PortType;
@@ -3071,7 +3037,7 @@ void CVTWindow::OnTimer(UINT_PTR nIDEvent)
 		case IdComEndTimer:
 			if (! CommCanClose(&cv)) {
 				// wait if received data remains
-				::SetTimer(m_hWnd, IdComEndTimer,1,NULL);
+				SetTimer(IdComEndTimer,1,NULL);
 				break;
 			}
 			cv.Ready = FALSE;
@@ -3107,7 +3073,7 @@ void CVTWindow::OnTimer(UINT_PTR nIDEvent)
 	}
 }
 
-void CVTWindow::OnVScroll(UINT nSBCode, UINT nPos, HWND pScrollBar)
+void CVTWindow::OnVScroll(UINT nSBCode, UINT nPos, CScrollBar* pScrollBar)
 {
 	int Func;
 	SCROLLINFO si;
@@ -3218,11 +3184,12 @@ BOOL CVTWindow::OnDeviceChange(UINT nEventType, DWORD_PTR dwData)
 		}
 		break;
 	}
-	return TRUE;
+
+	return CFrameWnd::OnDeviceChange(nEventType, dwData);
 }
 
 //<!--by AKASI
-LRESULT CVTWindow::OnWindowPosChanging(WPARAM wParam, LPARAM lParam)
+LONG CVTWindow::OnWindowPosChanging(UINT wParam, LONG lParam)
 {
 #ifdef ALPHABLEND_TYPE2
 	if(BGEnable && BGNoCopyBits) {
@@ -3233,7 +3200,7 @@ LRESULT CVTWindow::OnWindowPosChanging(WPARAM wParam, LPARAM lParam)
 	return CFrameWnd::DefWindowProc(WM_WINDOWPOSCHANGING,wParam,lParam);
 }
 
-LRESULT CVTWindow::OnSettingChange(WPARAM wParam, LPARAM lParam)
+LONG CVTWindow::OnSettingChange(UINT wParam, LONG lParam)
 {
 #ifdef ALPHABLEND_TYPE2
 	BGOnSettingChange();
@@ -3241,7 +3208,7 @@ LRESULT CVTWindow::OnSettingChange(WPARAM wParam, LPARAM lParam)
 	return CFrameWnd::DefWindowProc(WM_SETTINGCHANGE,wParam,lParam);
 }
 
-LRESULT CVTWindow::OnEnterSizeMove(WPARAM wParam, LPARAM lParam)
+LONG CVTWindow::OnEnterSizeMove(UINT wParam, LONG lParam)
 {
 	EnableSizeTip(1);
 
@@ -3251,7 +3218,7 @@ LRESULT CVTWindow::OnEnterSizeMove(WPARAM wParam, LPARAM lParam)
 	return CFrameWnd::DefWindowProc(WM_ENTERSIZEMOVE,wParam,lParam);
 }
 
-LRESULT CVTWindow::OnExitSizeMove(WPARAM wParam, LPARAM lParam)
+LONG CVTWindow::OnExitSizeMove(UINT wParam, LONG lParam)
 {
 #ifdef ALPHABLEND_TYPE2
 	BGOnExitSizeMove();
@@ -3265,8 +3232,6 @@ LRESULT CVTWindow::OnExitSizeMove(WPARAM wParam, LPARAM lParam)
 
 LRESULT CVTWindow::OnIMEStartComposition(WPARAM wParam, LPARAM lParam)
 {
-	IMECompositionState = TRUE;
-
 	// 位置を通知する
 	int CaretX = (CursorX-WinOrgX)*FontWidth;
 	int CaretY = (CursorY-WinOrgY)*FontHeight;
@@ -3275,57 +3240,76 @@ LRESULT CVTWindow::OnIMEStartComposition(WPARAM wParam, LPARAM lParam)
 	return CFrameWnd::DefWindowProc(WM_IME_STARTCOMPOSITION,wParam,lParam);
 }
 
-LRESULT CVTWindow::OnIMEEndComposition(WPARAM wParam, LPARAM lParam)
-{
-	IMECompositionState = FALSE;
-	return CFrameWnd::DefWindowProc(WM_IME_ENDCOMPOSITION,wParam,lParam);
-}
-
 LRESULT CVTWindow::OnIMEComposition(WPARAM wParam, LPARAM lParam)
 {
+	HGLOBAL hstr;
+	//LPSTR lpstr;
+	wchar_t *lpstr;
+	int Len;
+	char *mbstr;
+	int mlen;
+
 	if (CanUseIME()) {
-		size_t len;
-		const wchar_t *lpstr = GetConvStringW(HVTWin, lParam, &len);
-		if (lpstr != NULL) {
-			const wchar_t *output_wstr = lpstr;
-			if (len == 1 && ControlKey()) {
-				const static wchar_t code_ctrl_space = 0;
-				const static wchar_t code_ctrl_backslash = 0x1c;
-				switch(*lpstr) {
+		hstr = GetConvString(wParam, lParam);
+	}
+	else {
+		hstr = NULL;
+	}
+
+	if (hstr!=NULL) {
+		//lpstr = (LPSTR)GlobalLock(hstr);
+		lpstr = (wchar_t *)GlobalLock(hstr);
+		if (lpstr!=NULL) {
+			mlen = wcstombs(NULL, lpstr, 0);
+			mbstr = (char *)malloc(sizeof(char) * (mlen + 1));
+			if (mbstr == NULL) {
+				goto skip;
+			}
+			Len = wcstombs(mbstr, lpstr, mlen + 1);
+
+			// add this string into text buffer of application
+			Len = strlen(mbstr);
+			if (Len==1) {
+				switch (mbstr[0]) {
 				case 0x20:
-					output_wstr = &code_ctrl_space;
+					if (ControlKey()) {
+						mbstr[0] = 0; /* Ctrl-Space */
+					}
 					break;
 				case 0x5c: // Ctrl-\ support for NEC-PC98
-					output_wstr = &code_ctrl_backslash;
+					if (ControlKey()) {
+						mbstr[0] = 0x1c;
+					}
 					break;
 				}
 			}
 			if (ts.LocalEcho>0) {
-				CommTextEchoW(&cv,output_wstr,len);
+				CommTextEcho(&cv,mbstr,Len);
 			}
-			CommTextOutW(&cv,output_wstr,len);
-			free((void *)lpstr);
-			return 0;
+			CommTextOut(&cv,mbstr,Len);
+
+			free(mbstr);
+			GlobalUnlock(hstr);
 		}
+skip:
+		GlobalFree(hstr);
+		return 0;
 	}
 	return CFrameWnd::DefWindowProc(WM_IME_COMPOSITION,wParam,lParam);
 }
 
-LRESULT CVTWindow::OnIMEInputChange(WPARAM wParam, LPARAM lParam)
+LONG CVTWindow::OnIMEInputChange(UINT wParam, LONG lParam)
 {
 	ChangeCaret();
 
 	return CFrameWnd::DefWindowProc(WM_INPUTLANGCHANGE,wParam,lParam);
 }
 
-LRESULT CVTWindow::OnIMENotify(WPARAM wParam, LPARAM lParam)
+LONG CVTWindow::OnIMENotify(UINT wParam, LONG lParam)
 {
-	switch (wParam) {
-	case IMN_SETOPENSTATUS: {
-		// 入力コンテキストの開閉状態が更新される(IME On/OFF)
-
+	if (wParam == IMN_SETOPENSTATUS) {
 		// IMEのOn/Offを取得する
-		IMEstat = GetIMEOpenStatus(HVTWin);
+		IMEstat = GetIMEOpenStatus();
 
 		// 状態を表示するIMEのために位置を通知する
 		int CaretX = (CursorX-WinOrgX)*FontWidth;
@@ -3334,108 +3318,77 @@ LRESULT CVTWindow::OnIMENotify(WPARAM wParam, LPARAM lParam)
 
 		// 描画
 		ChangeCaret();
-
-		break;
-	}
-
-	// 候補ウィンドウの表示状況通知
-	// IME_OPENCANDIDATE / IMN_CLOSECANDIDATE サポート状況
-	//
-	//  IME								status
-	//  --------------------------------+----------
-	//  MS IME 日本語(Windows 10 1809)	suport
-	//  Google 日本語入力(2.24.3250.0)	not support
-	//
-	// WM_IME_STARTCOMPOSITION / WM_IME_ENDCOMPOSITION は
-	// 漢字入力状態がスタートした / 終了したで発生する。
-	// IME_OPENCANDIDATE / IMN_CLOSECANDIDATE は
-	// 候補ウィンドウが表示された / 閉じたで発生する。
-	case IMN_OPENCANDIDATE: {
-		// 候補ウィンドウを開こうとしている
-		int CaretX = (CursorX-WinOrgX)*FontWidth;
-		int CaretY = (CursorY-WinOrgY)*FontHeight;
-		SetConversionWindow(HVTWin,CaretX,CaretY);
-		break;
-	}
-	default:
-		break;
 	}
 
 	return CFrameWnd::DefWindowProc(WM_IME_NOTIFY,wParam,lParam);
 }
 
-static LRESULT ReplyIMERequestDocumentfeed(HWND hWnd, LPARAM lParam)
+// IMEの前後参照変換機能への対応
+// MSからちゃんと仕様が提示されていないので、アドホックにやるしかないらしい。
+// cf. http://d.hatena.ne.jp/topiyama/20070703
+//     http://ice.hotmint.com/putty/#DOWNLOAD
+//     http://27213143.at.webry.info/201202/article_2.html
+//     http://webcache.googleusercontent.com/search?q=cache:WzlX3ouMscIJ:anago.2ch.net/test/read.cgi/software/1325573999/82+IMR_DOCUMENTFEED&cd=13&hl=ja&ct=clnk&gl=jp
+// (2012.5.9 yutaka)
+LONG CVTWindow::OnIMERequest(UINT wParam, LONG lParam)
 {
-	static RECONVERTSTRING *pReconvPtrSave;		// TODO leak
-	static size_t ReconvSizeSave;
-	LRESULT result;
+	static int complen, newsize;
+	static char comp[512];
+	int size, ret;
+	char buf[512], newbuf[1024];
+	HIMC hIMC;
 
-	if (lParam == 0)
-	{  // 1回目の呼び出し サイズだけを返す
-		char buf[512];			// 参照文字列を受け取るバッファ
-		size_t str_len_count;
-		int cx;
-		assert(IsWindowUnicode(hWnd) == FALSE);
-
-		// 参照文字列取得、1行取り出す
-		{	// カーソルから後ろ、スペース以外が見つかったところを行末とする
-			int x;
-			int len;
-			cx = BuffGetCurrentLineData(buf, sizeof(buf));
-			len = cx;
-			for (x=cx; x < NumOfColumns; x++) {
-				const char c = buf[x];
-				if (c != 0 && c != 0x20) {
-					len = x+1;
-				}
-			}
-			str_len_count = len;
-		}
-
-		// IMEに返す構造体を作成する
-		if (pReconvPtrSave != NULL) {
-			free(pReconvPtrSave);
-		}
-		pReconvPtrSave = (RECONVERTSTRING *)CreateReconvStringStA(
-			hWnd, buf, str_len_count, cx, &ReconvSizeSave);
-
-		// 1回目はサイズだけを返す
-		result = ReconvSizeSave;
-	}
-	else {
-		// 2回目の呼び出し 構造体を渡す
-		if (pReconvPtrSave != NULL) {
-			RECONVERTSTRING *pReconv = (RECONVERTSTRING*)lParam;
-			memcpy(pReconv, pReconvPtrSave, ReconvSizeSave);
-			result = ReconvSizeSave;
-			free(pReconvPtrSave);
-			pReconvPtrSave = NULL;
-			ReconvSizeSave = 0;
-		} else {
-			// 3回目?
-			result = 0;
-		}
-	}
-
-#if 0
-	OutputDebugPrintf("WM_IME_REQUEST,IMR_DOCUMENTFEED lp=%p LRESULT %d\n",
-		lParam, result);
-#endif
-
-	return result;
-}
-
-LRESULT CVTWindow::OnIMERequest(WPARAM wParam, LPARAM lParam)
-{
 	// "IME=off"の場合は、何もしない。
-	if (ts.UseIME > 0) {
-		switch(wParam) {
-		case IMR_DOCUMENTFEED:
-			return ReplyIMERequestDocumentfeed(HVTWin, lParam);
-		default:
-			break;
+	if (ts.UseIME > 0 &&
+		wParam == IMR_DOCUMENTFEED) {
+		size = NumOfColumns + 1;   // カーソルがある行の長さ+null
+
+		if (lParam == 0) {  // 1回目の呼び出し
+			// バッファのサイズを返すのみ。
+			// ATOK2012では常に complen=0 となる。
+			complen = 0;
+			memset(comp, 0, sizeof(comp));
+			hIMC = ImmGetContext(HVTWin);
+			if (hIMC) {
+				ret = ImmGetCompositionString(hIMC, GCS_COMPSTR, comp, sizeof(comp));
+				if (ret == IMM_ERROR_NODATA || ret == IMM_ERROR_GENERAL) {
+					memset(comp, 0, sizeof(comp));
+				}
+				complen = strlen(comp);  // w/o null
+				ImmReleaseContext(HVTWin, hIMC);
+			}
+			newsize = size + complen;  // 変換文字も含めた全体の長さ(including null)
+
+		} else {  // 2回目の呼び出し
+			//lParam を RECONVERTSTRING と 文字列格納バッファに使用する
+			RECONVERTSTRING *pReconv   = (RECONVERTSTRING*)lParam;
+			char*  pszParagraph        = (char*)pReconv + sizeof(RECONVERTSTRING);
+			int cx;
+
+			cx = BuffGetCurrentLineData(buf, sizeof(buf));
+
+			// カーソル位置に変換文字列を挿入する。
+			memset(newbuf, 0, sizeof(newbuf));
+			memcpy(newbuf, buf, cx);
+			memcpy(newbuf + cx, comp, complen);
+			memcpy(newbuf + cx + complen, buf + cx, size - cx);
+			newsize = size + complen;  // 変換文字も含めた全体の長さ(including null)
+
+			pReconv->dwSize            = sizeof(RECONVERTSTRING);
+			pReconv->dwVersion         = 0;
+			pReconv->dwStrLen          = newsize - 1;
+			pReconv->dwStrOffset       = sizeof(RECONVERTSTRING);
+			pReconv->dwCompStrLen      = complen;
+			pReconv->dwCompStrOffset   = cx;
+			pReconv->dwTargetStrLen    = complen;
+			pReconv->dwTargetStrOffset = cx;
+
+			memcpy(pszParagraph, newbuf, newsize);
+			//OutputDebugPrintf("cx %d buf [%d:%s] -> [%d:%s]\n", cx, size, buf, newsize, newbuf);
 		}
+		return (sizeof(RECONVERTSTRING) + newsize);
 	}
+
 	return CFrameWnd::DefWindowProc(WM_IME_REQUEST,wParam,lParam);
 }
 
@@ -3594,14 +3547,14 @@ LONG CVTWindow::OnChangeMenu(UINT wParam, LONG lParam)
 	return 0;
 }
 
-LRESULT CVTWindow::OnChangeTBar(WPARAM wParam, LPARAM lParam)
+LONG CVTWindow::OnChangeTBar(UINT wParam, LONG lParam)
 {
 	BOOL TBar;
 	DWORD Style,ExStyle;
 	HMENU SysMenu;
 
-	Style = ::GetWindowLongPtr (HVTWin, GWL_STYLE);
-	ExStyle = ::GetWindowLongPtr (HVTWin, GWL_EXSTYLE);
+	Style = GetWindowLong (HVTWin, GWL_STYLE);
+	ExStyle = GetWindowLong (HVTWin, GWL_EXSTYLE);
 	TBar = ((Style & WS_SYSMENU)!=0);
 	if (TBar == (ts.HideTitle==0)) {
 		return 0;
@@ -3637,9 +3590,9 @@ LRESULT CVTWindow::OnChangeTBar(WPARAM wParam, LPARAM lParam)
 #endif
 
 	AdjustSize = TRUE;
-	::SetWindowLongPtr(HVTWin, GWL_STYLE, Style);
+	SetWindowLong(HVTWin, GWL_STYLE, Style);
 #ifdef ALPHABLEND_TYPE2
-	::SetWindowLongPtr(HVTWin, GWL_EXSTYLE, ExStyle);
+	SetWindowLong(HVTWin, GWL_EXSTYLE, ExStyle);
 #endif
 	::SetWindowPos(HVTWin, NULL, 0, 0, 0, 0,
 	               SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
@@ -3656,7 +3609,7 @@ LRESULT CVTWindow::OnChangeTBar(WPARAM wParam, LPARAM lParam)
 	return 0;
 }
 
-LRESULT CVTWindow::OnCommNotify(WPARAM wParam, LPARAM lParam)
+LONG CVTWindow::OnCommNotify(UINT wParam, LONG lParam)
 {
 	switch (LOWORD(lParam)) {
 		case FD_READ:  // TCP/IP
@@ -3680,13 +3633,13 @@ LRESULT CVTWindow::OnCommNotify(WPARAM wParam, LPARAM lParam)
 			cv.OutBuffCount = 0;
 			cv.LineModeBuffCount = 0;
 			cv.FlushLen = 0;
-			::SetTimer(m_hWnd, IdComEndTimer,1,NULL);
+			SetTimer(IdComEndTimer,1,NULL);
 			break;
 	}
 	return 0;
 }
 
-LRESULT CVTWindow::OnCommOpen(WPARAM wParam, LPARAM lParam)
+LONG CVTWindow::OnCommOpen(UINT wParam, LONG lParam)
 {
 	AutoDisconnectedPort = -1;
 
@@ -3781,7 +3734,7 @@ LRESULT CVTWindow::OnCommOpen(WPARAM wParam, LPARAM lParam)
 	return 0;
 }
 
-LRESULT CVTWindow::OnCommStart(WPARAM wParam, LPARAM lParam)
+LONG CVTWindow::OnCommStart(UINT wParam, LONG lParam)
 {
 	// 自動接続が無効のときも接続ダイアログを出すようにした (2006.9.15 maya)
 	if (((ts.PortType!=IdSerial) && (ts.HostName[0]==0)) ||
@@ -3807,7 +3760,7 @@ LRESULT CVTWindow::OnCommStart(WPARAM wParam, LPARAM lParam)
 	return 0;
 }
 
-LRESULT CVTWindow::OnDdeEnd(WPARAM wParam, LPARAM lParam)
+LONG CVTWindow::OnDdeEnd(UINT wParam, LONG lParam)
 {
 	EndDDE();
 	if (CloseTT) {
@@ -3816,42 +3769,42 @@ LRESULT CVTWindow::OnDdeEnd(WPARAM wParam, LPARAM lParam)
 	return 0;
 }
 
-LRESULT CVTWindow::OnDlgHelp(WPARAM wParam, LPARAM lParam)
+LONG CVTWindow::OnDlgHelp(UINT wParam, LONG lParam)
 {
 	OpenHelp(HH_HELP_CONTEXT, HelpId, ts.UILanguageFile);
 	return 0;
 }
 
-LRESULT CVTWindow::OnFileTransEnd(WPARAM wParam, LPARAM lParam)
+LONG CVTWindow::OnFileTransEnd(UINT wParam, LONG lParam)
 {
 	FileTransEnd(wParam);
 	return 0;
 }
 
-LRESULT CVTWindow::OnGetSerialNo(WPARAM wParam, LPARAM lParam)
+LONG CVTWindow::OnGetSerialNo(UINT wParam, LONG lParam)
 {
 	return (LONG)SerialNo;
 }
 
-LRESULT CVTWindow::OnKeyCode(WPARAM wParam, LPARAM lParam)
+LONG CVTWindow::OnKeyCode(UINT wParam, LONG lParam)
 {
 	KeyCodeSend(wParam,(WORD)lParam);
 	return 0;
 }
 
-LRESULT CVTWindow::OnProtoEnd(WPARAM wParam, LPARAM lParam)
+LONG CVTWindow::OnProtoEnd(UINT wParam, LONG lParam)
 {
 	ProtoDlgCancel();
 	return 0;
 }
 
-LRESULT CVTWindow::OnChangeTitle(WPARAM wParam, LPARAM lParam)
+LONG CVTWindow::OnChangeTitle(UINT wParam, LONG lParam)
 {
 	ChangeTitle();
 	return 0;
 }
 
-LRESULT CVTWindow::OnNotifyIcon(WPARAM wParam, LPARAM lParam)
+LONG CVTWindow::OnNotifyIcon(UINT wParam, LONG lParam)
 {
 	if (wParam == 1) {
 		switch (lParam) {
@@ -3909,8 +3862,6 @@ void CVTWindow::OnFileNewConnection()
 		return;
 	}
 
-	SetDialogFont(ts.SetupFName,
-				  ts.UILanguageFile, "Tera Term", "DLG_SYSTEM_FONT");
 	if ((*GetHostName)(HVTWin,&GetHNRec)) {
 		if ((GetHNRec.PortType==IdTCPIP) && LoadTTSET()) {
 			if (ts.HistoryList) {
@@ -4240,37 +4191,56 @@ void CVTWindow::OnFileLog()
 
 static LRESULT CALLBACK OnCommentDlgProc(HWND hDlgWnd, UINT msg, WPARAM wp, LPARAM lp)
 {
-	static const DlgTextInfo TextInfos[] = {
-		{ 0, "DLG_COMMENT_TITLE" },
-		{ IDOK, "BTN_OK" }
-	};
 	char buf[256];
 	UINT ret;
+	LOGFONT logfont;
+	HFONT font;
+	char uimsg[MAX_UIMSG];
 
 	switch (msg) {
 		case WM_INITDIALOG:
 			//SetDlgItemText(hDlgWnd, IDC_EDIT_COMMENT, "サンプル");
 			// エディットコントロールにフォーカスをあてる
 			SetFocus(GetDlgItem(hDlgWnd, IDC_EDIT_COMMENT));
-			SetDlgTexts(hDlgWnd, TextInfos, _countof(TextInfos), ts.UILanguageFile);
+
+			font = (HFONT)SendMessage(hDlgWnd, WM_GETFONT, 0, 0);
+			GetObject(font, sizeof(LOGFONT), &logfont);
+			if (get_lang_font("DLG_SYSTEM_FONT", hDlgWnd, &logfont, &DlgCommentFont, ts.UILanguageFile)) {
+				SendDlgItemMessage(hDlgWnd, IDC_EDIT_COMMENT, WM_SETFONT, (WPARAM)DlgCommentFont, MAKELPARAM(TRUE,0));
+				SendDlgItemMessage(hDlgWnd, IDOK, WM_SETFONT, (WPARAM)DlgCommentFont, MAKELPARAM(TRUE,0));
+			}
+			else {
+				DlgCommentFont = NULL;
+			}
+
+			GetWindowText(hDlgWnd, uimsg, sizeof(uimsg));
+			get_lang_msg("DLG_COMMENT_TITLE", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+			SetWindowText(hDlgWnd, ts.UIMsg);
+			GetDlgItemText(hDlgWnd, IDOK, uimsg, sizeof(uimsg));
+			get_lang_msg("BTN_OK", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+			SetDlgItemText(hDlgWnd, IDOK, ts.UIMsg);
+
 			return FALSE;
 
 		case WM_COMMAND:
 			switch (LOWORD(wp)) {
 				case IDOK:
 					memset(buf, 0, sizeof(buf));
-					ret = GetDlgItemTextA(hDlgWnd, IDC_EDIT_COMMENT, buf, sizeof(buf) - 1);
+					ret = GetDlgItemText(hDlgWnd, IDC_EDIT_COMMENT, buf, sizeof(buf) - 1);
 					if (ret > 0) { // テキスト取得成功
 						//buf[sizeof(buf) - 1] = '\0';  // null-terminate
 						CommentLogToFile(buf, ret);
 					}
-					TTEndDialog(hDlgWnd, IDOK);
+					if (DlgCommentFont != NULL) {
+						DeleteObject(DlgCommentFont);
+					}
+					EndDialog(hDlgWnd, IDOK);
 					break;
 				default:
 					return FALSE;
 			}
 		case WM_CLOSE:
-			TTEndDialog(hDlgWnd, 0);
+			EndDialog(hDlgWnd, 0);
 			return TRUE;
 
 		default:
@@ -4281,10 +4251,17 @@ static LRESULT CALLBACK OnCommentDlgProc(HWND hDlgWnd, UINT msg, WPARAM wp, LPAR
 
 void CVTWindow::OnCommentToLog()
 {
+	DWORD ret;
+
 	// ログファイルへコメントを追加する (2004.8.6 yutaka)
-	TTDialogBox(hInst, MAKEINTRESOURCE(IDD_COMMENT_DIALOG),
-				HVTWin, (DLGPROC)OnCommentDlgProc);
+	ret = DialogBox(hInst, MAKEINTRESOURCE(IDD_COMMENT_DIALOG),
+	                HVTWin, (DLGPROC)OnCommentDlgProc);
+	if (ret == 0 || ret == -1) {
+		ret = GetLastError();
+	}
+
 }
+
 
 // ログの閲覧 (2005.1.29 yutaka)
 void CVTWindow::OnViewLog()
@@ -4467,8 +4444,6 @@ void CVTWindow::OnFileChangeDir()
 	if (! LoadTTDLG()) {
 		return;
 	}
-	SetDialogFont(ts.SetupFName,
-				  ts.UILanguageFile, "Tera Term", "DLG_SYSTEM_FONT");
 	(*ChangeDirectory)(HVTWin,ts.FileDir);
 	FreeTTDLG();
 }
@@ -4605,12 +4580,11 @@ void CVTWindow::OnExternalSetup()
 {
 	DWORD ret;
 
-	SetDialogFont(ts.SetupFName,
-				  ts.UILanguageFile, "Tera Term", "DLG_TAHOMA_FONT");
-	CAddSettingPropSheetDlg CAddSetting(hInst, _T("Tera Term: Additional settings"), HVTWin);
+	CAddSettingPropSheetDlg CAddSetting("", CWnd::FromHandle(HVTWin));
+	CAddSetting.EnableStackedTabs(FALSE);
 	ret = CAddSetting.DoModal();
 	switch (ret) {
-		case (DWORD)-1:
+		case -1:
 		case IDABORT:
 			ret = GetLastError();
 			break;
@@ -4658,8 +4632,6 @@ void CVTWindow::OnSetupTerminal()
 	if (! LoadTTDLG()) {
 		return;
 	}
-	SetDialogFont(ts.SetupFName,
-				  ts.UILanguageFile, "Tera Term", "DLG_SYSTEM_FONT");
 	Ok = (*SetupTerminal)(HVTWin, &ts);
 	FreeTTDLG();
 	if (Ok) {
@@ -4680,8 +4652,6 @@ void CVTWindow::OnSetupWindow()
 		return;
 	}
 
-	SetDialogFont(ts.SetupFName,
-				  ts.UILanguageFile, "Tera Term", "DLG_SYSTEM_FONT");
 	strncpy_s(orgTitle, sizeof(orgTitle), ts.Title, _TRUNCATE);
 	Ok = (*SetupWin)(HVTWin, &ts);
 	FreeTTDLG();
@@ -4712,63 +4682,6 @@ void CVTWindow::OnSetupFont()
 	DispSetupFontDlg();
 }
 
-static BOOL CALLBACK TFontHook(HWND Dialog, UINT Message, WPARAM wParam, LPARAM lParam)
-{
-	if (Message == WM_INITDIALOG) {
-		TCHAR uimsg[MAX_UIMSG];
-		get_lang_msgT("DLG_CHOOSEFONT_STC6", uimsg, _countof(uimsg),
-					  _T("\"Font style\" selection here won't affect actual font appearance."), ts.UILanguageFile);
-		SetDlgItemTextT(Dialog, stc6, uimsg);
-
-		SetFocus(GetDlgItem(Dialog,cmb1));
-
-		CenterWindow(Dialog, GetParent(Dialog));
-	}
-	return FALSE;
-}
-
-void CVTWindow::OnSetupDlgFont()
-{
-	LOGFONTA LogFont;
-	CHOOSEFONTA cf;
-	BOOL result;
-
-	// LogFont.lfHeight は point
-	result = GetI18nLogfont("Tera Term", "DlgFont", &LogFont, 0, ts.SetupFName);
-	if (result == TRUE) {
-		// pixelに変換
-		LogFont.lfHeight = -GetFontPixelFromPoint(m_hWnd, LogFont.lfHeight);
-	} else {
-		GetMessageboxFont(&LogFont);
-	}
-
-	memset(&cf, 0, sizeof(cf));
-	cf.lStructSize = sizeof(cf);
-	cf.hwndOwner = HVTWin;
-	cf.lpLogFont = &LogFont;
-	cf.Flags =
-		CF_SCREENFONTS | CF_INITTOLOGFONTSTRUCT |
-		CF_SHOWHELP | CF_NOVERTFONTS |
-		CF_ENABLEHOOK;
-	if (IsWindows7OrLater() && ts.ListHiddenFonts) {
-		cf.Flags |= CF_INACTIVEFONTS;
-	}
-	cf.lpfnHook = (LPCFHOOKPROC)(&TFontHook);
-	cf.nFontType = REGULAR_FONTTYPE;
-	cf.hInstance = hInst;
-	HelpId = HlpSetupFont;
-	result = ChooseFontA(&cf);
-	if (result) {
-		char Temp[80];
-		int font_point = cf.iPointSize / 10;	// point で保存する
-		_snprintf_s(Temp, sizeof(Temp), _TRUNCATE, "%s,%d,%d",
-					LogFont.lfFaceName,
-					font_point,
-					LogFont.lfCharSet);
-		WritePrivateProfileStringA("Tera Term", "DlgFont", Temp, ts.SetupFName);
-	}
-}
-
 void CVTWindow::OnSetupKeyboard()
 {
 	BOOL Ok;
@@ -4782,8 +4695,6 @@ void CVTWindow::OnSetupKeyboard()
 	if (! LoadTTDLG()) {
 		return;
 	}
-	SetDialogFont(ts.SetupFName,
-				  ts.UILanguageFile, "Tera Term", "DLG_SYSTEM_FONT");
 	Ok = (*SetupKeyboard)(HVTWin, &ts);
 	FreeTTDLG();
 
@@ -4801,8 +4712,6 @@ void CVTWindow::OnSetupSerialPort()
 	if (! LoadTTDLG()) {
 		return;
 	}
-	SetDialogFont(ts.SetupFName,
-				  ts.UILanguageFile, "Tera Term", "DLG_SYSTEM_FONT");
 	Ok = (*SetupSerialPort)(HVTWin, &ts);
 	FreeTTDLG();
 
@@ -4828,8 +4737,6 @@ void CVTWindow::OnSetupTCPIP()
 	if (! LoadTTDLG()) {
 		return;
 	}
-	SetDialogFont(ts.SetupFName,
-				  ts.UILanguageFile, "Tera Term", "DLG_SYSTEM_FONT");
 	if ((*SetupTCPIP)(HVTWin, &ts)) {
 		TelUpdateKeepAliveInterval();
 	}
@@ -4842,8 +4749,6 @@ void CVTWindow::OnSetupGeneral()
 	if (! LoadTTDLG()) {
 		return;
 	}
-	SetDialogFont(ts.SetupFName,
-				  ts.UILanguageFile, "Tera Term", "DLG_SYSTEM_FONT");
 	if ((*SetupGeneral)(HVTWin,&ts)) {
 		ResetCharSet();
 		ResetIME();
@@ -4885,7 +4790,7 @@ void CVTWindow::OnSetupSave()
 		int w, h;
 
 #ifdef WINDOW_MAXMIMUM_ENABLED
-		if (::IsZoomed(m_hWnd)) {
+		if (IsZoomed()) {
 			w = ts.TerminalWidth;
 			h = ts.TerminalHeight;
 			ts.TerminalWidth = ts.TerminalOldWidth;
@@ -4901,7 +4806,7 @@ void CVTWindow::OnSetupSave()
 		FreeTTSET();
 
 #ifdef WINDOW_MAXMIMUM_ENABLED
-		if (::IsZoomed(m_hWnd)) {
+		if (IsZoomed()) {
 			ts.TerminalWidth = w;
 			ts.TerminalHeight = h;
 		}
@@ -5123,18 +5028,11 @@ error:
 
 static LRESULT CALLBACK OnSetupDirectoryDlgProc(HWND hDlgWnd, UINT msg, WPARAM wp, LPARAM lp)
 {
-	static const DlgTextInfo TextInfos[] = {
-		{ 0, "DLG_SETUPDIR_TITLE" },
-		{ IDC_INI_SETUPDIR_GROUP, "DLG_SETUPDIR_INIFILE" },
-		{ IDC_KEYCNF_SETUPDIR_GROUP, "DLG_SETUPDIR_KEYBOARDFILE" },
-		{ IDC_CYGTERM_SETUPDIR_GROUP, "DLG_SETUPDIR_CYGTERMFILE" },
-		{ IDC_SSH_SETUPDIR_GROUP, "DLG_SETUPDIR_KNOWNHOSTSFILE" },
-	};
 	static char teratermexepath[MAX_PATH];
 	static char inipath[MAX_PATH], inifilename[MAX_PATH], inipath_vstore[1024];
 	static char keycnfpath[MAX_PATH], keycnffilename[MAX_PATH], keycnfpath_vstore[1024];
 	static char cygtermpath[MAX_PATH], cygtermfilename[MAX_PATH], cygtermpath_vstore[1024];
-//	static char eterm1path[MAX_PATH], eterm1filename[MAX_PATH], eterm1path_vstore[1024];
+	static char eterm1path[MAX_PATH], eterm1filename[MAX_PATH], eterm1path_vstore[1024];
 	char temp[MAX_PATH];
 	char tmpbuf[1024];
 	typedef int (CALLBACK *PSSH_read_known_hosts_file)(char *, int);
@@ -5145,13 +5043,65 @@ static LRESULT CALLBACK OnSetupDirectoryDlgProc(HWND hDlgWnd, UINT msg, WPARAM w
 	BOOL open_dir, ret;
 	int button_pressed;
 	HWND hWnd;
+	LOGFONT logfont;
+	HFONT font;
+	char uimsg[MAX_UIMSG];
 
 	switch (msg) {
 	case WM_INITDIALOG:
 		// I18N
-		SetDlgTexts(hDlgWnd, TextInfos, _countof(TextInfos), ts.UILanguageFile);
+		font = (HFONT)SendMessage(hDlgWnd, WM_GETFONT, 0, 0);
+		GetObject(font, sizeof(LOGFONT), &logfont);
+		if (get_lang_font("DLG_TAHOMA_FONT", hDlgWnd, &logfont, &DlgSetupdirFont, ts.UILanguageFile)) {
+			SendDlgItemMessage(hDlgWnd, IDC_INI_SETUPDIR_GROUP, WM_SETFONT, (WPARAM)DlgSetupdirFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(hDlgWnd, IDC_INI_SETUPDIR_EDIT, WM_SETFONT, (WPARAM)DlgSetupdirFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(hDlgWnd, IDC_INI_SETUPDIR_BUTTON, WM_SETFONT, (WPARAM)DlgSetupdirFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(hDlgWnd, IDC_INI_SETUPDIR_BUTTON_FILE, WM_SETFONT, (WPARAM)DlgSetupdirFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(hDlgWnd, IDC_INI_SETUPDIR_STATIC_VSTORE, WM_SETFONT, (WPARAM)DlgSetupdirFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(hDlgWnd, IDC_INI_SETUPDIR_EDIT_VSTORE, WM_SETFONT, (WPARAM)DlgSetupdirFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(hDlgWnd, IDC_KEYCNF_SETUPDIR_GROUP, WM_SETFONT, (WPARAM)DlgSetupdirFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(hDlgWnd, IDC_KEYCNF_SETUPDIR_EDIT, WM_SETFONT, (WPARAM)DlgSetupdirFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(hDlgWnd, IDC_KEYCNF_SETUPDIR_BUTTON, WM_SETFONT, (WPARAM)DlgSetupdirFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(hDlgWnd, IDC_KEYCNF_SETUPDIR_BUTTON_FILE, WM_SETFONT, (WPARAM)DlgSetupdirFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(hDlgWnd, IDC_KEYCNF_SETUPDIR_STATIC_VSTORE, WM_SETFONT, (WPARAM)DlgSetupdirFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(hDlgWnd, IDC_KEYCNF_SETUPDIR_EDIT_VSTORE, WM_SETFONT, (WPARAM)DlgSetupdirFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(hDlgWnd, IDC_CYGTERM_SETUPDIR_GROUP, WM_SETFONT, (WPARAM)DlgSetupdirFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(hDlgWnd, IDC_CYGTERM_SETUPDIR_EDIT, WM_SETFONT, (WPARAM)DlgSetupdirFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(hDlgWnd, IDC_CYGTERM_SETUPDIR_BUTTON, WM_SETFONT, (WPARAM)DlgSetupdirFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(hDlgWnd, IDC_CYGTERM_SETUPDIR_BUTTON_FILE, WM_SETFONT, (WPARAM)DlgSetupdirFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(hDlgWnd, IDC_CYGTERM_SETUPDIR_STATIC_VSTORE, WM_SETFONT, (WPARAM)DlgSetupdirFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(hDlgWnd, IDC_CYGTERM_SETUPDIR_EDIT_VSTORE, WM_SETFONT, (WPARAM)DlgSetupdirFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(hDlgWnd, IDC_SSH_SETUPDIR_GROUP, WM_SETFONT, (WPARAM)DlgSetupdirFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(hDlgWnd, IDC_SSH_SETUPDIR_EDIT, WM_SETFONT, (WPARAM)DlgSetupdirFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(hDlgWnd, IDC_SSH_SETUPDIR_BUTTON, WM_SETFONT, (WPARAM)DlgSetupdirFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(hDlgWnd, IDC_SSH_SETUPDIR_BUTTON_FILE, WM_SETFONT, (WPARAM)DlgSetupdirFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(hDlgWnd, IDC_SSH_SETUPDIR_STATIC_VSTORE, WM_SETFONT, (WPARAM)DlgSetupdirFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(hDlgWnd, IDC_SSH_SETUPDIR_EDIT_VSTORE, WM_SETFONT, (WPARAM)DlgSetupdirFont, MAKELPARAM(TRUE,0));
+		} else {
+			DlgSetupdirFont = NULL;
+		}
 
-		if (GetModuleFileNameA(NULL, temp, sizeof(temp)) != 0) {
+		GetWindowText(hDlgWnd, uimsg, sizeof(uimsg));
+		get_lang_msg("DLG_SETUPDIR_TITLE", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+		SetWindowText(hDlgWnd, ts.UIMsg);
+
+		GetDlgItemText(hDlgWnd, IDC_INI_SETUPDIR_GROUP, uimsg, sizeof(uimsg));
+		get_lang_msg("DLG_SETUPDIR_INIFILE", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+		SetDlgItemText(hDlgWnd, IDC_INI_SETUPDIR_GROUP, ts.UIMsg);
+
+		GetDlgItemText(hDlgWnd, IDC_KEYCNF_SETUPDIR_GROUP, uimsg, sizeof(uimsg));
+		get_lang_msg("DLG_SETUPDIR_KEYBOARDFILE", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+		SetDlgItemText(hDlgWnd, IDC_KEYCNF_SETUPDIR_GROUP, ts.UIMsg);
+
+		GetDlgItemText(hDlgWnd, IDC_CYGTERM_SETUPDIR_GROUP, uimsg, sizeof(uimsg));
+		get_lang_msg("DLG_SETUPDIR_CYGTERMFILE", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+		SetDlgItemText(hDlgWnd, IDC_CYGTERM_SETUPDIR_GROUP, ts.UIMsg);
+
+		GetDlgItemText(hDlgWnd, IDC_SSH_SETUPDIR_GROUP, uimsg, sizeof(uimsg));
+		get_lang_msg("DLG_SETUPDIR_KNOWNHOSTSFILE", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+		SetDlgItemText(hDlgWnd, IDC_SSH_SETUPDIR_GROUP, ts.UIMsg);
+
+		if (GetModuleFileName(NULL, temp, sizeof(temp)) != 0) {
 			ExtractDirName(temp, teratermexepath);
 		}
 
@@ -5365,7 +5315,10 @@ static LRESULT CALLBACK OnSetupDirectoryDlgProc(HWND hDlgWnd, UINT msg, WPARAM w
 			break;
 
 		case IDCANCEL:
-			TTEndDialog(hDlgWnd, IDCANCEL);
+			if (DlgSetupdirFont != NULL) {
+				DeleteObject(DlgSetupdirFont);
+			}
+			EndDialog(hDlgWnd, IDCANCEL);
 			break;
 
 		default:
@@ -5385,7 +5338,7 @@ static LRESULT CALLBACK OnSetupDirectoryDlgProc(HWND hDlgWnd, UINT msg, WPARAM w
 		}
 
 	case WM_CLOSE:
-		TTEndDialog(hDlgWnd, 0);
+		EndDialog(hDlgWnd, 0);
 		return TRUE;
 
 	default:
@@ -5402,8 +5355,11 @@ static LRESULT CALLBACK OnSetupDirectoryDlgProc(HWND hDlgWnd, UINT msg, WPARAM w
 //
 void CVTWindow::OnOpenSetupDirectory()
 {
-	TTDialogBox(hInst, MAKEINTRESOURCE(IDD_SETUP_DIR_DIALOG),
-	            HVTWin, (DLGPROC)OnSetupDirectoryDlgProc);
+	int ret;
+
+	ret = DialogBox(hInst, MAKEINTRESOURCE(IDD_SETUP_DIR_DIALOG),
+		HVTWin, (DLGPROC)OnSetupDirectoryDlgProc);
+
 }
 
 void CVTWindow::OnSetupLoadKeyMap()
@@ -5722,19 +5678,13 @@ static int CompareMulticastName(char *name)
 //
 static LRESULT CALLBACK BroadcastCommandDlgProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp)
 {
-	static const DlgTextInfo TextInfos[] = {
-		{ 0, "DLG_BROADCAST_TITLE" },
-		{ IDC_HISTORY_CHECK, "DLG_BROADCAST_HISTORY" },
-		{ IDC_ENTERKEY_CHECK, "DLG_BROADCAST_ENTER" },
-		{ IDC_PARENT_ONLY, "DLG_BROADCAST_PARENTONLY" },
-		{ IDC_REALTIME_CHECK, "DLG_BROADCAST_REALTIME" },
-		{ IDOK, "DLG_BROADCAST_SUBMIT" },
-		{ IDCANCEL, "BTN_CLOSE" },
-	};
 	char buf[256 + 3];
 	UINT ret;
 	LRESULT checked;
 	LRESULT history;
+	LOGFONT logfont;
+	HFONT font;
+	char uimsg[MAX_UIMSG];
 	char historyfile[MAX_PATH];
 	static HWND hwndBroadcast     = NULL; // Broadcast dropdown
 	static HWND hwndBroadcastEdit = NULL; // Edit control on Broadcast dropdown
@@ -5777,8 +5727,8 @@ static LRESULT CALLBACK BroadcastCommandDlgProc(HWND hWnd, UINT msg, WPARAM wp, 
 			// サブクラス化させてリアルタイムモードにする (2008.1.21 yutaka)
 			hwndBroadcast = GetDlgItem(hWnd, IDC_COMMAND_EDIT);
 			hwndBroadcastEdit = GetWindow(hwndBroadcast, GW_CHILD);
-			OrigBroadcastEditProc = (WNDPROC)GetWindowLongPtr(hwndBroadcastEdit, GWLP_WNDPROC);
-			SetWindowLongPtr(hwndBroadcastEdit, GWLP_WNDPROC, (LONG_PTR)BroadcastEditProc);
+			OrigBroadcastEditProc = (WNDPROC)GetWindowLong(hwndBroadcastEdit, GWL_WNDPROC);
+			SetWindowLong(hwndBroadcastEdit, GWL_WNDPROC, (LONG)BroadcastEditProc);
 			// デフォルトはon。残りはdisable。
 			SendMessage(GetDlgItem(hWnd, IDC_REALTIME_CHECK), BM_SETCHECK, BST_CHECKED, 0);  // default on
 			EnableWindow(GetDlgItem(hWnd, IDC_HISTORY_CHECK), FALSE);
@@ -5792,8 +5742,44 @@ static LRESULT CALLBACK BroadcastCommandDlgProc(HWND hWnd, UINT msg, WPARAM wp, 
 			BroadcastWindowList = GetDlgItem(hWnd, IDC_LIST);
 			UpdateBroadcastWindowList(BroadcastWindowList);
 
-			// I18N
-			SetDlgTexts(hWnd, TextInfos, _countof(TextInfos), ts.UILanguageFile);
+			font = (HFONT)SendMessage(hWnd, WM_GETFONT, 0, 0);
+			GetObject(font, sizeof(LOGFONT), &logfont);
+			if (get_lang_font("DLG_SYSTEM_FONT", hWnd, &logfont, &DlgBroadcastFont, ts.UILanguageFile)) {
+				SendDlgItemMessage(hWnd, IDC_COMMAND_EDIT, WM_SETFONT, (WPARAM)DlgBroadcastFont, MAKELPARAM(TRUE,0));
+				SendDlgItemMessage(hWnd, IDC_HISTORY_CHECK, WM_SETFONT, (WPARAM)DlgBroadcastFont, MAKELPARAM(TRUE,0));
+				SendDlgItemMessage(hWnd, IDC_RADIO_CRLF, WM_SETFONT, (WPARAM)DlgBroadcastFont, MAKELPARAM(TRUE,0));
+				SendDlgItemMessage(hWnd, IDC_RADIO_CR, WM_SETFONT, (WPARAM)DlgBroadcastFont, MAKELPARAM(TRUE,0));
+				SendDlgItemMessage(hWnd, IDC_RADIO_LF, WM_SETFONT, (WPARAM)DlgBroadcastFont, MAKELPARAM(TRUE,0));
+				SendDlgItemMessage(hWnd, IDC_ENTERKEY_CHECK, WM_SETFONT, (WPARAM)DlgBroadcastFont, MAKELPARAM(TRUE,0));
+				SendDlgItemMessage(hWnd, IDC_PARENT_ONLY, WM_SETFONT, (WPARAM)DlgBroadcastFont, MAKELPARAM(TRUE,0));	// 337: 2007/03/20
+				SendDlgItemMessage(hWnd, IDC_REALTIME_CHECK, WM_SETFONT, (WPARAM)DlgBroadcastFont, MAKELPARAM(TRUE,0));
+				SendDlgItemMessage(hWnd, IDOK, WM_SETFONT, (WPARAM)DlgBroadcastFont, MAKELPARAM(TRUE,0));
+				SendDlgItemMessage(hWnd, IDCANCEL, WM_SETFONT, (WPARAM)DlgBroadcastFont, MAKELPARAM(TRUE,0));
+			}
+			else {
+				DlgBroadcastFont = NULL;
+			}
+			GetWindowText(hWnd, uimsg, sizeof(uimsg));
+			get_lang_msg("DLG_BROADCAST_TITLE", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+			SetWindowText(hWnd, ts.UIMsg);
+			GetDlgItemText(hWnd, IDC_HISTORY_CHECK, uimsg, sizeof(uimsg));
+			get_lang_msg("DLG_BROADCAST_HISTORY", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+			SetDlgItemText(hWnd, IDC_HISTORY_CHECK, ts.UIMsg);
+			GetDlgItemText(hWnd, IDC_ENTERKEY_CHECK, uimsg, sizeof(uimsg));
+			get_lang_msg("DLG_BROADCAST_ENTER", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+			SetDlgItemText(hWnd, IDC_ENTERKEY_CHECK, ts.UIMsg);
+			GetDlgItemText(hWnd, IDC_PARENT_ONLY, uimsg, sizeof(uimsg));
+			get_lang_msg("DLG_BROADCAST_PARENTONLY", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+			SetDlgItemText(hWnd, IDC_PARENT_ONLY, ts.UIMsg);
+			GetDlgItemText(hWnd, IDC_REALTIME_CHECK, uimsg, sizeof(uimsg));
+			get_lang_msg("DLG_BROADCAST_REALTIME", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+			SetDlgItemText(hWnd, IDC_REALTIME_CHECK, ts.UIMsg);
+			GetDlgItemText(hWnd, IDOK, uimsg, sizeof(uimsg));
+			get_lang_msg("DLG_BROADCAST_SUBMIT", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+			SetDlgItemText(hWnd, IDOK, ts.UIMsg);
+			GetDlgItemText(hWnd, IDCANCEL, uimsg, sizeof(uimsg));
+			get_lang_msg("BTN_CLOSE", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+			SetDlgItemText(hWnd, IDCANCEL, ts.UIMsg);
 
 			// ダイアログの初期サイズを保存
 			GetWindowRect(hWnd, &rc_dlg);
@@ -5853,8 +5839,8 @@ static LRESULT CALLBACK BroadcastCommandDlgProc(HWND hWnd, UINT msg, WPARAM wp, 
 					// new handler
 					hwndBroadcast = GetDlgItem(hWnd, IDC_COMMAND_EDIT);
 					hwndBroadcastEdit = GetWindow(hwndBroadcast, GW_CHILD);
-					OrigBroadcastEditProc = (WNDPROC)GetWindowLongPtr(hwndBroadcastEdit, GWLP_WNDPROC);
-					SetWindowLongPtr(hwndBroadcastEdit, GWLP_WNDPROC, (LONG_PTR)BroadcastEditProc);
+					OrigBroadcastEditProc = (WNDPROC)GetWindowLong(hwndBroadcastEdit, GWL_WNDPROC);
+					SetWindowLong(hwndBroadcastEdit, GWL_WNDPROC, (LONG)BroadcastEditProc);
 
 					EnableWindow(GetDlgItem(hWnd, IDC_HISTORY_CHECK), FALSE);
 					EnableWindow(GetDlgItem(hWnd, IDC_RADIO_CRLF), FALSE);
@@ -5865,7 +5851,7 @@ static LRESULT CALLBACK BroadcastCommandDlgProc(HWND hWnd, UINT msg, WPARAM wp, 
 					EnableWindow(GetDlgItem(hWnd, IDC_LIST), TRUE);  // true
 				} else {
 					// restore old handler
-					SetWindowLongPtr(hwndBroadcastEdit, GWLP_WNDPROC, (LONG_PTR)OrigBroadcastEditProc);
+					SetWindowLong(hwndBroadcastEdit, GWL_WNDPROC, (LONG)OrigBroadcastEditProc);
 
 					EnableWindow(GetDlgItem(hWnd, IDC_HISTORY_CHECK), TRUE);
 					EnableWindow(GetDlgItem(hWnd, IDC_RADIO_CRLF), TRUE);
@@ -5940,7 +5926,7 @@ skip:;
 					// モードレスダイアログは一度生成されると、アプリケーションが終了するまで
 					// 破棄されないので、以下の「ウィンドウプロシージャ戻し」は不要と思われる。(yutaka)
 #if 0
-					SetWindowLongPtr(hwndBroadcastEdit, GWLP_WNDPROC, (LONG_PTR)OrigBroadcastEditProc);
+					SetWindowLong(hwndBroadcastEdit, GWL_WNDPROC, (LONG)OrigBroadcastEditProc);
 #endif
 
 					//EndDialog(hDlgWnd, IDOK);
@@ -5992,6 +5978,9 @@ skip:;
 		case WM_CLOSE:
 			//DestroyWindow(hWnd);
 			EndDialog(hWnd, 0);
+			if (DlgBroadcastFont != NULL) {
+				DeleteObject(DlgBroadcastFont);
+			}
 			return TRUE;
 
 		case WM_SIZE:
@@ -6189,7 +6178,7 @@ LONG CVTWindow::OnReceiveIpcMessage(UINT wParam, LONG lParam)
 	// よって行われる。
 	// しかし非アクティブなウィンドウでは OnIdle() が呼ばれないので、
 	// 空のメッセージを送って OnIdle() が呼ばれるようにする。
-	::PostMessage(m_hWnd, WM_NULL, 0, 0);
+	PostMessage(WM_NULL, 0, 0);
 
 	return 1; // 送信できた場合は1を返す
 }
@@ -6228,8 +6217,6 @@ void CVTWindow::OnWindowWindow()
 	if (! LoadTTDLG()) {
 		return;
 	}
-	SetDialogFont(ts.SetupFName,
-				  ts.UILanguageFile, "Tera Term", "DLG_SYSTEM_FONT");
 	(*WindowWindow)(HVTWin,&Close);
 	FreeTTDLG();
 	if (Close) {
@@ -6277,339 +6264,6 @@ void CVTWindow::OnHelpAbout()
 	if (! LoadTTDLG()) {
 		return;
 	}
-	SetDialogFont(ts.SetupFName,
-				  ts.UILanguageFile, "Tera Term", "DLG_SYSTEM_FONT");
 	(*AboutDialog)(HVTWin);
 	FreeTTDLG();
-}
-
-LRESULT CVTWindow::OnDpiChanged(WPARAM wParam, LPARAM lParam)
-{
-	static DWORD preTime = 0;
-	DWORD currentTime = GetTickCount();
-	if (currentTime - preTime < 1000) {
-		return 0;
-	}
-	preTime = currentTime;
-
-	DpiChanged();
-	return TRUE;
-}
-
-LRESULT CVTWindow::Proc(UINT msg, WPARAM wp, LPARAM lp)
-{
-	LRESULT retval = 0;
-	if (msg == MsgDlgHelp) {
-		OnDlgHelp(wp,lp);
-		return 0;
-	}
-	switch(msg)
-	{
-	case WM_ACTIVATE:
-		OnActivate(wp & 0xFFFF, (HWND)wp, (wp >> 16) & 0xFFFF);
-		break;
-	case WM_CHAR:
-		OnChar(wp, LOWORD(lp), HIWORD(lp));
-		break;
-	case WM_CLOSE:
-		OnClose();
-		break;
-	case WM_DESTROY:
-		OnDestroy();
-		PostQuitMessage(0);
-		break;
-	case WM_DROPFILES:
-		OnDropFiles((HDROP)wp);
-		break;
-	case WM_GETMINMAXINFO:
-		OnGetMinMaxInfo((MINMAXINFO *)lp);
-		break;
-	case WM_HSCROLL:
-		OnHScroll(LOWORD(wp), HIWORD(wp), (HWND)lp);
-		break;
-	case WM_INITMENUPOPUP:
-		OnInitMenuPopup((HMENU)wp, LOWORD(lp), HIWORD(lp));
-		break;
-	case WM_KEYDOWN:
-		OnKeyDown(wp, LOWORD(lp), HIWORD(lp));
-		break;
-	case WM_KEYUP:
-		OnKeyUp(wp, LOWORD(lp), HIWORD(lp));
-		break;
-	case WM_KILLFOCUS:
-		OnKillFocus((HWND)wp);
-		break;
-	case WM_LBUTTONDBLCLK:
-		OnLButtonDblClk(wp, MAKEPOINTS(lp));
-		break;
-	case WM_LBUTTONDOWN:
-		OnLButtonDown(wp, MAKEPOINTS(lp));
-		break;
-	case WM_LBUTTONUP:
-		OnLButtonUp(wp, MAKEPOINTS(lp));
-		break;
-	case WM_MBUTTONDOWN:
-		OnMButtonDown(wp, MAKEPOINTS(lp));
-		break;
-	case WM_MBUTTONUP:
-		OnMButtonUp(wp, MAKEPOINTS(lp));
-		break;
-	case WM_MOUSEACTIVATE:
-		OnMouseActivate((HWND)wp, LOWORD(lp), HIWORD(lp));
-		break;
-	case WM_MOUSEMOVE:
-		OnMouseMove(wp, MAKEPOINTS(lp));
-		break;
-	case WM_MOUSEWHEEL:
-		OnMouseWheel(GET_KEYSTATE_WPARAM(wp), GET_WHEEL_DELTA_WPARAM(wp), MAKEPOINTS(lp));
-		break;
-	case WM_MOVE:
-		OnMove(LOWORD(lp), HIWORD(lp));
-		break;
-	case WM_NCLBUTTONDBLCLK:
-		OnNcLButtonDblClk((UINT)wp, MAKEPOINTS(lp));
-		DefWindowProc(msg, wp, lp);
-		break;
-	case WM_NCRBUTTONDOWN:
-		OnNcRButtonDown((UINT)wp, MAKEPOINTS(lp));
-		break;
-#if 0
-		// 何もしていない
-	case WM_NCCALCSIZE:
-		break;
-#endif
-	case WM_PAINT:
-		OnPaint();
-		break;
-	case WM_RBUTTONDOWN:
-		OnRButtonDown((UINT)wp, MAKEPOINTS(lp));
-		break;
-	case WM_RBUTTONUP:
-		OnRButtonUp((UINT)wp, MAKEPOINTS(lp));
-		break;
-	case WM_SETFOCUS:
-		OnSetFocus((HWND)wp);
-		DefWindowProc(msg, wp, lp);
-		break;
-	case WM_SIZE:
-		OnSize(wp, LOWORD(lp), HIWORD(lp));
-		break;
-	case WM_SIZING:
-		OnSizing(wp, (LPRECT)lp);
-		break;
-#if 1
-	case WM_SYSCHAR:
-		OnSysChar(wp, LOWORD(lp), HIWORD(lp));
-		break;
-#endif
-#if 0	// 何もしていない、不要
-	case WM_SYSCOLORCHANGE:
-		break;
-#endif
-	case WM_SYSCOMMAND:
-		OnSysCommand(wp, lp);
-		DefWindowProc(msg, wp, lp);
-		break;
-	case WM_SYSKEYDOWN:
-		OnSysKeyDown(wp, LOWORD(lp), HIWORD(lp));
-		break;
-	case WM_SYSKEYUP:
-		OnSysKeyUp(wp, LOWORD(lp), HIWORD(lp));
-		break;
-	case WM_TIMER:
-		OnTimer(wp);
-		break;
-	case WM_VSCROLL:
-		OnVScroll(LOWORD(wp), HIWORD(wp), (HWND)lp);
-		break;
-	case WM_DEVICECHANGE:
-		OnDeviceChange((UINT)wp, (DWORD_PTR)lp);
-		DefWindowProc(msg, wp, lp);
-		break;
-	case WM_IME_STARTCOMPOSITION :
-		OnIMEStartComposition(wp, lp);
-		break;
-	case WM_IME_ENDCOMPOSITION :
-		OnIMEEndComposition(wp, lp);
-		break;
-	case WM_IME_COMPOSITION:
-		OnIMEComposition(wp, lp);
-		break;
-	case WM_INPUTLANGCHANGE:
-		OnIMEInputChange(wp, lp);
-		break;
-	case WM_IME_NOTIFY:
-		OnIMENotify(wp, lp);
-		break;
-	case WM_IME_REQUEST:
-		OnIMERequest(wp, lp);
-		break;
-	case WM_WINDOWPOSCHANGING:
-		OnWindowPosChanging(wp, lp);
-		break;
-	case WM_SETTINGCHANGE:
-		OnSettingChange(wp, lp);
-		break;
-	case WM_ENTERSIZEMOVE:
-		OnEnterSizeMove(wp, lp);
-		break;
-	case WM_EXITSIZEMOVE :
-		OnExitSizeMove(wp, lp);
-		break;
-	case WM_USER_ACCELCOMMAND:
-		OnAccelCommand(wp, lp);
-		break;
-	case WM_USER_CHANGEMENU:
-		OnChangeMenu(wp, lp);
-		break;
-	case WM_USER_CHANGETBAR:
-		OnChangeTBar(wp, lp);
-		break;
-	case WM_USER_COMMNOTIFY:
-		OnCommNotify(wp, lp);
-		break;
-	case WM_USER_COMMOPEN:
-		OnCommOpen(wp, lp);
-		break;
-	case WM_USER_COMMSTART:
-		OnCommStart(wp, lp);
-		break;
-	case WM_USER_DDEEND:
-		OnDdeEnd(wp, lp);
-		break;
-	case WM_USER_DLGHELP2:
-		OnDlgHelp(wp, lp);
-		break;
-	case WM_USER_FTCANCEL:
-		OnFileTransEnd(wp, lp);
-		break;
-	case WM_USER_GETSERIALNO:
-		OnGetSerialNo(wp, lp);
-		break;
-	case WM_USER_KEYCODE:
-		OnKeyCode(wp, lp);
-		break;
-	case WM_USER_PROTOCANCEL:
-		OnProtoEnd(wp, lp);
-		break;
-	case WM_USER_CHANGETITLE:
-		OnChangeTitle(wp, lp);
-		break;
-	case WM_COPYDATA:
-		OnReceiveIpcMessage(wp, lp);
-		break;
-	case WM_USER_NONCONFIRM_CLOSE:
-		OnNonConfirmClose(wp, lp);
-		break;
-	case WM_USER_NOTIFYICON:
-		OnNotifyIcon(wp, lp);
-		break;
-	case WM_USER_DROPNOTIFY:
-		OnDropNotify(wp, lp);
-		break;
-	case WM_DPICHANGED:
-		OnDpiChanged(wp, lp);
-		break;
-	case WM_COMMAND:
-	{
-		const WORD wID = GET_WM_COMMAND_ID(wp, lp);
-		switch (wID) {
-		case ID_FILE_NEWCONNECTION: OnFileNewConnection(); break;
-		case ID_FILE_DUPLICATESESSION: OnDuplicateSession(); break;
-		case ID_FILE_CYGWINCONNECTION: OnCygwinConnection(); break;
-		case ID_FILE_TERATERMMENU: OnTTMenuLaunch(); break;
-		case ID_FILE_LOGMEIN: OnLogMeInLaunch(); break;
-		case ID_FILE_LOG: OnFileLog(); break;
-		case ID_FILE_COMMENTTOLOG: OnCommentToLog(); break;
-		case ID_FILE_VIEWLOG: OnViewLog(); break;
-		case ID_FILE_SHOWLOGDIALOG: OnShowLogDialog(); break;
-		case ID_FILE_REPLAYLOG: OnReplayLog(); break;
-		case ID_FILE_SENDFILE: OnFileSend(); break;
-		case ID_FILE_KERMITRCV: OnFileKermitRcv(); break;
-		case ID_FILE_KERMITGET: OnFileKermitGet(); break;
-		case ID_FILE_KERMITSEND: OnFileKermitSend(); break;
-		case ID_FILE_KERMITFINISH: OnFileKermitFinish(); break;
-		case ID_FILE_XRCV: OnFileXRcv(); break;
-		case ID_FILE_XSEND: OnFileXSend(); break;
-		case ID_FILE_YRCV: OnFileYRcv(); break;
-		case ID_FILE_YSEND: OnFileYSend(); break;
-		case ID_FILE_ZRCV: OnFileZRcv(); break;
-		case ID_FILE_ZSEND: OnFileZSend(); break;
-		case ID_FILE_BPRCV: OnFileBPRcv(); break;
-		case ID_FILE_BPSEND: OnFileBPSend(); break;
-		case ID_FILE_QVRCV: OnFileQVRcv(); break;
-		case ID_FILE_QVSEND: OnFileQVSend(); break;
-		case ID_FILE_CHANGEDIR: OnFileChangeDir(); break;
-		case ID_FILE_PRINT2: OnFilePrint(); break;
-		case ID_FILE_DISCONNECT: OnFileDisconnect(); break;
-		case ID_FILE_EXIT: OnFileExit(); break;
-		case ID_FILE_EXITALL: OnAllClose(); break;
-		case ID_EDIT_COPY2: OnEditCopy(); break;
-		case ID_EDIT_COPYTABLE: OnEditCopyTable(); break;
-		case ID_EDIT_PASTE2: OnEditPaste(); break;
-		case ID_EDIT_PASTECR: OnEditPasteCR(); break;
-		case ID_EDIT_CLEARSCREEN: OnEditClearScreen(); break;
-		case ID_EDIT_CLEARBUFFER: OnEditClearBuffer(); break;
-		case ID_EDIT_CANCELSELECT: OnEditCancelSelection(); break;
-		case ID_EDIT_SELECTALL: OnEditSelectAllBuffer(); break;
-		case ID_EDIT_SELECTSCREEN: OnEditSelectScreenBuffer(); break;
-		case ID_SETUP_ADDITIONALSETTINGS: OnExternalSetup(); break;
-		case ID_SETUP_TERMINAL: OnSetupTerminal(); break;
-		case ID_SETUP_WINDOW: OnSetupWindow(); break;
-		case ID_SETUP_FONT: OnSetupFont(); break;
-		case ID_SETUP_DLG_FONT: OnSetupDlgFont(); break;
-		case ID_SETUP_KEYBOARD: OnSetupKeyboard(); break;
-		case ID_SETUP_SERIALPORT: OnSetupSerialPort(); break;
-		case ID_SETUP_TCPIP: OnSetupTCPIP(); break;
-		case ID_SETUP_GENERAL: OnSetupGeneral(); break;
-		case ID_SETUP_SAVE: OnSetupSave(); break;
-		case ID_SETUP_RESTORE: OnSetupRestore(); break;
-		case ID_OPEN_SETUP: OnOpenSetupDirectory(); break;
-		case ID_SETUP_LOADKEYMAP: OnSetupLoadKeyMap(); break;
-		case ID_CONTROL_RESETTERMINAL: OnControlResetTerminal(); break;
-		case ID_CONTROL_RESETREMOTETITLE: OnControlResetRemoteTitle(); break;
-		case ID_CONTROL_AREYOUTHERE: OnControlAreYouThere(); break;
-		case ID_CONTROL_SENDBREAK: OnControlSendBreak(); break;
-		case ID_CONTROL_RESETPORT: OnControlResetPort(); break;
-		case ID_CONTROL_BROADCASTCOMMAND: OnControlBroadcastCommand(); break;
-		case ID_CONTROL_OPENTEK: OnControlOpenTEK(); break;
-		case ID_CONTROL_CLOSETEK: OnControlCloseTEK(); break;
-		case ID_CONTROL_MACRO: OnControlMacro(); break;
-		case ID_CONTROL_SHOW_MACRO: OnShowMacroWindow(); break;
-		case ID_WINDOW_WINDOW: OnWindowWindow(); break;
-		case ID_WINDOW_MINIMIZEALL: OnWindowMinimizeAll(); break;
-		case ID_WINDOW_CASCADEALL: OnWindowCascade(); break;
-		case ID_WINDOW_STACKED: OnWindowStacked(); break;
-		case ID_WINDOW_SIDEBYSIDE: OnWindowSidebySide(); break;
-		case ID_WINDOW_RESTOREALL: OnWindowRestoreAll(); break;
-		case ID_WINDOW_UNDO: OnWindowUndo(); break;
-		case ID_HELP_INDEX2: OnHelpIndex(); break;
-		case ID_HELP_ABOUT: OnHelpAbout(); break;
-		default:
-			OnCommand(wp, lp);
-			break;
-		}
-		break;
-	}
-	case WM_NCHITTEST: {
-		retval = CFrameWnd::DefWindowProc(msg, wp ,lp);
-		if (ts.HideTitle>0) {
-			if ((retval == HTCLIENT) && AltKey()) {
-#ifdef ALPHABLEND_TYPE2
-			if(ShiftKey())
-				retval = HTBOTTOMRIGHT;
-			else
-				retval = HTCAPTION;
-#else
-			retval = HTCAPTION;
-#endif
-			}
-		}
-	}
-		break;
-	default:
-		retval = DefWindowProc(msg, wp, lp);
-		break;
-	}
-	return retval;
 }

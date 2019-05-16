@@ -238,14 +238,6 @@ static void SetLogFlags(HWND Dialog)
 	}
 }
 
-/* ダイアログを中央に移動する */
-static void CenterCommonDialog(HWND hDlg)
-{
-	/* hDlgの親がダイアログのウィンドウハンドル */
-	HWND hWndDlgRoot = GetParent(hDlg);
-	CenterWindow(hWndDlgRoot, GetParent(hWndDlgRoot));
-}
-
 /* Hook function for file name dialog box */
 static BOOL CALLBACK LogFnHook(HWND Dialog, UINT Message, WPARAM wParam, LPARAM lParam)
 {
@@ -382,8 +374,6 @@ static BOOL CALLBACK LogFnHook(HWND Dialog, UINT Message, WPARAM wParam, LPARAM 
 			DisableDlgItem(Dialog, IDC_TIMESTAMPTYPE, IDC_TIMESTAMPTYPE);
 		}
 
-		CenterCommonDialog(Dialog);
-
 		return TRUE;
 
 	case WM_COMMAND: // for old style dialog
@@ -505,7 +495,7 @@ BOOL WINAPI GetTransFname(PFileVar fv, PCHAR CurDir, WORD FuncId, LPLONG Option)
 	if (FuncId == GTF_LOG) {
 		DWORD logdir = GetFileAttributes(fv->LogDefaultPath);
 		// ログ保存の場合は初期フォルダを決め打ちしないようにする。(2007.8.24 yutaka)
-		if (logdir != INVALID_FILE_ATTRIBUTES && logdir & FILE_ATTRIBUTE_DIRECTORY) {
+		if (logdir != -1 && logdir & FILE_ATTRIBUTE_DIRECTORY) {
 			// LogDefaultPathが存在するなら、そこを初期フォルダにする。(2007.11.30 maya)
 			ofn.lpstrInitialDir = fv->LogDefaultPath;
 		}
@@ -621,9 +611,6 @@ static BOOL CALLBACK TransFnHook(HWND Dialog, UINT Message, WPARAM wParam, LPARA
 		SetDlgItemText(Dialog, IDC_FOPTBIN, uimsg);
 
 		SetRB(Dialog,*pw & 1,IDC_FOPTBIN,IDC_FOPTBIN);
-
-		CenterCommonDialog(Dialog);
-
 		return TRUE;
 	case WM_COMMAND: // for old style dialog
 		switch (LOWORD(wParam)) {
@@ -1039,7 +1026,6 @@ static BOOL CALLBACK XFnHook(HWND Dialog, UINT Message, WPARAM wParam, LPARAM lP
 			ShowDlgItem(Dialog,IDC_XOPTBIN,IDC_XOPTBIN);
 			SetRB(Dialog,LOWORD(*pl),IDC_XOPTBIN,IDC_XOPTBIN);
 		}
-		CenterCommonDialog(Dialog);
 		return TRUE;
 	case WM_COMMAND: // for old style dialog
 		switch (LOWORD(wParam)) {

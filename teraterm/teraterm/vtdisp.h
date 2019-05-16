@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 1994-1998 T. Teranishi
- * (C) 2008-2019 TeraTerm Project
+ * (C) 2008-2017 TeraTerm Project
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -55,7 +55,7 @@ void DispConvWinToScreen
   (int Xw, int Yw, int *Xs, int *Ys, PBOOL Right);
 void DispConvScreenToWin
   (int Xs, int Ys, int *Xw, int *Yw);
-//void SetLogFont();
+void SetLogFont();
 void ChangeFont();
 void ResetIME();
 void ChangeCaret();
@@ -116,7 +116,6 @@ void DispGetWindowSize(int *width, int *height, BOOL client);
 void DispGetRootWinSize(int *x, int *y, BOOL inPixels);
 int DispFindClosestColor(int red, int green, int blue);
 void UpdateBGBrush(void);
-void DpiChanged(void);
 
 extern int WinWidth, WinHeight;
 extern HFONT VTFont[AttrFontMask+1];
@@ -129,7 +128,6 @@ extern int PageStart, BuffEnd;
 extern TCharAttr DefCharAttr;
 
 extern BOOL IMEstat;
-extern BOOL IMECompositionState;
 
 #define SCROLL_BOTTOM	1
 #define SCROLL_LINEDOWN	2

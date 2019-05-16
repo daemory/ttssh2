@@ -52,7 +52,7 @@
 #include "telnet.h"
 #include "ttime.h"
 #include "clipboar.h"
-#include "codeconv.h"
+#include "../ttpcmn/language.h"
 
 #include "vtterm.h"
 
@@ -2644,19 +2644,19 @@ void CSLT(BYTE b)
 	switch (b) {
 	  case 'r':
 		if (CanUseIME()) {
-			SetIMEOpenStatus(HVTWin, IMEstat);
+			SetIMEOpenStatus(IMEstat);
 		}
 		break;
 
 	  case 's':
 		if (CanUseIME()) {
-			IMEstat = GetIMEOpenStatus(HVTWin);
+			IMEstat = GetIMEOpenStatus();
 		}
 		break;
 
 	  case 't':
 		if (CanUseIME()) {
-			SetIMEOpenStatus(HVTWin, Param[1] == 1);
+			SetIMEOpenStatus(Param[1] == 1);
 		}
 		break;
 	}
@@ -5408,6 +5408,13 @@ static void ParseASCII(BYTE b)
 }
 
 //
+// UTF-8
+//
+#include "uni2sjis.map"
+#include "unisym2decsp.map"
+
+
+//
 // Unicode Combining Character Support
 //
 #include "uni_combining.map"
@@ -5460,16 +5467,17 @@ static int GetIndexOfCombiningFirstCode(unsigned short code, const combining_map
 	return (index);
 }
 
-// unicode(UTF-32)をバッファ(t.CodePage)へ書き込む
+// unicode(UTF-16,wchar_t)をバッファへ書き込む
 static void UnicodeToCP932(unsigned int code)
 {
-	size_t mblen;
+	wchar_t wchar = (wchar_t)code;
+	int ret;
 	char mbchar[2];
+	unsigned short cset;
 
 	// UnicodeからDEC特殊文字へのマッピング
 	if (ts.UnicodeDecSpMapping) {
-		unsigned short cset;
-		cset = UTF32ToDecSp(code);
+		cset = ConvertUnicode(wchar, mapUnicodeSymbolToDecSp, MAPSIZE(mapUnicodeSymbolToDecSp));
 		if (((cset >> 8) & ts.UnicodeDecSpMapping) != 0) {
 			PutDecSp(cset & 0xff);
 			return;
@@ -5477,18 +5485,20 @@ static void UnicodeToCP932(unsigned int code)
 	}
 
 	// Unicode -> 内部コード(ts.CodePage)へ変換して出力
-	mblen = UTF32ToMBCP(code, ts.CodePage, mbchar, 2);
-#if 1	// U+203e OVERLINE 特別処理
-	if (code == 0x203e && ts.CodePage == 932) {
-		// U+203eは0x7e'~'に変換される
-		// 無理やり漢字出力する
-		mbchar[0] = 0;			// この0のため、クリップボードに文字列がうまく入らない
-		mbchar[1] = 0x7e;
-		mblen = 2;
-	}
-#endif
-	switch (mblen) {
+	ret = WideCharToMultiByte(ts.CodePage, 0, &wchar, 1, mbchar, 2, NULL, NULL);
+	switch (ret) {
 	case 0:
+		if (ts.CodePage == 932) {
+			// CP932
+			// U+301Cなどは変換できない。Unicode -> Shift_JISへ変換してみる。
+			cset = ConvertUnicode(code, mapUnicodeToSJIS, MAPSIZE(mapUnicodeToSJIS));
+			if (cset != 0) {
+				Kanji = cset & 0xff00;
+				PutKanji(cset & 0x00ff);
+				return;
+			}
+		}
+
 		PutChar('?');
 		if (ts.UnknownUnicodeCharaAsWide) {
 			PutChar('?');
@@ -5639,7 +5649,7 @@ skip:
 	if ((buf[0] & 0xf1) == 0xf0 &&
 		(buf[1] & 0xc0) == 0x80 &&
 		(buf[2] & 0xc0) == 0x80 &&
-		(buf[3] & 0xc0) == 0x80)
+		(buf[2] & 0xc0) == 0x80)
 	{	// 4バイトコードの場合
 		code = ((buf[0] & 0x07) << 18);
 		code |= ((buf[1] & 0x3f) << 12);

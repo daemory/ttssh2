@@ -29,29 +29,38 @@
 
 /* TTMACRO.EXE, status dialog box */
 
-class CStatDlg : public TTCDialog
+class CStatDlg : public CDialog
 {
 public:
 	BOOL Create(PCHAR Text, PCHAR Title, int x, int y);
 	void Update(PCHAR Text, PCHAR Title, int x, int y);
 	void Bringup();
+	virtual BOOL CheckAutoCenter();
+
+	//{{AFX_DATA(CStatDlg)
 	enum { IDD = IDD_STATDLG };
-private:
+	//}}AFX_DATA
+
+	//{{AFX_VIRTUAL(CStatDlg)
+	protected:
+	virtual void OnCancel( );
+	virtual BOOL OnCommand(WPARAM wParam, LPARAM lParam);
+	virtual void PostNcDestroy();
+	//}}AFX_VIRTUAL
+
+protected:
 	PCHAR TextStr, TitleStr;
 	int  PosX, PosY, init_WW, WW, WH, TW, TH;
 	SIZE s;
+	HFONT DlgFont;
 
+	//{{AFX_MSG(CStatDlg)
 	virtual BOOL OnInitDialog();
-	virtual BOOL OnOK();
-	virtual BOOL OnCancel();
-	virtual BOOL OnCommand(WPARAM wParam, LPARAM lParam);
-	virtual BOOL PostNcDestroy();
-	virtual LRESULT DlgProc(UINT msg, WPARAM wp, LPARAM lp);
-
-	LRESULT OnExitSizeMove(WPARAM wParam, LPARAM lParam);
-	LRESULT OnSetForceForegroundWindow(WPARAM wParam, LPARAM lParam);
-
+	afx_msg LONG OnExitSizeMove(UINT wParam, LONG lParam);
+	afx_msg LONG OnSetForceForegroundWindow(UINT wParam, LONG lParam);
+	//}}AFX_MSG
 	void Relocation(BOOL is_init, int WW);
-
-	BOOL CheckAutoCenter();
+	DECLARE_MESSAGE_MAP()
 };
+
+typedef CStatDlg *PStatDlg;

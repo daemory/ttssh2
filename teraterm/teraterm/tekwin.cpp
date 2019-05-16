@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 1994-1998 T. Teranishi
- * (C) 2006-2019 TeraTerm Project
+ * (C) 2006-2017 TeraTerm Project
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -28,7 +28,7 @@
  */
 
 /* TERATERM.EXE, TEK window */
-#include <windowsx.h>
+#include "stdafx.h"
 #include "teraterm.h"
 #include "tttypes.h"
 #include "tektypes.h"
@@ -43,25 +43,14 @@
 #include "tt_res.h"
 #include "tekwin.h"
 #include "ttlib.h"
-#include <htmlhelp.h>
-#include "dlglib.h"
-#include <tchar.h>
 
-#define CWnd	TTCWnd
-#define CFrameWnd	TTCFrameWnd
-
-#define TEKClassName _T("TEKWin32")
+#define TEKClassName "TEKWin32"
 
 #ifdef _DEBUG
 #define new DEBUG_NEW
 #undef THIS_FILE
 static char THIS_FILE[] = __FILE__;
 #endif
-
-static HINSTANCE AfxGetInstanceHandle()
-{
-	return hInst;
-}
 
 /////////////////////////////////////////////////////////////////////////////
 // CTEKWindow
@@ -87,7 +76,7 @@ CTEKWindow::CTEKWindow()
 	}
 
 	wc.style = CS_HREDRAW | CS_VREDRAW;
-	wc.lpfnWndProc = (WNDPROC)ProcStub;
+	wc.lpfnWndProc = AfxWndProc;
 	wc.cbClsExtra = 0;
 	wc.cbWndExtra = 0;
 	wc.hInstance = AfxGetInstanceHandle();
@@ -108,7 +97,7 @@ CTEKWindow::CTEKWindow()
 		rect.right = rect.left + 640; //temporary width
 		rect.bottom = rect.top + 400; //temporary height
 	}
-	Create(hInst, TEKClassName, _T("Tera Term"), Style, rect, ::GetDesktopWindow(), NULL);
+	Create(TEKClassName, "Tera Term", Style, rect, GetDesktopWindow(), NULL);
 //--------------------------------------------------------
 	HTEKWin = GetSafeHwnd();
 	if (HTEKWin == NULL) {
@@ -162,52 +151,72 @@ void CTEKWindow::RestoreSetup()
 
 void CTEKWindow::InitMenu(HMENU *Menu)
 {
-	static const DlgTextInfo MenuTextInfo[] = {
-		{ 0, "TEKMENU_FILE" },
-		{ 1, "TEKMENU_EDIT" },
-		{ 2, "TEKMENU_SETUP" },
-		{ ID_TEKVTWIN, "TEKMENU_VTWIN"},
-		{ 4, "TEKMENU_HELP"},
-	};
-	static const DlgTextInfo FileMenuTextInfo[] = {
-		{ ID_TEKFILE_PRINT, "TEKMENU_FILE_PRINT" },
-		{ ID_TEKFILE_EXIT, "TEKMENU_FILE_EXIT" },
-	};
-	static const DlgTextInfo EditMenuTextInfo[] = {
-		{ ID_TEKEDIT_COPY, "TEKMENU_EDIT_COPY" },
-		{ ID_TEKEDIT_COPYSCREEN, "TEKMENU_EDIT_COPYSCREEN" },
-		{ ID_TEKEDIT_PASTE, "TEKMENU_EDIT_PASTE" },
-		{ ID_TEKEDIT_PASTECR, "TEKMENU_EDIT_PASTECR" },
-		{ ID_TEKEDIT_CLEARSCREEN, "TEKMENU_EDIT_CLSCREEN" },
-	};
-	static const DlgTextInfo SetupMenuTextInfo[] = {
-		{ ID_TEKSETUP_WINDOW, "TEKMENU_SETUP_WINDOW" },
-		{ ID_TEKSETUP_FONT, "TEKMENU_SETUP_FONT" },
-	};
-	static const DlgTextInfo HelpMenuTextInfo[] = {
-		{ ID_TEKHELP_INDEX, "TEKMENU_HELP_INDEX" },
-		{ ID_TEKHELP_ABOUT, "TEKMENU_HELP_ABOUT" },
-	};
-
 	*Menu = ::LoadMenu(AfxGetInstanceHandle(),
 	                   MAKEINTRESOURCE(IDR_TEKMENU));
 	EditMenu = GetSubMenu(MainMenu,1);
 	FileMenu = GetSubMenu(MainMenu,0);
 	SetupMenu = GetSubMenu(MainMenu,2);
 	HelpMenu = GetSubMenu(MainMenu,4);
+	char uimsg[MAX_UIMSG];
 
-	SetDlgMenuTexts(*Menu, MenuTextInfo, _countof(MenuTextInfo), ts.UILanguageFile);
-	SetDlgMenuTexts(FileMenu, FileMenuTextInfo, _countof(FileMenuTextInfo), ts.UILanguageFile);
-	SetDlgMenuTexts(EditMenu, EditMenuTextInfo, _countof(EditMenuTextInfo), ts.UILanguageFile);
-	SetDlgMenuTexts(SetupMenu, SetupMenuTextInfo, _countof(SetupMenuTextInfo), ts.UILanguageFile);
-	SetDlgMenuTexts(HelpMenu, HelpMenuTextInfo, _countof(HelpMenuTextInfo), ts.UILanguageFile);
+	GetMenuString(*Menu, 0, uimsg, sizeof(uimsg), MF_BYPOSITION);
+	get_lang_msg("TEKMENU_FILE", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(*Menu, 0, MF_BYPOSITION, 0, ts.UIMsg);
+	GetMenuString(FileMenu, ID_TEKFILE_PRINT, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("TEKMENU_FILE_PRINT", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(FileMenu, ID_TEKFILE_PRINT, MF_BYCOMMAND, ID_TEKFILE_PRINT, ts.UIMsg);
+	GetMenuString(FileMenu, ID_TEKFILE_EXIT, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("TEKMENU_FILE_EXIT", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(FileMenu, ID_TEKFILE_EXIT, MF_BYCOMMAND, ID_TEKFILE_EXIT, ts.UIMsg);
+
+	GetMenuString(*Menu, 1, uimsg, sizeof(uimsg), MF_BYPOSITION);
+	get_lang_msg("TEKMENU_EDIT", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(*Menu, 1, MF_BYPOSITION, 1, ts.UIMsg);
+	GetMenuString(EditMenu, ID_TEKEDIT_COPY, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("TEKMENU_EDIT_COPY", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(EditMenu, ID_TEKEDIT_COPY, MF_BYCOMMAND, ID_TEKEDIT_COPY, ts.UIMsg);
+	GetMenuString(EditMenu, ID_TEKEDIT_COPYSCREEN, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("TEKMENU_EDIT_COPYSCREEN", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(EditMenu, ID_TEKEDIT_COPYSCREEN, MF_BYCOMMAND, ID_TEKEDIT_COPYSCREEN, ts.UIMsg);
+	GetMenuString(EditMenu, ID_TEKEDIT_PASTE, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("TEKMENU_EDIT_PASTE", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(EditMenu, ID_TEKEDIT_PASTE, MF_BYCOMMAND, ID_TEKEDIT_PASTE, ts.UIMsg);
+	GetMenuString(EditMenu, ID_TEKEDIT_PASTECR, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("TEKMENU_EDIT_PASTECR", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(EditMenu, ID_TEKEDIT_PASTECR, MF_BYCOMMAND, ID_TEKEDIT_PASTECR, ts.UIMsg);
+	GetMenuString(EditMenu, ID_TEKEDIT_CLEARSCREEN, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("TEKMENU_EDIT_CLSCREEN", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(EditMenu, ID_TEKEDIT_CLEARSCREEN, MF_BYCOMMAND, ID_TEKEDIT_CLEARSCREEN, ts.UIMsg);
+
+	GetMenuString(*Menu, 2, uimsg, sizeof(uimsg), MF_BYPOSITION);
+	get_lang_msg("TEKMENU_SETUP", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(*Menu, 2, MF_BYPOSITION, 2, ts.UIMsg);
+	GetMenuString(SetupMenu, ID_TEKSETUP_WINDOW, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("TEKMENU_SETUP_WINDOW", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(SetupMenu, ID_TEKSETUP_WINDOW, MF_BYCOMMAND, ID_TEKSETUP_WINDOW, ts.UIMsg);
+	GetMenuString(SetupMenu, ID_TEKSETUP_FONT, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("TEKMENU_SETUP_FONT", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(SetupMenu, ID_TEKSETUP_FONT, MF_BYCOMMAND, ID_TEKSETUP_FONT, ts.UIMsg);
+
+	GetMenuString(*Menu, ID_TEKVTWIN, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("TEKMENU_VTWIN", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(*Menu, ID_TEKVTWIN, MF_BYCOMMAND, ID_TEKVTWIN, ts.UIMsg);
+
+	GetMenuString(*Menu, 4, uimsg, sizeof(uimsg), MF_BYPOSITION);
+	get_lang_msg("TEKMENU_HELP", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(*Menu, 4, MF_BYPOSITION, 4, ts.UIMsg);
+	GetMenuString(HelpMenu, ID_TEKHELP_INDEX, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("TEKMENU_HELP_INDEX", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(HelpMenu, ID_TEKHELP_INDEX, MF_BYCOMMAND, ID_TEKHELP_INDEX, ts.UIMsg);
+	GetMenuString(HelpMenu, ID_TEKHELP_ABOUT, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("TEKMENU_HELP_ABOUT", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(HelpMenu, ID_TEKHELP_ABOUT, MF_BYCOMMAND, ID_TEKHELP_ABOUT, ts.UIMsg);
 
 	if ((ts.MenuFlag & MF_SHOWWINMENU) !=0) {
-		TCHAR uimsg[MAX_UIMSG];
 		WinMenu = CreatePopupMenu();
-		get_lang_msgT("TEKMENU_WINDOW", uimsg, _countof(uimsg), _T("&Window"), ts.UILanguageFile);
+		get_lang_msg("TEKMENU_WINDOW", ts.UIMsg, sizeof(ts.UIMsg), "&Window", ts.UILanguageFile);
 		::InsertMenu(*Menu,4,MF_STRING | MF_ENABLED | MF_POPUP | MF_BYPOSITION,
-		             (UINT_PTR)WinMenu, uimsg);
+		             (int)WinMenu, ts.UIMsg);
 	}
 }
 
@@ -237,7 +246,6 @@ void CTEKWindow::InitMenuPopup(HMENU SubMenu)
 	}
 }
 
-#if 0
 BEGIN_MESSAGE_MAP(CTEKWindow, CFrameWnd)
 	//{{AFX_MSG_MAP(CTEKWindow)
 	ON_WM_ACTIVATE()
@@ -283,7 +291,6 @@ BEGIN_MESSAGE_MAP(CTEKWindow, CFrameWnd)
 	ON_WM_TIMER()
 	//}}AFX_MSG_MAP
 END_MESSAGE_MAP()
-#endif
 
 /////////////////////////////////////////////////////////////////////////////
 // CTEKWindow message handler
@@ -319,7 +326,7 @@ BOOL CTEKWindow::OnCommand(WPARAM wParam, LPARAM lParam)
 	}
 }
 
-void CTEKWindow::OnActivate(UINT nState, HWND pWndOther, BOOL bMinimized)
+void CTEKWindow::OnActivate(UINT nState, CWnd* pWndOther, BOOL bMinimized)
 {
 	if (nState!=WA_INACTIVE) {
 		tk.Active = TRUE;
@@ -375,9 +382,9 @@ void CTEKWindow::OnGetMinMaxInfo(MINMAXINFO *lpMMI)
 	lpMMI->ptMaxTrackSize.y = 10000;
 }
 
-void CTEKWindow::OnInitMenuPopup(HMENU hPopupMenu, UINT nIndex, BOOL bSysMenu)
+void CTEKWindow::OnInitMenuPopup(CMenu* pPopupMenu, UINT nIndex, BOOL bSysMenu)
 {
-	InitMenuPopup(hPopupMenu);
+	InitMenuPopup(pPopupMenu->m_hMenu);
 }
 
 void CTEKWindow::OnKeyDown(UINT nChar, UINT nRepCnt, UINT nFlags)
@@ -390,13 +397,13 @@ void CTEKWindow::OnKeyUp(UINT nChar, UINT nRepCnt, UINT nFlags)
 	KeyUp(nChar);
 }
 
-void CTEKWindow::OnKillFocus(HWND hNewWnd)
+void CTEKWindow::OnKillFocus(CWnd* pNewWnd)
 {
 	TEKDestroyCaret(&tk,&ts);
-	CFrameWnd::OnKillFocus(hNewWnd);
+	CFrameWnd::OnKillFocus(pNewWnd);
 }
 
-void CTEKWindow::OnLButtonDown(UINT nFlags, POINTS point)
+void CTEKWindow::OnLButtonDown(UINT nFlags, CPoint point)
 {
 	POINT p;
 	HMENU PopupMenu, PopupBase;
@@ -407,33 +414,32 @@ void CTEKWindow::OnLButtonDown(UINT nFlags, POINTS point)
 	// popup menu
 	if (ControlKey() && (MainMenu==NULL))
 	{
-		TCHAR uimsg[MAX_UIMSG];
 		InitMenu(&PopupMenu);
 		InitMenuPopup(EditMenu);
 		if (WinMenu!=NULL) {
 			InitMenuPopup(WinMenu);
 		}
 		PopupBase = CreatePopupMenu();
-		get_lang_msgT("MENU_CONTROL", uimsg, _countof(uimsg), _T("&File"), ts.UILanguageFile);
+		get_lang_msg("MENU_CONTROL", ts.UIMsg, sizeof(ts.UIMsg), "&File", ts.UILanguageFile);
 		AppendMenu(PopupBase, MF_STRING | MF_ENABLED | MF_POPUP,
-		           (UINT_PTR)GetSubMenu(PopupMenu,0), uimsg);
-		get_lang_msgT("TEKMENU_EDIT", uimsg, _countof(uimsg), _T("&Edit"), ts.UILanguageFile);
+		           (UINT)GetSubMenu(PopupMenu,0), ts.UIMsg);
+		get_lang_msg("TEKMENU_EDIT", ts.UIMsg, sizeof(ts.UIMsg), "&Edit", ts.UILanguageFile);
 		AppendMenu(PopupBase, MF_STRING | MF_ENABLED | MF_POPUP,
-		           (UINT_PTR)EditMenu, uimsg);
-		get_lang_msgT("TEKMENU_SETUP", uimsg, _countof(uimsg), _T("&Setup"), ts.UILanguageFile);
+		           (UINT)EditMenu, ts.UIMsg);
+		get_lang_msg("TEKMENU_SETUP", ts.UIMsg, sizeof(ts.UIMsg), "&Setup", ts.UILanguageFile);
 		AppendMenu(PopupBase, MF_STRING | MF_ENABLED | MF_POPUP,
-		           (UINT_PTR)GetSubMenu(PopupMenu,2), uimsg);
-		get_lang_msgT("TEKMENU_VTWIN", uimsg, _countof(uimsg), _T("VT-Wind&ow"), ts.UILanguageFile);
+		           (UINT)GetSubMenu(PopupMenu,2), ts.UIMsg);
+		get_lang_msg("TEKMENU_VTWIN", ts.UIMsg, sizeof(ts.UIMsg), "VT-Wind&ow", ts.UILanguageFile);
 		AppendMenu(PopupBase, MF_STRING | MF_ENABLED,
-		           ID_TEKVTWIN, uimsg);
+		           ID_TEKVTWIN, ts.UIMsg);
 		if (WinMenu!=NULL) {
-			get_lang_msgT("TEKMENU_WINDOW", uimsg, _countof(uimsg), _T("&Window"), ts.UILanguageFile);
+			get_lang_msg("TEKMENU_WINDOW", ts.UIMsg, sizeof(ts.UIMsg), "&Window", ts.UILanguageFile);
 			AppendMenu(PopupBase, MF_STRING | MF_ENABLED | MF_POPUP,
-			           (UINT_PTR)WinMenu, uimsg);
+			           (UINT)WinMenu, ts.UIMsg);
 		}
-		get_lang_msgT("TEKMENU_HELP", uimsg, _countof(uimsg), _T("&Help"), ts.UILanguageFile);
+		get_lang_msg("TEKMENU_HELP", ts.UIMsg, sizeof(ts.UIMsg), "&Help", ts.UILanguageFile);
 		AppendMenu(PopupBase, MF_STRING | MF_ENABLED | MF_POPUP,
-		           (UINT_PTR)GetSubMenu(PopupMenu,4), uimsg);
+		           (UINT)GetSubMenu(PopupMenu,4), ts.UIMsg);
 		::ClientToScreen(tk.HWin, &p);
 		TrackPopupMenu(PopupBase,TPM_LEFTALIGN | TPM_LEFTBUTTON,
 		               p.x,p.y,0,tk.HWin,NULL);
@@ -449,17 +455,17 @@ void CTEKWindow::OnLButtonDown(UINT nFlags, POINTS point)
 	TEKWMLButtonDown(&tk,&ts,&cv,p);
 }
 
-void CTEKWindow::OnLButtonUp(UINT nFlags, POINTS point)
+void CTEKWindow::OnLButtonUp(UINT nFlags, CPoint point)
 {
 	TEKWMLButtonUp(&tk,&ts);
 }
 
-void CTEKWindow::OnMButtonUp(UINT nFlags, POINTS point)
+void CTEKWindow::OnMButtonUp(UINT nFlags, CPoint point)
 {
 	//OnRButtonUp(nFlags,point);
 }
 
-int CTEKWindow::OnMouseActivate(HWND pDesktopWnd, UINT nHitTest, UINT message)
+int CTEKWindow::OnMouseActivate(CWnd* pDesktopWnd, UINT nHitTest, UINT message)
 {
 	if ((ts.SelOnActive==0) &&
 	    (nHitTest==HTCLIENT)) { //disable mouse event for text selection
@@ -470,7 +476,7 @@ int CTEKWindow::OnMouseActivate(HWND pDesktopWnd, UINT nHitTest, UINT message)
 	}
 }
 
-void CTEKWindow::OnMouseMove(UINT nFlags, POINTS point)
+void CTEKWindow::OnMouseMove(UINT nFlags, CPoint point)
 {
 	POINT p;
 
@@ -491,24 +497,26 @@ void CTEKWindow::OnMove(int x, int y)
 void CTEKWindow::OnPaint()
 {
 	PAINTSTRUCT ps;
+	CDC *cdc;
 	HDC PaintDC;
 
-	PaintDC = BeginPaint(&ps);
+	cdc = BeginPaint(&ps);
+	PaintDC = cdc->GetSafeHdc();
 
 	TEKPaint(&tk,&ts,PaintDC,&ps);
 
 	EndPaint(&ps);
 }
 
-void CTEKWindow::OnRButtonUp(UINT nFlags, POINTS point)
+void CTEKWindow::OnRButtonUp(UINT nFlags, CPoint point)
 {
 	CBStartPaste(tk.HWin, FALSE, FALSE);
 }
 
-void CTEKWindow::OnSetFocus(HWND hOldWnd)
+void CTEKWindow::OnSetFocus(CWnd* pOldWnd)
 {
 	TEKChangeCaret(&tk,&ts);
-	CFrameWnd::OnSetFocus(hOldWnd);
+	CFrameWnd::OnSetFocus(pOldWnd);
 }
 
 void CTEKWindow::OnSize(UINT nType, int cx, int cy)
@@ -563,7 +571,7 @@ void CTEKWindow::OnSysKeyUp(UINT nChar, UINT nRepCnt, UINT nFlags)
 	}
 }
 
-void CTEKWindow::OnTimer(UINT_PTR nIDEvent)
+void CTEKWindow::OnTimer(UINT nIDEvent)
 {
 	UINT T;
 
@@ -582,7 +590,7 @@ void CTEKWindow::OnTimer(UINT_PTR nIDEvent)
 	}
 }
 
-LRESULT CTEKWindow::OnAccelCommand(WPARAM wParam, LPARAM lParam)
+LONG CTEKWindow::OnAccelCommand(UINT wParam, LONG lParam)
 {
 	switch (wParam) {
 		case IdPrint:
@@ -624,7 +632,7 @@ LRESULT CTEKWindow::OnAccelCommand(WPARAM wParam, LPARAM lParam)
 	return 0;
 }
 
-LRESULT CTEKWindow::OnChangeMenu(WPARAM wParam, LPARAM lParam)
+LONG CTEKWindow::OnChangeMenu(UINT wParam, LONG lParam)
 {
 	HMENU SysMenu;
 	BOOL Show, B1, B2;
@@ -653,12 +661,11 @@ LRESULT CTEKWindow::OnChangeMenu(WPARAM wParam, LPARAM lParam)
 	if ((MainMenu!=NULL) &&
 	    (B1 != B2)) {
 		if (WinMenu==NULL) {
-			TCHAR uimsg[MAX_UIMSG];
 			WinMenu = CreatePopupMenu();
-			get_lang_msgT("TEKMENU_WINDOW", uimsg, _countof(uimsg), _T("&Window"), ts.UILanguageFile);
+			get_lang_msg("TEKMENU_WINDOW", ts.UIMsg, sizeof(ts.UIMsg), "&Window", ts.UILanguageFile);
 			::InsertMenu(MainMenu,4,
 			             MF_STRING | MF_ENABLED | MF_POPUP | MF_BYPOSITION,
-			             (UINT_PTR)WinMenu, uimsg);
+			             (int)WinMenu, ts.UIMsg);
 		}
 		else {
 			RemoveMenu(MainMenu,4,MF_BYPOSITION);
@@ -670,22 +677,21 @@ LRESULT CTEKWindow::OnChangeMenu(WPARAM wParam, LPARAM lParam)
 
 	::GetSystemMenu(tk.HWin,TRUE);
 	if ((! Show) && ((ts.MenuFlag & MF_NOSHOWMENU)==0)) {
-		TCHAR uimsg[MAX_UIMSG];
 		SysMenu = ::GetSystemMenu(tk.HWin,FALSE);
 		AppendMenu(SysMenu, MF_SEPARATOR, 0, NULL);
-		get_lang_msgT("TEKMENU_SHOW_MENUBAR", uimsg, _countof(uimsg), _T("Show menu &bar"), ts.UILanguageFile);
-		AppendMenu(SysMenu, MF_STRING, ID_SHOWMENUBAR, uimsg);
+		get_lang_msg("TEKMENU_SHOW_MENUBAR", ts.UIMsg, sizeof(ts.UIMsg), "Show menu &bar", ts.UILanguageFile);
+		AppendMenu(SysMenu, MF_STRING, ID_SHOWMENUBAR, ts.UIMsg);
 	}
 	return 0;
 }
 
-LRESULT CTEKWindow::OnChangeTBar(WPARAM wParam, LPARAM lParam)
+LONG CTEKWindow::OnChangeTBar(UINT wParam, LONG lParam)
 {
 	BOOL TBar;
 	DWORD Style;
 	HMENU SysMenu;
 
-	Style = GetWindowLongPtr (GWL_STYLE);
+	Style = GetWindowLong (HTEKWin, GWL_STYLE);
 	TBar = ((Style & WS_SYSMENU)!=0);
 	if (TBar == (ts.HideTitle==0)) {
 		return 0;
@@ -698,29 +704,28 @@ LRESULT CTEKWindow::OnChangeTBar(WPARAM wParam, LPARAM lParam)
 		Style = Style & ~WS_POPUP | WS_SYSMENU | WS_CAPTION | WS_MINIMIZEBOX;
 	}
 	tk.AdjustSize = TRUE;
-	SetWindowLongPtr (GWL_STYLE, Style);
+	SetWindowLong (HTEKWin, GWL_STYLE, Style);
 	::SetWindowPos (HTEKWin, NULL, 0, 0, 0, 0,
 	                SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
 	::ShowWindow (HTEKWin, SW_SHOW);
 
 	if ((ts.HideTitle==0) && (MainMenu==NULL) &&
 	    ((ts.MenuFlag & MF_NOSHOWMENU) == 0)) {
-		TCHAR uimsg[MAX_UIMSG];
 		SysMenu = ::GetSystemMenu(HTEKWin,FALSE);
 		AppendMenu(SysMenu, MF_SEPARATOR, 0, NULL);
-		get_lang_msgT("TEKMENU_SHOW_MENUBAR", uimsg, _countof(uimsg), _T("Show menu &bar"), ts.UILanguageFile);
-		AppendMenu(SysMenu, MF_STRING, ID_SHOWMENUBAR, uimsg);
+		get_lang_msg("TEKMENU_SHOW_MENUBAR", ts.UIMsg, sizeof(ts.UIMsg), "Show menu &bar", ts.UILanguageFile);
+		AppendMenu(SysMenu, MF_STRING, ID_SHOWMENUBAR, ts.UIMsg);
 	}
 	return 0;
 }
 
-LRESULT CTEKWindow::OnDlgHelp(WPARAM wParam, LPARAM lParam)
+LONG CTEKWindow::OnDlgHelp(UINT wParam, LONG lParam)
 {
 	OpenHelp(HH_HELP_CONTEXT, HelpId, ts.UILanguageFile);
 	return 0;
 }
 
-LRESULT CTEKWindow::OnGetSerialNo(WPARAM wParam, LPARAM lParam)
+LONG CTEKWindow::OnGetSerialNo(UINT wParam, LONG lParam)
 {
 	return (LONG)SerialNo;
 }
@@ -789,8 +794,6 @@ void CTEKWindow::OnSetupWindow()
 		return;
 	}
 	OldEmu = ts.TEKColorEmu;
-	SetDialogFont(ts.SetupFName,
-				  ts.UILanguageFile, "Tera Term", "DLG_SYSTEM_FONT");
 	Ok = (*SetupWin)(HTEKWin, &ts);
 	FreeTTDLG();
 	if (Ok) {
@@ -832,8 +835,6 @@ void CTEKWindow::OnWindowWindow()
 	if (! LoadTTDLG()) {
 		return;
 	}
-	SetDialogFont(ts.SetupFName,
-				  ts.UILanguageFile, "Tera Term", "DLG_SYSTEM_FONT");
 	(*WindowWindow)(HTEKWin,&Close);
 	FreeTTDLG();
 	if (Close) {
@@ -853,124 +854,4 @@ void CTEKWindow::OnHelpAbout()
 	}
 	(*AboutDialog)(tk.HWin);
 	FreeTTDLG();
-}
-
-LRESULT CTEKWindow::Proc(UINT msg, WPARAM wp, LPARAM lp)
-{
-	LRESULT retval = 0;
-	switch(msg)
-	{
-	case WM_ACTIVATE:
-		OnActivate(wp & 0xFFFF, (HWND)wp, (wp >> 16) & 0xFFFF);
-		break;
-	case WM_CHAR:
-		OnChar(wp, LOWORD(lp), HIWORD(lp));
-		break;
-	case WM_DESTROY:
-		OnDestroy();
-		PostQuitMessage(0);
-		break;
-	case WM_GETMINMAXINFO:
-		OnGetMinMaxInfo((MINMAXINFO *)lp);
-		break;
-	case WM_INITMENUPOPUP:
-		OnInitMenuPopup((HMENU)wp, LOWORD(lp), HIWORD(lp));
-		break;
-	case WM_KEYDOWN:
-		OnKeyDown(wp, LOWORD(lp), HIWORD(lp));
-		break;
-	case WM_KEYUP:
-		OnKeyUp(wp, LOWORD(lp), HIWORD(lp));
-		break;
-	case WM_KILLFOCUS:
-		OnKillFocus((HWND)wp);
-		break;
-	case WM_LBUTTONDOWN:
-		OnLButtonDown(wp, MAKEPOINTS(lp));
-		break;
-	case WM_LBUTTONUP:
-		OnLButtonUp(wp, MAKEPOINTS(lp));
-		break;
-	case WM_MBUTTONUP:
-		OnMButtonUp(wp, MAKEPOINTS(lp));
-		break;
-	case WM_MOUSEACTIVATE:
-		OnMouseActivate((HWND)wp, LOWORD(lp), HIWORD(lp));
-		break;
-	case WM_MOUSEMOVE:
-		OnMouseMove(wp, MAKEPOINTS(lp));
-		break;
-	case WM_MOVE:
-		OnMove(LOWORD(lp), HIWORD(lp));
-		break;
-	case WM_PAINT:
-		OnPaint();
-		break;
-	case WM_RBUTTONUP:
-		OnRButtonUp((UINT)wp, MAKEPOINTS(lp));
-		break;
-	case WM_SETFOCUS:
-		OnSetFocus((HWND)wp);
-		DefWindowProc(msg, wp, lp);
-		break;
-	case WM_SIZE:
-		OnSize(wp, LOWORD(lp), HIWORD(lp));
-		break;
-	case WM_SYSCOMMAND:
-		OnSysCommand(wp, lp);
-		DefWindowProc(msg, wp, lp);
-		break;
-	case WM_SYSKEYDOWN:
-		OnSysKeyDown(wp, LOWORD(lp), HIWORD(lp));
-		break;
-	case WM_SYSKEYUP:
-		OnSysKeyUp(wp, LOWORD(lp), HIWORD(lp));
-		break;
-	case WM_TIMER:
-		OnTimer(wp);
-		break;
-	case WM_USER_ACCELCOMMAND:
-		OnAccelCommand(wp, lp);
-		break;
-	case WM_USER_CHANGEMENU:
-		OnChangeMenu(wp, lp);
-		break;
-	case WM_USER_CHANGETBAR:
-		OnChangeTBar(wp, lp);
-		break;
-	case WM_USER_DLGHELP2:
-		OnDlgHelp(wp, lp);
-		break;
-	case WM_USER_GETSERIALNO:
-		OnGetSerialNo(wp, lp);
-		break;
-	case WM_COMMAND:
-	{
-		const WORD wID = GET_WM_COMMAND_ID(wp, lp);
-		switch (wID) {
-		case ID_TEKFILE_PRINT: OnFilePrint(); break;
-		case ID_TEKFILE_EXIT: OnFileExit(); break;
-		case ID_TEKEDIT_COPY: OnEditCopy(); break;
-		case ID_TEKEDIT_COPYSCREEN: OnEditCopyScreen(); break;
-		case ID_TEKEDIT_PASTE: OnEditPaste(); break;
-		case ID_TEKEDIT_PASTECR: OnEditPasteCR(); break;
-		case ID_TEKEDIT_CLEARSCREEN: OnEditClearScreen(); break;
-		case ID_TEKSETUP_WINDOW: OnSetupWindow(); break;
-		case ID_TEKSETUP_FONT: OnSetupFont(); break;
-		case ID_TEKVTWIN: OnVTWin(); break;
-		case ID_TEKWINDOW_WINDOW: OnWindowWindow(); break;
-		case ID_TEKHELP_INDEX: OnHelpIndex(); break;
-		case ID_TEKHELP_ABOUT: OnHelpAbout(); break;
-		default:
-			OnCommand(wp, lp);
-			break;
-		}
-		break;
-	}
-	default:
-		retval = DefWindowProc(msg, wp, lp);
-		break;
-	}
-				
-	return retval;
 }

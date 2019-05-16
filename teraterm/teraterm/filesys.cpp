@@ -28,10 +28,7 @@
  */
 
 /* TERATERM.EXE, file transfer routines */
-#include <stdio.h>
-#include <io.h>
-#include <process.h>
-
+#include "stdafx.h"
 #include "teraterm.h"
 #include "tttypes.h"
 #include "ttftypes.h"
@@ -258,9 +255,11 @@ static PFileTransDlg FLogDlg = NULL;
 static PFileTransDlg SendDlg = NULL;
 static PProtoDlg PtDlg = NULL;
 
-static BOOL OpenFTDlg(PFileVar fv)
+BOOL OpenFTDlg(PFileVar fv)
 {
 	PFileTransDlg FTDlg;
+	HWND HFTDlg;
+	char uimsg[MAX_UIMSG];
 
 	FTDlg = new CFileTransDlg();
 
@@ -273,7 +272,7 @@ static BOOL OpenFTDlg(PFileVar fv)
 
 	if (FTDlg!=NULL)
 	{
-		FTDlg->Create(hInst, HVTWin, fv, &cv, &ts);
+		FTDlg->Create(fv, &cv, &ts);
 		FTDlg->RefreshNum();
 		if (fv->OpId == OpLog) {
 			HWndLog = FTDlg->m_hWnd; // steven add
@@ -285,9 +284,32 @@ static BOOL OpenFTDlg(PFileVar fv)
 	else
 		SendDlg = FTDlg; /* File send */
 
+	HFTDlg=FTDlg->GetSafeHwnd();
+
+	GetDlgItemText(HFTDlg, IDC_TRANS_FILENAME, uimsg, sizeof(uimsg));
+	get_lang_msg("DLG_FILETRANS_FILENAME", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	SetDlgItemText(HFTDlg, IDC_TRANS_FILENAME, ts.UIMsg);
+	GetDlgItemText(HFTDlg, IDC_FULLPATH_LABEL, uimsg, sizeof(uimsg));
+	get_lang_msg("DLG_FILETRANS_FULLPATH", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	SetDlgItemText(HFTDlg, IDC_FULLPATH_LABEL, ts.UIMsg);
+	GetDlgItemText(HFTDlg, IDC_TRANS_TRANS, uimsg, sizeof(uimsg));
+	get_lang_msg("DLG_FILETRANS_TRNAS", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	SetDlgItemText(HFTDlg, IDC_TRANS_TRANS, ts.UIMsg);
+	GetDlgItemText(HFTDlg, IDC_TRANS_ELAPSED, uimsg, sizeof(uimsg));
+	get_lang_msg("DLG_FILETRANS_ELAPSED", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	SetDlgItemText(HFTDlg, IDC_TRANS_ELAPSED, ts.UIMsg);
+	GetDlgItemText(HFTDlg, IDCANCEL, uimsg, sizeof(uimsg));
+	get_lang_msg("DLG_FILETRANS_CLOSE", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	SetDlgItemText(HFTDlg, IDCANCEL, ts.UIMsg);
+	GetDlgItemText(HFTDlg, IDC_TRANSPAUSESTART, uimsg, sizeof(uimsg));
+	get_lang_msg("DLG_FILETRANS_PAUSE", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	SetDlgItemText(HFTDlg, IDC_TRANSPAUSESTART, ts.UIMsg);
+	GetDlgItemText(HFTDlg, IDC_TRANSHELP, uimsg, sizeof(uimsg));
+	get_lang_msg("BTN_HELP", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	SetDlgItemText(HFTDlg, IDC_TRANSHELP, ts.UIMsg);
+
 	fv->StartTime = GetTickCount();
 	if (fv->OpId == OpSendFile) {
-		HWND HFTDlg = FTDlg->GetSafeHwnd();
 		InitDlgProgress(HFTDlg, IDC_TRANSPROGRESS, &fv->ProgStat);
 		ShowWindow(GetDlgItem(HFTDlg, IDC_TRANS_ELAPSED), SW_SHOW);
 	}
@@ -340,7 +362,7 @@ void FreeFileVar(PFileVar *fv)
 	{
 		CloseFileSync(*fv);
 		//if ((*fv)->FileOpen) _lclose((*fv)->FileHandle);
-		if ((*fv)->FnStrMemHandle != 0)
+		if ((*fv)->FnStrMemHandle>0)
 		{
 			GlobalUnlock((*fv)->FnStrMemHandle);
 			GlobalFree((*fv)->FnStrMemHandle);
@@ -1457,6 +1479,8 @@ BOOL OpenProtoDlg(PFileVar fv, int IdProto, int Mode, WORD Opt1, WORD Opt2)
 {
 	int vsize;
 	PProtoDlg pd;
+	HWND Hpd;
+	char uimsg[MAX_UIMSG];
 
 	ProtoId = IdProto;
 
@@ -1516,7 +1540,28 @@ BOOL OpenProtoDlg(PFileVar fv, int IdProto, int Mode, WORD Opt1, WORD Opt2)
 		ProtoVar = NULL;
 		return FALSE;
 	}
-	pd->Create(hInst, HVTWin, fv, &ts);
+	pd->Create(fv,&ts);
+
+	Hpd=pd->GetSafeHwnd();
+
+	GetDlgItemText(Hpd, IDC_PROT_FILENAME, uimsg, sizeof(uimsg));
+	get_lang_msg("DLG_PROT_FILENAME", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	SetDlgItemText(Hpd, IDC_PROT_FILENAME, ts.UIMsg);
+	GetDlgItemText(Hpd, IDC_PROT_PROT, uimsg, sizeof(uimsg));
+	get_lang_msg("DLG_PROT_PROTO", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	SetDlgItemText(Hpd, IDC_PROT_PROT, ts.UIMsg);
+	GetDlgItemText(Hpd, IDC_PROT_PACKET, uimsg, sizeof(uimsg));
+	get_lang_msg("DLG_PROT_PACKET", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	SetDlgItemText(Hpd, IDC_PROT_PACKET, ts.UIMsg);
+	GetDlgItemText(Hpd, IDC_PROT_TRANS, uimsg, sizeof(uimsg));
+	get_lang_msg("DLG_PROT_TRANS", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	SetDlgItemText(Hpd, IDC_PROT_TRANS, ts.UIMsg);
+	GetDlgItemText(Hpd, IDC_PROT_ELAPSED, uimsg, sizeof(uimsg));
+	get_lang_msg("DLG_PROT_ELAPSED", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	SetDlgItemText(Hpd, IDC_PROT_ELAPSED, ts.UIMsg);
+	GetDlgItemText(Hpd, IDCANCEL, uimsg, sizeof(uimsg));
+	get_lang_msg("BTN_CANCEL", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	SetDlgItemText(Hpd, IDCANCEL, ts.UIMsg);
 
 	(*ProtoInit)(ProtoId,FileVar,ProtoVar,&cv,&ts);
 

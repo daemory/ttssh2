@@ -71,7 +71,7 @@
 			/>
 			<Tool
 				Name="VCLinkerTool"
-				AdditionalDependencies="User32.lib gdi32.lib SHELL32.lib ole32.lib comdlg32.lib ttpcmn.lib"
+				AdditionalDependencies="ttpcmn.lib"
 				LinkIncremental="1"
 				SuppressStartupBanner="true"
 				AdditionalLibraryDirectories="$(OutDir)"
@@ -161,7 +161,7 @@
 			/>
 			<Tool
 				Name="VCLinkerTool"
-				AdditionalDependencies="User32.lib gdi32.lib SHELL32.lib ole32.lib comdlg32.lib ttpcmn.lib"
+				AdditionalDependencies="ttpcmn.lib"
 				LinkIncremental="1"
 				SuppressStartupBanner="true"
 				AdditionalLibraryDirectories="$(OutDir)"
@@ -213,14 +213,6 @@
 				>
 			</File>
 			<File
-				RelativePath="..\common\dlglib_cpp.cpp"
-				>
-			</File>
-			<File
-				RelativePath="..\common\dlglib_tmpl.cpp"
-				>
-			</File>
-			<File
 				RelativePath="ftlib.c"
 				>
 			</File>
@@ -241,10 +233,6 @@
 				>
 			</File>
 			<File
-				RelativePath="..\common\win16api.c"
-				>
-			</File>
-			<File
 				RelativePath="xmodem.c"
 				>
 			</File>
@@ -254,6 +242,10 @@
 			</File>
 			<File
 				RelativePath="zmodem.c"
+				>
+			</File>
+			<File
+				RelativePath="..\common\win16api.c"
 				>
 			</File>
 		</Filter>
@@ -290,15 +282,7 @@
 				>
 			</File>
 			<File
-				RelativePath="..\common\win16api.h"
-				>
-			</File>
-			<File
 				RelativePath="xmodem.h"
-				>
-			</File>
-			<File
-				RelativePath="ymodem.h"
 				>
 			</File>
 			<File

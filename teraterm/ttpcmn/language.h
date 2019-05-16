@@ -29,22 +29,19 @@
 
 /* TTCMN.DLL, character code conversion */
 
-#pragma once
-
+#include "codemap.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#if !defined(DllExport)
-#define DllExport __declspec(dllimport)
-#endif
-
 /* proto types */
-DllExport WORD PASCAL SJIS2JIS(WORD KCode);
-DllExport WORD PASCAL SJIS2EUC(WORD KCode);
-DllExport WORD PASCAL JIS2SJIS(WORD KCode);
-DllExport BYTE PASCAL RussConv(int cin, int cout, BYTE b);
-DllExport void PASCAL RussConvStr(int cin, int cout, PCHAR Str, int count);
+unsigned int PASCAL SJIS2UTF8(WORD KCode, int *byte, int CodePage);
+WORD PASCAL SJIS2JIS(WORD KCode);
+WORD PASCAL SJIS2EUC(WORD KCode);
+WORD PASCAL JIS2SJIS(WORD KCode);
+BYTE PASCAL RussConv(int cin, int cout, BYTE b);
+void PASCAL RussConvStr(int cin, int cout, PCHAR Str, int count);
+unsigned short ConvertUnicode(unsigned short code, const codemap_t *table, int tmax);
 
 #ifdef __cplusplus
 }

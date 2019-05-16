@@ -1591,13 +1591,20 @@ void PASCAL ReadIniFile(PCHAR FName, PTTSet ts)
 	                        Temp, sizeof(Temp), FName);
 	strncpy_s(ts->Locale, sizeof(ts->Locale), Temp, _TRUNCATE);
 
-	// UI language message file (相対パス)
+	// UI language message file
 	GetPrivateProfileString(Section, "UILanguageFile", "lang\\Default.lng",
-	                        ts->UILanguageFile_ini, sizeof(ts->UILanguageFile_ini), FName);
+	                        Temp, sizeof(Temp), FName);
+	{
+		char CurDir[MAX_PATH];
 
-	// UI language message file (full path)
-	GetUILanguageFileFull(ts->HomeDir, ts->UILanguageFile_ini,
-						  ts->UILanguageFile, sizeof(ts->UILanguageFile));
+		// フルパス化する前に読み込み時の設定を取っておく
+		strncpy_s(ts->UILanguageFile_ini, sizeof(ts->UILanguageFile_ini), Temp, _TRUNCATE);
+
+		GetCurrentDirectory(sizeof(CurDir), CurDir);
+		SetCurrentDirectory(ts->HomeDir);
+		_fullpath(ts->UILanguageFile, Temp, sizeof(ts->UILanguageFile));
+		SetCurrentDirectory(CurDir);
+	}
 
 	// Broadcast Command History (2007.3.3 maya)
 	ts->BroadcastCommandHistory =

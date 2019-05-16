@@ -14,8 +14,6 @@
 #include <YCL/Window.h>
 #include <YCL/Hashtable.h>
 
-#include "dlglib.h"
-
 namespace yebisuya {
 
 class Dialog : virtual public Window {
@@ -111,11 +109,7 @@ public:
 	}
 	int open(HINSTANCE instance, int resourceId, HWND owner = NULL) {
 		YCLVERIFY(prepareOpen(this) == NULL, "Another dialog has been opening yet.");
-#if 0
 		return ::DialogBoxParam(instance, MAKEINTRESOURCE(resourceId), owner, DialogProc, NULL);
-#else
-		return TTDialogBoxParam(instance, MAKEINTRESOURCE(resourceId), owner, DialogProc, NULL);
-#endif
 	}
 protected:
 	virtual bool dispatch(int message, int wparam, long lparam) {
