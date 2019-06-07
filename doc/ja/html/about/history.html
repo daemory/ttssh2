@@ -31,32 +31,6 @@
 
 <h2 id="teraterm">Tera Term</h2>
 
-<h3 id="teraterm_4.103">2019.xx.xx (Ver 4.103)</h3>
-<ul class="history">
-  <li>変更
-    <ul>
-      <li>試験的に<a href="../setup/teraterm-misc.html#HighDPI">高DPI対応</a>。デフォルトはdisable。teraterm.iniの[Tera Term]セクションにDPIAware=onとすると有効となる。Windows 10 Version 1703以降のみ有効。</li>
-      <li>ダイアログのフォントを設定できるようにした(<a href="../menu/setup-font.html">[Setup]/[Font])</a>。フォントサブメニューを追加した。ダイアログフォントのデフォルトは従来と同じフォント。</li>
-      <li>罫線を表示するためのフォントファイル(TSPECIAL1.TTF)がインストールされていない場合、ttermpro.exeと同一フォルダから読み込むようにした。</li>
-      <li>MACRO: <a href="../macro/command/exec.html">exec</a> マクロコマンドの実行結果を result システム変数に代入するようにした。</li>
-    </ul>
-  </li>
-  <li>バグ修正
-    <ul>
-      <li>IMEの変換候補ウィンドウの表示位置がカーソル位置に追従しない問題を修正した。4.102でのエンバグ。</li>
-      <li>U+2014 EM DASH, U+2212 MINUS SIGN, U+301C WAVE DASH 等の文字が表示できない問題を修正した。4.102でのエンバグ。</li>
-      <li>MACRO: <a href="../macro/command/exec.html">exec</a> マクロコマンドを実行するとハンドルリークが発生する問題を修正した。</li>
-    </ul>
-  </li>
-
-  <li>その他
-    <ul>
-      <li><a href="#ttssh_2.89">TTSSH(2.89)</a>へ差し替えた。</li>
-      <li>Oniguruma 6.9.2へ差し替えた。</li>
-    </ul>
-  </li>
-</ul>
-
 <h3 id="teraterm_4.102">2019.02.28 (Ver 4.102)</h3>
 <ul class="history">
   <li>変更
@@ -3123,22 +3097,6 @@
 
 
 <h2 id="ttssh">TTSSH</h2>
-
-<h3 id="ttssh_2.89">2019.xx.xx (Ver 2.89)</h3>
-<ul class="history">
-  <li>バグ修正
-    <ul>
-      <li>設定の保存時、CipherOrder, MacOrder 設定にゴミが付加される問題を修正した。</li>
-      <li>サーバの認証情報メッセージで echo フラグが 1 の時にもキーボードインタラクティブ認証ダイアログでパスワードがマスクされる問題を修正した。</li>
-    </ul>
-  </li>
-
-  <li>その他
-    <ul>
-      <li>OpenSSL 1.0.2sへ差し替えた。</li>
-    </ul>
-  </li>
-</ul>
 
 <h3 id="ttssh_2.88">2019.02.28 (Ver 2.88)</h3>
 <ul class="history">

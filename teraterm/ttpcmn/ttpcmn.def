@@ -23,10 +23,8 @@ EXPORTS
   CommBinaryOut @24
   CommBinaryBuffOut @52
   CommTextOut @25
-  CommTextOutW
   CommBinaryEcho @26
   CommTextEcho @27
-  CommTextEchoW
   DetectComPorts @42
   GetDefaultFName @47
   ExtractFileName @48
@@ -90,8 +88,4 @@ EXPORTS
   parse_port @90
   parse_port_from_buf @91
   service_name @92
-  get_OPENFILENAME_SIZEA @93
-
-  SetI18DlgStrs
-  SetI18MenuStrs
-  GetMessageboxFont
+  get_OPENFILENAME_SIZE @93

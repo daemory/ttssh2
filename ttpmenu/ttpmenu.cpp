@@ -17,8 +17,7 @@
 #include	"winmisc.h"
 #include	"resource.h"
 
-#include	"compat_w95.h"
-#include	"ttlib.h"
+#include "compat_w95.h"
 
 // UTF-8 TeraTermでは、デフォルトインストール先を下記に変更した。(2004.12.2 yutaka)
 // さらに、デフォルトインストール先はカレントディレクトリに変更。(2004.12.14 yutaka)
@@ -1769,7 +1768,7 @@ BOOL SaveLoginHostInformation(HWND hWnd)
 	GetModuleFileName(NULL, modulePath, sizeof(modulePath));
 	ExtractDirName(modulePath, modulePath);
 	SetCurrentDirectory(modulePath);
-	if (::GetFileAttributes(g_JobInfo.szTeraTerm) == INVALID_FILE_ATTRIBUTES) {
+	if (::GetFileAttributes(g_JobInfo.szTeraTerm) == 0xFFFFFFFF) {
 		dwErr = ::GetLastError();
 		if (dwErr == ERROR_FILE_NOT_FOUND || dwErr == ERROR_PATH_NOT_FOUND) {
 			UTIL_get_lang_msg("MSG_ERROR_CHECKFILE", uimsg, sizeof(uimsg),

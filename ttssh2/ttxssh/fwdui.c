@@ -37,16 +37,11 @@ See LICENSE.TXT for the license.
 #include "resource.h"
 #include "x11util.h"
 #include "util.h"
-#include "dlglib.h"
 
 #include "servicenames.h"
 
-#undef DialogBoxParam
-#define DialogBoxParam(p1,p2,p3,p4,p5) \
-	TTDialogBoxParam(p1,p2,p3,p4,p5)
-#undef EndDialog
-#define EndDialog(p1,p2) \
-	TTEndDialog(p1, p2)
+static HFONT DlgFwdEditFont;
+static HFONT DlgFwdFont;
 
 typedef struct {
 	FWDRequestSpec *spec;
@@ -980,6 +975,8 @@ static BOOL CALLBACK fwd_edit_dlg_proc(HWND dlg, UINT msg, WPARAM wParam,
 {
 	FWDEditClosure *closure;
 	PTInstVar pvar;
+	LOGFONT logfont;
+	HFONT font;
 	BOOL result;
 
 	switch (msg) {
@@ -989,7 +986,37 @@ static BOOL CALLBACK fwd_edit_dlg_proc(HWND dlg, UINT msg, WPARAM wParam,
 
 		pvar = closure->pvar;
 		init_fwd_edit_dlg(pvar, closure->spec, dlg);
-		CenterWindow(dlg, GetParent(dlg));
+
+		font = (HFONT)SendMessage(dlg, WM_GETFONT, 0, 0);
+		GetObject(font, sizeof(LOGFONT), &logfont);
+		if (UTIL_get_lang_font("DLG_TAHOMA_FONT", dlg, &logfont, &DlgFwdEditFont, pvar)) {
+			SendDlgItemMessage(dlg, IDD_SSHFWDBANNER, WM_SETFONT, (WPARAM)DlgFwdEditFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_SSHFWDLOCALTOREMOTE, WM_SETFONT, (WPARAM)DlgFwdEditFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_SSHLTRFROMPORT, WM_SETFONT, (WPARAM)DlgFwdEditFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_SSHFWDLOCALTOREMOTE_LISTEN, WM_SETFONT, (WPARAM)DlgFwdEditFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_SSHLTRLISTENADDR, WM_SETFONT, (WPARAM)DlgFwdEditFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_SSHFWDLOCALTOREMOTE_HOST, WM_SETFONT, (WPARAM)DlgFwdEditFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_SSHLTRTOHOST, WM_SETFONT, (WPARAM)DlgFwdEditFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_SSHFWDLOCALTOREMOTE_PORT, WM_SETFONT, (WPARAM)DlgFwdEditFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_SSHLTRTOPORT, WM_SETFONT, (WPARAM)DlgFwdEditFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_SSHFWDREMOTETOLOCAL, WM_SETFONT, (WPARAM)DlgFwdEditFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_SSHRTLFROMPORT, WM_SETFONT, (WPARAM)DlgFwdEditFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_SSHFWDREMOTETOLOCAL_LISTEN, WM_SETFONT, (WPARAM)DlgFwdEditFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_SSHRTLLISTENADDR, WM_SETFONT, (WPARAM)DlgFwdEditFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_SSHFWDREMOTETOLOCAL_HOST, WM_SETFONT, (WPARAM)DlgFwdEditFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_SSHRTLTOHOST, WM_SETFONT, (WPARAM)DlgFwdEditFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_SSHFWDREMOTETOLOCAL_PORT, WM_SETFONT, (WPARAM)DlgFwdEditFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_SSHRTLTOPORT, WM_SETFONT, (WPARAM)DlgFwdEditFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_SSHFWDLOCALDYNAMIC, WM_SETFONT, (WPARAM)DlgFwdEditFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_SSHDYNFROMPORT, WM_SETFONT, (WPARAM)DlgFwdEditFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_SSHFWDLOCALDYNAMIC_LISTEN, WM_SETFONT, (WPARAM)DlgFwdEditFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_SSHDYNLISTENADDR, WM_SETFONT, (WPARAM)DlgFwdEditFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDOK, WM_SETFONT, (WPARAM)DlgFwdEditFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDCANCEL, WM_SETFONT, (WPARAM)DlgFwdEditFont, MAKELPARAM(TRUE,0));
+		}
+		else {
+			DlgFwdEditFont = NULL;
+		}
 		return FALSE;			/* because we set the focus */
 
 	case WM_COMMAND:
@@ -1001,12 +1028,20 @@ static BOOL CALLBACK fwd_edit_dlg_proc(HWND dlg, UINT msg, WPARAM wParam,
 			result = end_fwd_edit_dlg(closure->pvar, closure->spec, dlg);
 
 			if (result) {
+				if (DlgFwdEditFont != NULL) {
+					DeleteObject(DlgFwdEditFont);
+				}
 			}
 
 			return result;
 
 		case IDCANCEL:
 			EndDialog(dlg, 0);
+
+			if (DlgFwdEditFont != NULL) {
+				DeleteObject(DlgFwdEditFont);
+			}
+
 			return TRUE;
 
 		case IDC_SSHFWDLOCALTOREMOTE:
@@ -1105,6 +1140,8 @@ static BOOL CALLBACK fwd_dlg_proc(HWND dlg, UINT msg, WPARAM wParam,
                                   LPARAM lParam)
 {
 	PTInstVar pvar;
+	LOGFONT logfont;
+	HFONT font;
 	BOOL ret;
 
 	switch (msg) {
@@ -1113,7 +1150,24 @@ static BOOL CALLBACK fwd_dlg_proc(HWND dlg, UINT msg, WPARAM wParam,
 		SetWindowLong(dlg, DWL_USER, lParam);
 
 		init_fwd_dlg(pvar, dlg);
-		CenterWindow(dlg, GetParent(dlg));
+
+		font = (HFONT)SendMessage(dlg, WM_GETFONT, 0, 0);
+		GetObject(font, sizeof(LOGFONT), &logfont);
+		if (UTIL_get_lang_font("DLG_TAHOMA_FONT", dlg, &logfont, &DlgFwdFont, pvar)) {
+			SendDlgItemMessage(dlg, IDC_PORTFORWARD, WM_SETFONT, (WPARAM)DlgFwdFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_SSHFWDLIST, WM_SETFONT, (WPARAM)DlgFwdFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_ADD, WM_SETFONT, (WPARAM)DlgFwdFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_EDIT, WM_SETFONT, (WPARAM)DlgFwdFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_REMOVE, WM_SETFONT, (WPARAM)DlgFwdFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_XFORWARD, WM_SETFONT, (WPARAM)DlgFwdFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_SSHFWDX11, WM_SETFONT, (WPARAM)DlgFwdFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDOK, WM_SETFONT, (WPARAM)DlgFwdFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDCANCEL, WM_SETFONT, (WPARAM)DlgFwdFont, MAKELPARAM(TRUE,0));
+		}
+		else {
+			DlgFwdFont = NULL;
+		}
+
 		return TRUE;			/* because we do not set the focus */
 
 	case WM_COMMAND:
@@ -1123,11 +1177,21 @@ static BOOL CALLBACK fwd_dlg_proc(HWND dlg, UINT msg, WPARAM wParam,
 		case IDOK:
 
 			ret = end_fwd_dlg(pvar, dlg);
+
+			if (ret == TRUE && DlgFwdFont != NULL) {
+				DeleteObject(DlgFwdFont);
+			}
+
 			return ret;
 
 		case IDCANCEL:
 			free_all_listbox_specs(dlg);
 			EndDialog(dlg, 0);
+
+			if (DlgFwdFont != NULL) {
+				DeleteObject(DlgFwdFont);
+			}
+
 			return TRUE;
 
 		case IDC_ADD:

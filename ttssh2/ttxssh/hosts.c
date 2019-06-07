@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 1998-2001, Robert O'Callahan
- * (C) 2004-2019 TeraTerm Project
+ * (C) 2004-2017 TeraTerm Project
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -39,8 +39,6 @@ See LICENSE.TXT for the license.
 #include "key.h"
 #include "hosts.h"
 #include "dns.h"
-#include "dlglib.h"
-#include "compat_win.h"
 
 #include <openssl/bn.h>
 #include <openssl/evp.h>
@@ -55,12 +53,8 @@ See LICENSE.TXT for the license.
 #include <memory.h>
 
 
-#undef DialogBoxParam
-#define DialogBoxParam(p1,p2,p3,p4,p5) \
-	TTDialogBoxParam(p1,p2,p3,p4,p5)
-#undef EndDialog
-#define EndDialog(p1,p2) \
-	TTEndDialog(p1, p2)
+static HFONT DlgHostsAddFont;
+static HFONT DlgHostsReplaceFont;
 
 // BASE64構成文字列（ここでは'='は含まれていない）
 static char base64[] ="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -985,11 +979,7 @@ static void init_hosts_dlg(PTInstVar pvar, HWND dlg)
 
 	SetDlgItemText(dlg, IDC_HOSTWARNING, buf2);
 
-	pvar->hFontFixed = UTIL_get_lang_fixedfont(dlg, pvar->ts->UILanguageFile);
-	if (pvar->hFontFixed != NULL) {
-		SendDlgItemMessage(dlg, IDC_FP_RANDOMART, WM_SETFONT,
-						   (WPARAM)pvar->hFontFixed, MAKELPARAM(TRUE,0));
-	}
+	SendMessage(GetDlgItem(dlg, IDC_FP_RANDOMART), WM_SETFONT, (WPARAM)GetStockObject(ANSI_FIXED_FONT), TRUE);
 
 	CheckDlgButton(dlg, IDC_FP_HASH_ALG_SHA256, TRUE);
 	hosts_dlg_set_fingerprint(pvar, dlg, SSH_DIGEST_SHA256);
@@ -1712,6 +1702,8 @@ static BOOL CALLBACK hosts_add_dlg_proc(HWND dlg, UINT msg, WPARAM wParam,
                                         LPARAM lParam)
 {
 	PTInstVar pvar;
+	LOGFONT logfont;
+	HFONT font;
 	char uimsg[MAX_UIMSG];
 
 	switch (msg) {
@@ -1784,10 +1776,29 @@ static BOOL CALLBACK hosts_add_dlg_proc(HWND dlg, UINT msg, WPARAM wParam,
 		}
 
 		init_hosts_dlg(pvar, dlg);
+
+		font = (HFONT)SendMessage(dlg, WM_GETFONT, 0, 0);
+		GetObject(font, sizeof(LOGFONT), &logfont);
+		if (UTIL_get_lang_font("DLG_TAHOMA_FONT", dlg, &logfont, &DlgHostsAddFont, pvar)) {
+			SendDlgItemMessage(dlg, IDC_HOSTWARNING, WM_SETFONT, (WPARAM)DlgHostsAddFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_HOSTWARNING2, WM_SETFONT, (WPARAM)DlgHostsAddFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_HOSTSSHFPCHECK, WM_SETFONT, (WPARAM)DlgHostsAddFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_HOSTSSHFPDNSSEC, WM_SETFONT, (WPARAM)DlgHostsAddFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_HOSTFINGERPRINT, WM_SETFONT, (WPARAM)DlgHostsAddFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_FP_HASH_ALG, WM_SETFONT, (WPARAM)DlgHostsAddFont, MAKELPARAM(TRUE, 0));
+			SendDlgItemMessage(dlg, IDC_FP_HASH_ALG_MD5, WM_SETFONT, (WPARAM)DlgHostsAddFont, MAKELPARAM(TRUE, 0));
+			SendDlgItemMessage(dlg, IDC_FP_HASH_ALG_SHA256, WM_SETFONT, (WPARAM)DlgHostsAddFont, MAKELPARAM(TRUE, 0));
+			SendDlgItemMessage(dlg, IDC_FINGER_PRINT, WM_SETFONT, (WPARAM)DlgHostsAddFont, MAKELPARAM(TRUE, 0));
+			SendDlgItemMessage(dlg, IDC_ADDTOKNOWNHOSTS, WM_SETFONT, (WPARAM)DlgHostsAddFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_CONTINUE, WM_SETFONT, (WPARAM)DlgHostsAddFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDCANCEL, WM_SETFONT, (WPARAM)DlgHostsAddFont, MAKELPARAM(TRUE,0));
+		}
+		else {
+			DlgHostsAddFont = NULL;
+		}
+
 		// add host check boxにチェックをデフォルトで入れておく 
 		SendMessage(GetDlgItem(dlg, IDC_ADDTOKNOWNHOSTS), BM_SETCHECK, BST_CHECKED, 0);
-
-		CenterWindow(dlg, GetParent(dlg));
 
 		return TRUE;			/* because we do not set the focus */
 
@@ -1814,6 +1825,11 @@ static BOOL CALLBACK hosts_add_dlg_proc(HWND dlg, UINT msg, WPARAM wParam,
 			pvar->hosts_state.hosts_dialog = NULL;
 
 			EndDialog(dlg, 1);
+
+			if (DlgHostsAddFont != NULL) {
+				DeleteObject(DlgHostsAddFont);
+			}
+
 			return TRUE;
 
 		case IDCANCEL:			/* kill the connection */
@@ -1821,6 +1837,11 @@ canceled:
 			pvar->hosts_state.hosts_dialog = NULL;
 			notify_closed_connection(pvar, "authentication cancelled");
 			EndDialog(dlg, 0);
+
+			if (DlgHostsAddFont != NULL) {
+				DeleteObject(DlgHostsAddFont);
+			}
+
 			return TRUE;
 
 		case IDC_FP_HASH_ALG_MD5:
@@ -1835,26 +1856,6 @@ canceled:
 			return FALSE;
 		}
 
-	case WM_DPICHANGED:
-		pvar = (PTInstVar) GetWindowLongPtr(dlg, DWLP_USER);
-		if (pvar->hFontFixed != NULL) {
-			DeleteObject(pvar->hFontFixed);
-		}
-		pvar->hFontFixed = UTIL_get_lang_fixedfont(dlg, pvar->ts->UILanguageFile);
-		if (pvar->hFontFixed != NULL) {
-			SendDlgItemMessage(dlg, IDC_FP_RANDOMART, WM_SETFONT,
-							   (WPARAM)pvar->hFontFixed, MAKELPARAM(TRUE,0));
-		}
-		return FALSE;
-
-	case WM_DESTROY:
-		pvar = (PTInstVar) GetWindowLongPtr(dlg, DWLP_USER);
-		if (pvar->hFontFixed != NULL) {
-			DeleteObject(pvar->hFontFixed);
-			pvar->hFontFixed = NULL;
-		}
-		return FALSE;
-
 	default:
 		return FALSE;
 	}
@@ -1867,6 +1868,8 @@ static BOOL CALLBACK hosts_replace_dlg_proc(HWND dlg, UINT msg, WPARAM wParam,
                                             LPARAM lParam)
 {
 	PTInstVar pvar;
+	LOGFONT logfont;
+	HFONT font;
 	char uimsg[MAX_UIMSG];
 
 	switch (msg) {
@@ -1939,7 +1942,26 @@ static BOOL CALLBACK hosts_replace_dlg_proc(HWND dlg, UINT msg, WPARAM wParam,
 		}
 
 		init_hosts_dlg(pvar, dlg);
-		CenterWindow(dlg, GetParent(dlg));
+
+		font = (HFONT)SendMessage(dlg, WM_GETFONT, 0, 0);
+		GetObject(font, sizeof(LOGFONT), &logfont);
+		if (UTIL_get_lang_font("DLG_TAHOMA_FONT", dlg, &logfont, &DlgHostsReplaceFont, pvar)) {
+			SendDlgItemMessage(dlg, IDC_HOSTWARNING, WM_SETFONT, (WPARAM)DlgHostsReplaceFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_HOSTWARNING2, WM_SETFONT, (WPARAM)DlgHostsReplaceFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_HOSTSSHFPCHECK, WM_SETFONT, (WPARAM)DlgHostsReplaceFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_HOSTSSHFPDNSSEC, WM_SETFONT, (WPARAM)DlgHostsReplaceFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_HOSTFINGERPRINT, WM_SETFONT, (WPARAM)DlgHostsReplaceFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_FP_HASH_ALG, WM_SETFONT, (WPARAM)DlgHostsReplaceFont, MAKELPARAM(TRUE, 0));
+			SendDlgItemMessage(dlg, IDC_FP_HASH_ALG_MD5, WM_SETFONT, (WPARAM)DlgHostsReplaceFont, MAKELPARAM(TRUE, 0));
+			SendDlgItemMessage(dlg, IDC_FP_HASH_ALG_SHA256, WM_SETFONT, (WPARAM)DlgHostsReplaceFont, MAKELPARAM(TRUE, 0));
+			SendDlgItemMessage(dlg, IDC_ADDTOKNOWNHOSTS, WM_SETFONT, (WPARAM)DlgHostsReplaceFont, MAKELPARAM(TRUE, 0));
+			SendDlgItemMessage(dlg, IDC_CONTINUE, WM_SETFONT, (WPARAM)DlgHostsReplaceFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDCANCEL, WM_SETFONT, (WPARAM)DlgHostsReplaceFont, MAKELPARAM(TRUE,0));
+		}
+		else {
+			DlgHostsReplaceFont = NULL;
+		}
+
 		// デフォルトでチェックは入れない
 		return TRUE;			/* because we do not set the focus */
 
@@ -1967,6 +1989,11 @@ static BOOL CALLBACK hosts_replace_dlg_proc(HWND dlg, UINT msg, WPARAM wParam,
 			pvar->hosts_state.hosts_dialog = NULL;
 
 			EndDialog(dlg, 1);
+
+			if (DlgHostsReplaceFont != NULL) {
+				DeleteObject(DlgHostsReplaceFont);
+			}
+
 			return TRUE;
 
 		case IDCANCEL:			/* kill the connection */
@@ -1974,6 +2001,11 @@ canceled:
 			pvar->hosts_state.hosts_dialog = NULL;
 			notify_closed_connection(pvar, "authentication cancelled");
 			EndDialog(dlg, 0);
+
+			if (DlgHostsReplaceFont != NULL) {
+				DeleteObject(DlgHostsReplaceFont);
+			}
+
 			return TRUE;
 
 		case IDC_FP_HASH_ALG_MD5:
@@ -1988,26 +2020,6 @@ canceled:
 			return FALSE;
 		}
 
-	case WM_DPICHANGED:
-		pvar = (PTInstVar) GetWindowLongPtr(dlg, DWLP_USER);
-		if (pvar->hFontFixed != NULL) {
-			DeleteObject(pvar->hFontFixed);
-		}
-		pvar->hFontFixed = UTIL_get_lang_fixedfont(dlg, pvar->ts->UILanguageFile);
-		if (pvar->hFontFixed != NULL) {
-			SendDlgItemMessage(dlg, IDC_FP_RANDOMART, WM_SETFONT,
-							   (WPARAM)pvar->hFontFixed, MAKELPARAM(TRUE,0));
-		}
-		return FALSE;
-
-	case WM_DESTROY:
-		pvar = (PTInstVar) GetWindowLongPtr(dlg, DWLP_USER);
-		if (pvar->hFontFixed != NULL) {
-			DeleteObject(pvar->hFontFixed);
-			pvar->hFontFixed = NULL;
-		}
-		return FALSE;
-
 	default:
 		return FALSE;
 	}
@@ -2020,6 +2032,8 @@ static BOOL CALLBACK hosts_add2_dlg_proc(HWND dlg, UINT msg, WPARAM wParam,
                                          LPARAM lParam)
 {
 	PTInstVar pvar;
+	LOGFONT logfont;
+	HFONT font;
 	char uimsg[MAX_UIMSG];
 
 	switch (msg) {
@@ -2092,7 +2106,27 @@ static BOOL CALLBACK hosts_add2_dlg_proc(HWND dlg, UINT msg, WPARAM wParam,
 		}
 
 		init_hosts_dlg(pvar, dlg);
-		CenterWindow(dlg, GetParent(dlg));
+
+		font = (HFONT)SendMessage(dlg, WM_GETFONT, 0, 0);
+		GetObject(font, sizeof(LOGFONT), &logfont);
+		if (UTIL_get_lang_font("DLG_TAHOMA_FONT", dlg, &logfont, &DlgHostsAddFont, pvar)) {
+			SendDlgItemMessage(dlg, IDC_HOSTWARNING, WM_SETFONT, (WPARAM)DlgHostsAddFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_HOSTWARNING2, WM_SETFONT, (WPARAM)DlgHostsAddFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_HOSTSSHFPCHECK, WM_SETFONT, (WPARAM)DlgHostsAddFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_HOSTSSHFPDNSSEC, WM_SETFONT, (WPARAM)DlgHostsAddFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_HOSTFINGERPRINT, WM_SETFONT, (WPARAM)DlgHostsAddFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_FP_HASH_ALG, WM_SETFONT, (WPARAM)DlgHostsAddFont, MAKELPARAM(TRUE, 0));
+			SendDlgItemMessage(dlg, IDC_FP_HASH_ALG_MD5, WM_SETFONT, (WPARAM)DlgHostsAddFont, MAKELPARAM(TRUE, 0));
+			SendDlgItemMessage(dlg, IDC_FP_HASH_ALG_SHA256, WM_SETFONT, (WPARAM)DlgHostsAddFont, MAKELPARAM(TRUE, 0));
+			SendDlgItemMessage(dlg, IDC_FINGER_PRINT, WM_SETFONT, (WPARAM)DlgHostsAddFont, MAKELPARAM(TRUE, 0));
+			SendDlgItemMessage(dlg, IDC_ADDTOKNOWNHOSTS, WM_SETFONT, (WPARAM)DlgHostsAddFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_CONTINUE, WM_SETFONT, (WPARAM)DlgHostsAddFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDCANCEL, WM_SETFONT, (WPARAM)DlgHostsAddFont, MAKELPARAM(TRUE,0));
+		}
+		else {
+			DlgHostsAddFont = NULL;
+		}
+
 		// add host check box のデフォルトは off にする
 		// SendMessage(GetDlgItem(dlg, IDC_ADDTOKNOWNHOSTS), BM_SETCHECK, BST_CHECKED, 0);
 
@@ -2121,6 +2155,11 @@ static BOOL CALLBACK hosts_add2_dlg_proc(HWND dlg, UINT msg, WPARAM wParam,
 			pvar->hosts_state.hosts_dialog = NULL;
 
 			EndDialog(dlg, 1);
+
+			if (DlgHostsAddFont != NULL) {
+				DeleteObject(DlgHostsAddFont);
+			}
+
 			return TRUE;
 
 		case IDCANCEL:			/* kill the connection */
@@ -2128,6 +2167,11 @@ canceled:
 			pvar->hosts_state.hosts_dialog = NULL;
 			notify_closed_connection(pvar, "authentication cancelled");
 			EndDialog(dlg, 0);
+
+			if (DlgHostsAddFont != NULL) {
+				DeleteObject(DlgHostsAddFont);
+			}
+
 			return TRUE;
 
 		case IDC_FP_HASH_ALG_MD5:
@@ -2141,26 +2185,6 @@ canceled:
 		default:
 			return FALSE;
 		}
-
-	case WM_DPICHANGED:
-		pvar = (PTInstVar) GetWindowLongPtr(dlg, DWLP_USER);
-		if (pvar->hFontFixed != NULL) {
-			DeleteObject(pvar->hFontFixed);
-		}
-		pvar->hFontFixed = UTIL_get_lang_fixedfont(dlg, pvar->ts->UILanguageFile);
-		if (pvar->hFontFixed != NULL) {
-			SendDlgItemMessage(dlg, IDC_FP_RANDOMART, WM_SETFONT,
-							   (WPARAM)pvar->hFontFixed, MAKELPARAM(TRUE,0));
-		}
-		return FALSE;
-
-	case WM_DESTROY:
-		pvar = (PTInstVar) GetWindowLongPtr(dlg, DWLP_USER);
-		if (pvar->hFontFixed != NULL) {
-			DeleteObject(pvar->hFontFixed);
-			pvar->hFontFixed = NULL;
-		}
-		return FALSE;
 
 	default:
 		return FALSE;

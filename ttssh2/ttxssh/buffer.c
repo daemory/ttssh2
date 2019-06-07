@@ -247,7 +247,7 @@ char *buffer_get_string(char **data_ptr, int *buflen_ptr)
 
 	ptr = malloc(buflen + 1);
 	if (ptr == NULL) {
-		logprintf(LOG_LEVEL_ERROR, "%s: malloc failed.", __FUNCTION__);
+		logputs(LOG_LEVEL_ERROR, __FUNCTION__ ": malloc failed.");
 		if (buflen_ptr != NULL)
 			*buflen_ptr = 0;
 		return NULL;

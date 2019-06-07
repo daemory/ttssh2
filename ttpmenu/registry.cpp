@@ -46,7 +46,7 @@ LPCTSTR getModuleName()
 void checkIniFile()
 {
 	DWORD dwAttr = ::GetFileAttributes(getModuleName());
-	bUseINI = dwAttr != INVALID_FILE_ATTRIBUTES;
+	bUseINI = dwAttr != 0xFFFFFFFF;
 }
 
 /* ==========================================================================

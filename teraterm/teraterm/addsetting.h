@@ -1,5 +1,5 @@
 /*
- * (C) 2008-2019 TeraTerm Project
+ * (C) 2008-2017 TeraTerm Project
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -28,112 +28,191 @@
 
 #pragma once
 
-#include "tmfc.h"
 #include "tt_res.h"
 #include "teraterm.h"
 
+
 typedef struct {
-	const char *name;
+	char *name;
 	LPCTSTR id;
 } mouse_cursor_t;
 
-extern const mouse_cursor_t MouseCursor[];
+
 
 // General Page
-class CGeneralPropPageDlg : public TTCPropertyPage
+class CGeneralPropPageDlg : public CPropertyPage
 {
+	DECLARE_DYNAMIC(CGeneralPropPageDlg)
+
 public:
-	CGeneralPropPageDlg(HINSTANCE inst, TTCPropertySheet *sheet);
+	CGeneralPropPageDlg();
 	virtual ~CGeneralPropPageDlg();
-private:
-	void OnInitDialog();
+	BOOL OnInitDialog();
 	void OnOK();
+
 	enum { IDD = IDD_TABSHEET_GENERAL };
+
+private:
+	HFONT DlgGeneralFont;
+	LOGFONT logfont;
+	HFONT font;
+
+protected:
+	DECLARE_MESSAGE_MAP()
 };
+
+
 
 // Control Sequence Page
-class CSequencePropPageDlg : public TTCPropertyPage
+class CSequencePropPageDlg : public CPropertyPage
 {
+	DECLARE_DYNAMIC(CSequencePropPageDlg)
+
 public:
-	CSequencePropPageDlg(HINSTANCE inst, TTCPropertySheet *sheet);
+	CSequencePropPageDlg();
 	virtual ~CSequencePropPageDlg();
-private:
-	void OnInitDialog();
+	BOOL OnInitDialog();
 	void OnOK();
+
 	enum { IDD = IDD_TABSHEET_SEQUENCE };
-	BOOL OnCommand(WPARAM wParam, LPARAM lParam);
+
+private:
+	HFONT DlgSequenceFont;
+	LOGFONT logfont;
+	HFONT font;
+
+protected:
+	DECLARE_MESSAGE_MAP()
+	virtual BOOL OnCommand(WPARAM wParam, LPARAM lParam);
 };
+
+
 
 // Copypaste Page
-class CCopypastePropPageDlg : public TTCPropertyPage
+class CCopypastePropPageDlg : public CPropertyPage
 {
+	DECLARE_DYNAMIC(CCopypastePropPageDlg)
+
 public:
-	CCopypastePropPageDlg(HINSTANCE inst, TTCPropertySheet *sheet);
+	CCopypastePropPageDlg();
 	virtual ~CCopypastePropPageDlg();
-private:
-	void OnInitDialog();
+	BOOL OnInitDialog();
 	void OnOK();
+
 	enum { IDD = IDD_TABSHEET_COPYPASTE };
-	BOOL OnCommand(WPARAM wParam, LPARAM lParam);
+
+private:
+	HFONT DlgCopypasteFont;
+	LOGFONT logfont;
+	HFONT font;
+
+protected:
+	DECLARE_MESSAGE_MAP()
+	virtual BOOL OnCommand(WPARAM wParam, LPARAM lParam);
 };
+
+
 
 // Visual Page
-class CVisualPropPageDlg : public TTCPropertyPage
+class CVisualPropPageDlg : public CPropertyPage
 {
+	DECLARE_DYNAMIC(CVisualPropPageDlg)
+
 public:
-	CVisualPropPageDlg(HINSTANCE inst, TTCPropertySheet *sheet);
+	CVisualPropPageDlg();
 	virtual ~CVisualPropPageDlg();
-private:
-	void OnInitDialog();
+	BOOL OnInitDialog();
 	void OnOK();
-	HBRUSH OnCtlColor(HDC hDC, HWND hWnd);
+
 	enum { IDD = IDD_TABSHEET_VISUAL };
-	BOOL OnCommand(WPARAM wParam, LPARAM lParam);
-	void SetupRGBbox(int index);
+
+private:
+	HFONT DlgVisualFont;
+	LOGFONT logfont;
+	HFONT font;
+
+protected:
+	DECLARE_MESSAGE_MAP()
+	virtual BOOL OnCommand(WPARAM wParam, LPARAM lParam);
 };
+
+
 
 // Log Page
-class CLogPropPageDlg : public TTCPropertyPage
+class CLogPropPageDlg : public CPropertyPage
 {
+	DECLARE_DYNAMIC(CLogPropPageDlg)
+
 public:
-	CLogPropPageDlg(HINSTANCE inst, TTCPropertySheet *sheet);
+	CLogPropPageDlg();
 	virtual ~CLogPropPageDlg();
-private:
-	void OnInitDialog();
+	BOOL OnInitDialog();
 	void OnOK();
+
 	enum { IDD = IDD_TABSHEET_LOG };
-	BOOL OnCommand(WPARAM wParam, LPARAM lParam);
+
+private:
+	HFONT DlgLogFont;
+	LOGFONT logfont;
+	HFONT font;
+
+protected:
+	DECLARE_MESSAGE_MAP()
+	virtual BOOL OnCommand(WPARAM wParam, LPARAM lParam);
 };
+
+
 
 // Cygwin Page
-class CCygwinPropPageDlg : public TTCPropertyPage
+class CCygwinPropPageDlg : public CPropertyPage
 {
+	DECLARE_DYNAMIC(CCygwinPropPageDlg)
+
 public:
-	CCygwinPropPageDlg(HINSTANCE inst, TTCPropertySheet *sheet);
+	CCygwinPropPageDlg();
 	virtual ~CCygwinPropPageDlg();
-private:
-	void OnInitDialog();
+	BOOL OnInitDialog();
 	void OnOK();
+
 	enum { IDD = IDD_TABSHEET_CYGWIN };
+
+private:
+	HFONT DlgCygwinFont;
+	LOGFONT logfont;
+	HFONT font;
 	cygterm_t settings;
-	BOOL OnCommand(WPARAM wParam, LPARAM lParam);
+
+protected:
+	DECLARE_MESSAGE_MAP()
+	virtual BOOL OnCommand(WPARAM wParam, LPARAM lParam);
 };
 
+
+
 // Property Sheet
-class CAddSettingPropSheetDlg : public TTCPropertySheet
+class CAddSettingPropSheetDlg : public CPropertySheet
 {
+	DECLARE_DYNAMIC(CAddSettingPropSheetDlg)
+
 public:
-	CAddSettingPropSheetDlg(HINSTANCE hInstance, LPCTSTR pszCaption, HWND hParentWnd);
+	CAddSettingPropSheetDlg(UINT nIDCaption, CWnd* pParentWnd = NULL, UINT iSelectPage = 0);
+	CAddSettingPropSheetDlg(LPCTSTR pszCaption, CWnd* pParentWnd = NULL, UINT iSelectPage = 0);
 	virtual ~CAddSettingPropSheetDlg();
+	BOOL OnInitDialog();
+
 private:
-	void OnInitDialog();
+	HFONT DlgAdditionalFont;
+	LOGFONT logfont;
+	HFONT font;
 
-	HPROPSHEETPAGE hPsp[6];
+protected:
+	DECLARE_MESSAGE_MAP()
 
-	CGeneralPropPageDlg   *m_GeneralPage;
-	CSequencePropPageDlg  *m_SequencePage;
-	CCopypastePropPageDlg *m_CopypastePage;
-	CVisualPropPageDlg    *m_VisualPage;
-	CLogPropPageDlg       *m_LogPage;
-	CCygwinPropPageDlg    *m_CygwinPage;
+public:
+	CGeneralPropPageDlg   m_GeneralPage;
+	CSequencePropPageDlg  m_SequencePage;
+	CCopypastePropPageDlg m_CopypastePage;
+	CVisualPropPageDlg    m_VisualPage;
+	CLogPropPageDlg       m_LogPage;
+	CCygwinPropPageDlg    m_CygwinPage;
 };

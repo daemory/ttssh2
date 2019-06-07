@@ -32,8 +32,13 @@
 #endif
 
 /* TTCMN.DLL, main */
+#include "teraterm.h"
+#include "tttypes.h"
 #include <direct.h>
 #include <string.h>
+#include "ttftypes.h"
+#include "ttlib.h"
+#include "language.h"
 #include <stdio.h>
 #include <windows.h>
 #include <tchar.h>
@@ -41,21 +46,9 @@
 #include <locale.h>
 #include <htmlhelp.h>
 
-#define DllExport __declspec(dllexport)
-#include "language.h"
-#undef DllExport
-
-#include "teraterm.h"
-#include "tttypes.h"
-#include "ttftypes.h"
-#include "ttlib.h"
 #include "compat_w95.h"
 #include "tt_res.h"
 #include "codeconv.h"
-
-#define DllExport __declspec(dllexport)
-#include "ttcommon.h"
-
 
 // TMap を格納するファイルマッピングオブジェクト(共有メモリ)の名前
 // TMap(とそのメンバ)の更新時は旧バージョンとの同時起動の為に変える必要があるが
@@ -103,6 +96,8 @@ void WINAPI CopyTTSetToShmem(PTTSet ts)
 
 BOOL WINAPI StartTeraTerm(PTTSet ts)
 {
+	char Temp[MAX_PATH];
+
 	if (FirstInstance) {
 		// init window list
 		pm->NWin = 0;
@@ -120,7 +115,10 @@ BOOL WINAPI StartTeraTerm(PTTSet ts)
 	// if (FirstInstance) { の部分から移動 (2008.3.13 maya)
 	// 起動時には、共有メモリの HomeDir と SetupFName は空になる
 	/* Get home directory */
-	GetHomeDir(hInst, ts->HomeDir, sizeof(ts->HomeDir));
+	if (GetModuleFileName(hInst,Temp,sizeof(Temp)) == 0) {
+		return TRUE;
+	}
+	ExtractDirName(Temp, ts->HomeDir);
 	_chdir(ts->HomeDir);
 	GetDefaultSetupFName(ts->HomeDir, ts->SetupFName, sizeof(ts->SetupFName));
 
@@ -1229,7 +1227,7 @@ HWND WINAPI GetNthWin(int n)
 	}
 }
 
-int WINAPI GetRegisteredWindowCount(void)
+int WINAPI GetRegisteredWindowCount()
 {
 	return (pm->NWin);
 }
@@ -1584,20 +1582,25 @@ int WINAPI CommBinaryBuffOut(PComVar cv, PCHAR B, int C)
 	return i;
 }
 
-// 内部コード(CodePage)をUTF-8へ出力する
 static int OutputTextUTF8(WORD K, char *TempStr, PComVar cv)
 {
-	int CodePage = *cv->CodePage;
 	unsigned int code;
 	int outlen;
+	int TempLen = 0;
 
-	code = MBCP_UTF32(K, CodePage);
-	if (code == 0) {
-		// 変換失敗
-		code = 0xfffd; // U+FFFD: Replacement Character
+	code = SJIS2UTF8(K, &outlen, *cv->CodePage);
+	switch (outlen) {
+	  case 4:
+		TempStr[TempLen++] = (code >> 24) & 0xff;
+	  case 3:
+		TempStr[TempLen++] = (code >> 16) & 0xff;
+	  case 2:
+		TempStr[TempLen++] = (code >> 8) & 0xff;
+	  case 1:
+		TempStr[TempLen++] = code & 0xff;
 	}
-	outlen = UTF32ToUTF8(code, TempStr, 4);
-	return outlen;
+
+	return TempLen;
 }
 
 //
@@ -1918,38 +1921,6 @@ int WINAPI CommTextOut(PComVar cv, PCHAR B, int C)
 	} // end of while {}
 
 	return i;
-}
-
-// TODO: UTF-16から直接変換して出力する
-int WINAPI CommTextOutW(PComVar cv, const wchar_t *B, int C)
-{
-	int CodePage = *cv->CodePage;
-	size_t mb_len;
-	int r;
-	char *mb_str = _WideCharToMultiByte(B, C, CodePage, &mb_len);
-	if (mb_str == NULL) {
-		r = 0;
-	} else {
-		r = CommTextOut(cv, mb_str, mb_len);
-		free(mb_str);
-	}
-	return r;
-}
-
-// TODO: UTF-16から直接変換して出力する
-int WINAPI CommTextEchoW(PComVar cv, const wchar_t *B, int C)
-{
-	int CodePage = *cv->CodePage;
-	size_t mb_len;
-	int r;
-	char *mb_str = _WideCharToMultiByte(B, C, CodePage, &mb_len);
-	if (mb_str == NULL) {
-		r = 0;
-	} else {
-		r = CommTextEcho(cv, mb_str, mb_len);
-		free(mb_str);
-	}
-	return r;
 }
 
 int WINAPI CommBinaryEcho(PComVar cv, PCHAR B, int C)
@@ -2489,7 +2460,7 @@ void WINAPI SetCustomNotifyIcon(HICON icon)
 	CustomIcon = icon;
 }
 
-HICON WINAPI GetCustomNotifyIcon(void)
+HICON WINAPI GetCustomNotifyIcon()
 {
 	return CustomIcon;
 }

@@ -29,17 +29,16 @@
 
 // TTCMN.DLL character code conversion
 
-#include <mbstring.h>
-#include <locale.h>
 #include "teraterm.h"
 #include "tttypes.h"
-#include "codemap.h"
+#include <mbstring.h>
+#include <locale.h>
 
-#define DllExport __declspec(dllexport)
 #include "language.h"
+#include "codeconv.h"
+#include "sjis2uni.map"
 
-// exportされている
-DllExport unsigned short ConvertUnicode(unsigned short code, const codemap_t *table, int tmax)
+unsigned short ConvertUnicode(unsigned short code, const codemap_t *table, int tmax)
 {
 	int low, mid, high;
 	unsigned short result;
@@ -65,8 +64,71 @@ DllExport unsigned short ConvertUnicode(unsigned short code, const codemap_t *ta
 	return (result);
 }
 
+// 内部コード(CodePage)をUTF8へ変換する
+unsigned int PASCAL SJIS2UTF8(WORD KCode, int *byte, int CodePage)
+{
+	wchar_t wchar;
+	int ret;
+	unsigned int code;
+	unsigned int c, c1, c2, c3;
+	unsigned char buf[3];
+	unsigned char KCode_h;
+	int len = 0;
+
+	// 内部コード(CodePage)からUTF-16LEへ変換する
+	KCode_h = (unsigned char)(KCode >> 8);
+	if (KCode_h != 0) {
+		buf[len++] = KCode_h;
+	}
+	buf[len++] = KCode & 0xff;
+	ret = MultiByteToWideChar(CodePage, MB_ERR_INVALID_CHARS, buf, len, &wchar, 1);
+	if (ret <= 0) {
+		// 変換失敗
+		unsigned short cset = 0;
+		if (CodePage == 932) {
+			// CP932
+			cset = ConvertUnicode(KCode, mapSJISToUnicode, sizeof(mapSJISToUnicode)/sizeof(mapSJISToUnicode[0]));
+		}
+		if (cset == 0) {
+			c = 0xfffd; // U+FFFD: Replacement Character
+		} else {
+			c = cset;
+		}
+	} else {
+		c = (unsigned int)wchar;
+	}
+
+	// UTF-16LEからUTF-8へ変換する
+	if (c <= 0x0000007f) {
+		// 0x00000000 <= c <= 0x0000007f
+		code = (c & 0xff);
+		*byte = 1;
+
+	} else if (c <= 0x000007ff) {
+		// 0x00000080 <= c <= 0x000007ff
+		c1 = ((c >> 6) & 0x1f) | 0xc0;
+		c2 = (c & 0x3f) | 0x80;
+		code = (c1 << 8) | c2;
+		*byte = 2;
+
+	} else if (c <= 0x0000ffff) {
+		// 0x00000800 <= c <= 0x0000ffff
+		c1 = ((c >> 12) & 0xf) | 0xe0;
+		c2 = ((c >> 6) & 0x3f) | 0x80;
+		c3 = ((c) & 0x3f) | 0x80;
+		code = (c1 << 16) | (c2 << 8) | c3;
+		*byte = 3;
+	} else {
+		code = KCode;
+		*byte = 2;
+	}
+
+	return (code);
+}
+
+
 // Japanese SJIS -> JIS
-DllExport WORD PASCAL SJIS2JIS(WORD KCode)
+WORD PASCAL SJIS2JIS(WORD KCode)
 {
 	WORD x0,x1,x2,y0;
 	BYTE b = LOBYTE(KCode);
@@ -93,13 +155,13 @@ DllExport WORD PASCAL SJIS2JIS(WORD KCode)
 }
 
 // Japanese SJIS -> EUC
-DllExport WORD PASCAL SJIS2EUC(WORD KCode)
+WORD PASCAL SJIS2EUC(WORD KCode)
 {
 	return (SJIS2JIS(KCode) | 0x8080);
 }
 
 // Japanese JIS -> SJIS
-DllExport WORD PASCAL JIS2SJIS(WORD KCode)
+WORD PASCAL JIS2SJIS(WORD KCode)
 {
 	WORD n1, n2, SJIS;
 
@@ -533,7 +595,7 @@ static const BYTE cpconv[4][4][128] =
 };
 
 // Russian character set conversion
-DllExport BYTE PASCAL RussConv(int cin, int cout, BYTE b)
+BYTE PASCAL RussConv(int cin, int cout, BYTE b)
 // cin: input character set (IdWindows/IdKOI8/Id866/IdISO)
 // cin: output character set (IdWindows/IdKOI8/Id866/IdISO)
 {
@@ -544,7 +606,7 @@ DllExport BYTE PASCAL RussConv(int cin, int cout, BYTE b)
 }
 
 // Russian character set conversion for a character string
-DllExport void PASCAL RussConvStr(int cin, int cout, PCHAR Str, int count)
+void PASCAL RussConvStr(int cin, int cout, PCHAR Str, int count)
 // cin: input character set (IdWindows/IdKOI8/Id866/IdISO)
 // cin: output character set (IdWindows/IdKOI8/Id866/IdISO)
 {

@@ -40,7 +40,6 @@
 #include "ttwinman.h"
 #include "ttcommon.h"
 #include "ttlib.h"
-#include "dlglib.h"
 
 #include "clipboar.h"
 #include "tt_res.h"
@@ -61,6 +60,8 @@ static BOOL CBRetryEcho;
 static BOOL CBSendCR;
 static BOOL CBEchoOnly;
 static BOOL CBInsertDelay = FALSE;
+
+static HFONT DlgClipboardFont;
 
 static LRESULT CALLBACK OnClipboardDlgProc(HWND hDlgWnd, UINT msg, WPARAM wp, LPARAM lp);
 
@@ -357,8 +358,8 @@ BOOL CheckClipboardContent(HWND HWin, BOOL AddCR, BOOL Bracketed)
 	}
 
 	if (confirm) {
-		ret = TTDialogBox(hInst, MAKEINTRESOURCE(IDD_CLIPBOARD_DIALOG),
-						  HWin, (DLGPROC)OnClipboardDlgProc);
+		ret = DialogBox(hInst, MAKEINTRESOURCE(IDD_CLIPBOARD_DIALOG),
+		                HWin, (DLGPROC)OnClipboardDlgProc);
 		/*
 		 * 以前はダイアログの内容をクリップボードに書き戻していたけれど、必要?
 		 */
@@ -813,7 +814,7 @@ BOOL CBSetClipboard(HWND owner, HGLOBAL hMem)
 	char *buf;
 	int wide_len;
 	HGLOBAL wide_hMem;
-	LPWSTR wide_buf = 0;
+	LPWSTR wide_buf;
 
 	if (OpenClipboard(owner) == 0)
 		return FALSE;
@@ -860,11 +861,9 @@ HGLOBAL CBAllocClipboardMem(char *text)
 
 static LRESULT CALLBACK OnClipboardDlgProc(HWND hDlgWnd, UINT msg, WPARAM wp, LPARAM lp)
 {
-	static const DlgTextInfo TextInfos[] = {
-		{ 0, "DLG_CLIPBOARD_TITLE" },
-		{ IDCANCEL, "BTN_CANCEL" },
-		{ IDOK, "BTN_OK" },
-	};
+	LOGFONT logfont;
+	HFONT font;
+	char uimsg[MAX_UIMSG];
 	POINT p;
 	RECT rc_dsk, rc_dlg;
 	int dlg_height, dlg_width;
@@ -872,13 +871,32 @@ static LRESULT CALLBACK OnClipboardDlgProc(HWND hDlgWnd, UINT msg, WPARAM wp, LP
 	RECT rc_edit, rc_ok, rc_cancel;
 	// for status bar
 	static HWND hStatus = NULL;
-	static int init_width, init_height;
+	static init_width, init_height;
 
 	switch (msg) {
 		case WM_INITDIALOG:
-			SetDlgTexts(hDlgWnd, TextInfos, _countof(TextInfos), ts.UILanguageFile);
+			font = (HFONT)SendMessage(hDlgWnd, WM_GETFONT, 0, 0);
+			GetObject(font, sizeof(LOGFONT), &logfont);
+			if (get_lang_font("DLG_TAHOMA_FONT", hDlgWnd, &logfont, &DlgClipboardFont, ts.UILanguageFile)) {
+				SendDlgItemMessage(hDlgWnd, IDC_EDIT, WM_SETFONT, (WPARAM)DlgClipboardFont, MAKELPARAM(TRUE,0));
+				SendDlgItemMessage(hDlgWnd, IDOK, WM_SETFONT, (WPARAM)DlgClipboardFont, MAKELPARAM(TRUE,0));
+				SendDlgItemMessage(hDlgWnd, IDCANCEL, WM_SETFONT, (WPARAM)DlgClipboardFont, MAKELPARAM(TRUE,0));
+			}
+			else {
+				DlgClipboardFont = NULL;
+			}
 
-			SetDlgItemTextA(hDlgWnd, IDC_EDIT, CBMemPtr);
+			GetWindowText(hDlgWnd, uimsg, sizeof(uimsg));
+			get_lang_msg("DLG_CLIPBOARD_TITLE", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+			SetWindowText(hDlgWnd, ts.UIMsg);
+			GetDlgItemText(hDlgWnd, IDCANCEL, uimsg, sizeof(uimsg));
+			get_lang_msg("BTN_CANCEL", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+			SetDlgItemText(hDlgWnd, IDCANCEL, ts.UIMsg);
+			GetDlgItemText(hDlgWnd, IDOK, uimsg, sizeof(uimsg));
+			get_lang_msg("BTN_OK", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+			SetDlgItemText(hDlgWnd, IDOK, ts.UIMsg);
+
+			SendMessage(GetDlgItem(hDlgWnd, IDC_EDIT), WM_SETTEXT, 0, (LPARAM)CBMemPtr);
 
 			if (ActiveWin == IdVT) { // VT Window
 				/*
@@ -977,7 +995,7 @@ static LRESULT CALLBACK OnClipboardDlgProc(HWND hDlgWnd, UINT msg, WPARAM wp, LP
 			switch (LOWORD(wp)) {
 				case IDOK:
 				{
-					unsigned len = SendMessageA(GetDlgItem(hDlgWnd, IDC_EDIT), WM_GETTEXTLENGTH, 0, 0);
+					unsigned len = SendMessage(GetDlgItem(hDlgWnd, IDC_EDIT), WM_GETTEXTLENGTH, 0, 0);
 					HGLOBAL hMem;
 					INT_PTR result = IDCANCEL;
 
@@ -1015,18 +1033,26 @@ static LRESULT CALLBACK OnClipboardDlgProc(HWND hDlgWnd, UINT msg, WPARAM wp, LP
 						if (CBMemPtr == NULL) {
 							CBMemPtr = GlobalLock(CBMemHandle);
 						}
-						GetDlgItemTextA(hDlgWnd, IDC_EDIT, CBMemPtr, GlobalSize(CBMemHandle));
+						SendMessage(GetDlgItem(hDlgWnd, IDC_EDIT), WM_GETTEXT, GlobalSize(CBMemHandle), (LPARAM)CBMemPtr);
 						result = IDOK;
 					}
 
+					if (DlgClipboardFont != NULL) {
+						DeleteObject(DlgClipboardFont);
+					}
+
 					DestroyWindow(hStatus);
-					TTEndDialog(hDlgWnd, result);
+					EndDialog(hDlgWnd, result);
 				}
 					break;
 
 				case IDCANCEL:
+					if (DlgClipboardFont != NULL) {
+						DeleteObject(DlgClipboardFont);
+					}
+
 					DestroyWindow(hStatus);
-					TTEndDialog(hDlgWnd, IDCANCEL);
+					EndDialog(hDlgWnd, IDCANCEL);
 					break;
 
 				default:

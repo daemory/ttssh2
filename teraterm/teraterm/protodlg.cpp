@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 1994-1998 T. Teranishi
- * (C) 2007-2019 TeraTerm Project
+ * (C) 2007-2017 TeraTerm Project
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -28,12 +28,12 @@
  */
 
 /* TERATERM.EXE, file-transfer-protocol dialog box */
+#include "stdafx.h"
 #include "teraterm.h"
 #include "tt_res.h"
 #include "tttypes.h"
 #include "ttftypes.h"
 #include "ttlib.h"
-#include "dlglib.h"
 #include "protodlg.h"
 
 #ifdef _DEBUG
@@ -45,13 +45,38 @@ static char THIS_FILE[] = __FILE__;
 /////////////////////////////////////////////////////////////////////////////
 // CProtoDlg dialog
 
-BOOL CProtoDlg::Create(HINSTANCE hInstance, HWND hParent, PFileVar pfv, PTTSet pts)
+BEGIN_MESSAGE_MAP(CProtoDlg, CDialog)
+	//{{AFX_MSG_MAP(CProtoDlg)
+	//}}AFX_MSG_MAP
+END_MESSAGE_MAP()
+
+BOOL CProtoDlg::Create(PFileVar pfv, PTTSet pts)
 {
-	m_pts = pts;
+	BOOL Ok;
+	LOGFONT logfont;
+	HFONT font;
+
 	fv = pfv;
 
-	BOOL Ok = TTCDialog::Create(hInstance, hParent, CProtoDlg::IDD);
+	Ok = CDialog::Create(CProtoDlg::IDD, NULL);
 	fv->HWin = GetSafeHwnd();
+
+	font = (HFONT)SendMessage(WM_GETFONT, 0, 0);
+	GetObject(font, sizeof(LOGFONT), &logfont);
+	if (get_lang_font("DLG_SYSTEM_FONT", GetSafeHwnd(), &logfont, &DlgFont, pts->UILanguageFile)) {
+		SendDlgItemMessage(IDC_PROT_FILENAME, WM_SETFONT, (WPARAM)DlgFont, MAKELPARAM(TRUE,0));
+		SendDlgItemMessage(IDC_PROTOFNAME, WM_SETFONT, (WPARAM)DlgFont, MAKELPARAM(TRUE,0));
+		SendDlgItemMessage(IDC_PROT_PROT, WM_SETFONT, (WPARAM)DlgFont, MAKELPARAM(TRUE,0));
+		SendDlgItemMessage(IDC_PROTOPROT, WM_SETFONT, (WPARAM)DlgFont, MAKELPARAM(TRUE,0));
+		SendDlgItemMessage(IDC_PROT_PACKET, WM_SETFONT, (WPARAM)DlgFont, MAKELPARAM(TRUE,0));
+		SendDlgItemMessage(IDC_PROTOPKTNUM, WM_SETFONT, (WPARAM)DlgFont, MAKELPARAM(TRUE,0));
+		SendDlgItemMessage(IDC_PROT_TRANS, WM_SETFONT, (WPARAM)DlgFont, MAKELPARAM(TRUE,0));
+		SendDlgItemMessage(IDC_PROTOBYTECOUNT, WM_SETFONT, (WPARAM)DlgFont, MAKELPARAM(TRUE,0));
+		SendDlgItemMessage(IDC_PROT_ELAPSED, WM_SETFONT, (WPARAM)DlgFont, MAKELPARAM(TRUE,0));
+		SendDlgItemMessage(IDC_PROTOELAPSEDTIME, WM_SETFONT, (WPARAM)DlgFont, MAKELPARAM(TRUE,0));
+		SendDlgItemMessage(IDC_PROTOPERCENT, WM_SETFONT, (WPARAM)DlgFont, MAKELPARAM(TRUE,0));
+		SendDlgItemMessage(IDCANCEL, WM_SETFONT, (WPARAM)DlgFont, MAKELPARAM(TRUE,0));
+	}
 
 	return Ok;
 }
@@ -59,25 +84,9 @@ BOOL CProtoDlg::Create(HINSTANCE hInstance, HWND hParent, PFileVar pfv, PTTSet p
 /////////////////////////////////////////////////////////////////////////////
 // CProtoDlg message handler
 
-BOOL CProtoDlg::OnInitDialog()
-{
-	static const DlgTextInfo TextInfos[] = {
-		{ IDC_PROT_FILENAME, "DLG_PROT_FILENAME" },
-		{ IDC_PROT_PROT, "DLG_PROT_PROTO" },
-		{ IDC_PROT_PACKET, "DLG_PROT_PACKET"},
-		{ IDC_PROT_TRANS, "DLG_PROT_TRANS" },
-		{ IDC_PROT_ELAPSED, "DLG_PROT_ELAPSED" },
-		{ IDCANCEL, "BTN_CANCEL" },
-	};
-	SetDlgTexts(m_hWnd, TextInfos, _countof(TextInfos), m_pts->UILanguageFile);
-	return TRUE;
-}
-
-
-BOOL CProtoDlg::OnCancel()
+void CProtoDlg::OnCancel( )
 {
 	::PostMessage(fv->HMainWin,WM_USER_PROTOCANCEL,0,0);
-	return TRUE;
 }
 
 BOOL CProtoDlg::OnCommand(WPARAM wParam, LPARAM lParam)
@@ -87,12 +96,11 @@ BOOL CProtoDlg::OnCommand(WPARAM wParam, LPARAM lParam)
 			::PostMessage(fv->HMainWin,WM_USER_PROTOCANCEL,0,0);
 			return TRUE;
 		default:
-			return (TTCDialog::OnCommand(wParam,lParam));
+			return (CDialog::OnCommand(wParam,lParam));
 	}
 }
 
-BOOL CProtoDlg::PostNcDestroy()
+void CProtoDlg::PostNcDestroy()
 {
 	delete this;
-	return TRUE;
 }

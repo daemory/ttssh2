@@ -75,7 +75,6 @@
 				SuppressStartupBanner="true"
 				AdditionalLibraryDirectories="$(OutDir)"
 				ModuleDefinitionFile="$(ProjectName).def"
-				DelayLoadDLLs="user32.dll"
 				GenerateDebugInformation="true"
 				SubSystem="2"
 				RandomizedBaseAddress="1"
@@ -167,7 +166,6 @@
 				SuppressStartupBanner="true"
 				AdditionalLibraryDirectories="$(OutDir)"
 				ModuleDefinitionFile="$(ProjectName).def"
-				DelayLoadDLLs="user32.dll"
 				GenerateDebugInformation="true"
 				SubSystem="2"
 				RandomizedBaseAddress="1"
@@ -223,6 +221,10 @@
 			Filter="h;hpp;hxx;hm;inl;fi;fd"
 			>
 			<File
+				RelativePath="tek_res.h"
+				>
+			</File>
+			<File
 				RelativePath="tekesc.h"
 				>
 			</File>
@@ -242,6 +244,10 @@
 			>
 			<File
 				RelativePath="ttptek-version.rc"
+				>
+			</File>
+			<File
+				RelativePath="ttptek.rc"
 				>
 			</File>
 		</Filter>

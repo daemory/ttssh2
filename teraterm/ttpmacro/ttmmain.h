@@ -29,13 +29,12 @@
 
 /* TTMACRO.EXE, main window */
 
-#include "tmfc.h"
 #include "ttmmsg.h"
 #include "tttypes.h"
 /////////////////////////////////////////////////////////////////////////////
 // CCtrlWindow dialog
 
-class CCtrlWindow : public TTCDialog
+class CCtrlWindow : public CDialog
 {
 public:
 	BOOL Pause;
@@ -50,13 +49,11 @@ public:
 
 	//{{AFX_VIRTUAL(CCtrlWindow)
 	protected:
-	virtual BOOL OnCancel( );
+	virtual void OnCancel( );
 	virtual BOOL OnCommand(WPARAM wParam, LPARAM lParam);
-	virtual BOOL PostNcDestroy();
-	virtual BOOL OnInitDialog();
-	//	virtual BOOL PreTranslateMessage(MSG* pMsg);		// TODO
+	virtual void PostNcDestroy();
+	virtual BOOL PreTranslateMessage(MSG* pMsg);
 	//}}AFX_VIRTUAL
-	virtual LRESULT DlgProc(UINT msg, WPARAM wp, LPARAM lp);
 
 protected:
 	HICON m_hIcon;
@@ -67,22 +64,23 @@ protected:
 	HWND m_hStatus;
 
 	//{{AFX_MSG(CCtrlWindow)
-#define afx_msg
-	afx_msg BOOL OnClose();
+	virtual BOOL OnInitDialog();
+	afx_msg void OnClose();
 	afx_msg void OnDestroy();
-	afx_msg BOOL OnEraseBkgnd(HDC DC);
+	afx_msg BOOL OnEraseBkgnd(CDC* pDC);
 	afx_msg void OnPaint();
 	afx_msg void OnSize(UINT nType, int cx, int cy);
 	afx_msg void OnGetMinMaxInfo(MINMAXINFO* lpMMI);
 	afx_msg HCURSOR OnQueryDragIcon();
 	afx_msg void OnSysColorChange();
-	afx_msg void OnTimer(UINT_PTR nIDEvent);
-	afx_msg LRESULT OnDdeCmndEnd(WPARAM wParam, LPARAM lParam);
-	afx_msg LRESULT OnDdeComReady(WPARAM wParam, LPARAM lParam);
-	afx_msg LRESULT OnDdeReady(WPARAM wParam, LPARAM lParam);
-	afx_msg LRESULT OnDdeEnd(WPARAM wParam, LPARAM lParam);
-	afx_msg LRESULT OnMacroBringup(WPARAM wParam, LPARAM lParam);
+	afx_msg void OnTimer(UINT nIDEvent);
+	afx_msg LONG OnDdeCmndEnd(UINT wParam, LONG lParam);
+	afx_msg LONG OnDdeComReady(UINT wParam, LONG lParam);
+	afx_msg LONG OnDdeReady(UINT wParam, LONG lParam);
+	afx_msg LONG OnDdeEnd(UINT wParam, LONG lParam);
+	afx_msg LONG OnMacroBringup(UINT wParam, LONG lParam);
 	//}}AFX_MSG
-//	DECLARE_MESSAGE_MAP()
+	DECLARE_MESSAGE_MAP()
 };
 
+typedef CCtrlWindow *PCtrlWindow;

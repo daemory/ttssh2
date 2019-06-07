@@ -644,7 +644,7 @@ struct tttset {
 	WORD FontQuality;
 	char ScpSendDir[MAXPATHLEN];
 	char BGImageFilePath[MAX_PATH];
-	int LogRotate;		//	enum rotate_mode LogRotate;
+	enum rotate_mode LogRotate;
 	DWORD LogRotateSize;
 	WORD LogRotateSizeType;
 	WORD LogRotateStep;
@@ -684,9 +684,6 @@ struct tttset {
 	char LogTimestampFormat[48];
 	int TerminalInputSpeed;
 	int TerminalOutputSpeed;
-	char DialogFontName[LF_FACESIZE];
-	int DialogFontPoint;
-	int DialogFontCharSet;
 };
 
 typedef struct tttset TTTSet, *PTTSet;
@@ -1021,7 +1018,7 @@ typedef struct {
 	BOOL Open;
 	WORD PortType;
 	WORD ComPort;
-	UINT_PTR s; /* SOCKET */
+	unsigned int s; /* SOCKET */
 	WORD RetryCount;
 	HANDLE ComID;
 	BOOL CanSend, RRQ;

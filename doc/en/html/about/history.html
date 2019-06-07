@@ -31,32 +31,6 @@
 
 <h2 id="teraterm">Tera Term</h2>
 
-<h3 id="teraterm_4.103">2019.xx.xx (Ver 4.103)</h3>
-<ul class="history">
-  <li>Changes
-    <ul>
-      <li>added support for <a href="../setup/teraterm-misc.html#HighDPI">High DPI</a> experimentally. The default setting is disabled. When DPIAware=on is set in [Tera Term] of teraterm.ini file, this feature is enabled. However, this is only available for Windows 10 Version 1703 or later.</li>
-      <li>added support for configure the dialog font(<a href="../menu/setup-font.html">[Setup]/[Font])</a>. The font submenu is newly added. The default font is same as before.</li>
-      <li>When the font file(TSPECIAL1.TTF) displaying ruled line is not installed, the file is loaded from same directory as ttermpro.exe.</li>
-      <li>MACRO: Store <a href="../macro/command/exec.html">exec</a> command result to result variable.</li>
-    </ul>
-  </li>
-  <li>Bug fixes
-    <ul>
-      <li>Display position of IME's conversion candidate window can not follow cursor position. This bug was introduced in 4.102.</li>
-      <li>Can't display character such as U+2014 EM DASH, U+2212 MINUS SIGN, U+301C WAVE DASH etc. This bug was introduced in 4.102.</li>
-      <li>MACRO: Fix handle leak when <a href="../macro/command/exec.html">exec</a> command is executed.</li>
-    </ul>
-  </li>
-
-  <li>Misc
-    <ul>
-      <li>upgraded TTSSH to <a href="#ttssh_2.89">2.89</a>.</li>
-      <li>upgraded Oniguruma to 6.9.2.</li>
-    </ul>
-  </li>
-</ul>
-
 <h3 id="teraterm_4.102">2019.02.28 (Ver 4.102)</h3>
 <ul class="history">
   <li>Changes
@@ -3117,22 +3091,6 @@ SYNOPSIS:
 
 
 <h2 id="ttssh">TTSSH</h2>
-
-<h3 id="ttssh_2.89">2019.xx.xx (Ver 2.89)</h3>
-<ul class="history">
-  <li>Bug fixes
-    <ul>
-      <li>garbage data is added to the CipherOrder and MacOrder settings when saving settings.</li>
-      <li>when echo flag is 1 in the server's authentication informatin message, password string is masked on the keyboard-interactive authentication dialog.</li>
-    </ul>
-  </li>
-
-  <li>Misc
-    <ul>
-      <li>upgraded OpenSSL to 1.0.2s.</li>
-    </ul>
-  </li>
-</ul>
 
 <h3 id="ttssh_2.88">2019.02.28 (Ver 2.88)</h3>
 <ul class="history">

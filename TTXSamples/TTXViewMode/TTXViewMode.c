@@ -7,7 +7,6 @@
 #include <stdio.h>
 #include <string.h>
 #include <windows.h>
-#include "dlglib.h"
 
 #include "compat_w95.h"
 
@@ -157,22 +156,22 @@ static LRESULT CALLBACK ViewModeInputPass(HWND dlg, UINT msg, WPARAM wParam, LPA
   
   switch (msg) {
     case WM_INITDIALOG:
-      CenterWindow(dlg, GetParent(dlg));
+      /* nothing to do */
       return TRUE;
     case WM_COMMAND:
       switch (LOWORD(wParam)) {
         case IDOK:
 	  GetDlgItemText(dlg, IDC_CURPASS, password, sizeof(password));
 	  if (strcmp(pvar->password, password) == 0) {
-	    TTEndDialog(dlg, IDOK);
+	    EndDialog(dlg, IDOK);
 	  }
 	  else {
 	    MessageBox(NULL, "Invalid Password", "Invalid Password", MB_OK | MB_ICONEXCLAMATION);
-	    TTEndDialog(dlg, IDCANCEL);
+	    EndDialog(dlg, IDCANCEL);
 	  }
 	  return TRUE;
 	case IDCANCEL:
-	  TTEndDialog(dlg, IDCANCEL);
+	  EndDialog(dlg, IDCANCEL);
 	  return TRUE;
       }
       break;
@@ -185,7 +184,7 @@ static LRESULT CALLBACK ViewModeSetPass(HWND dlg, UINT msg, WPARAM wParam, LPARA
 
   switch (msg) {
     case WM_INITDIALOG:
-      CenterWindow(dlg, GetParent(dlg));
+      /* nothing to do */
       return TRUE;
     case WM_COMMAND:
       switch (LOWORD(wParam)) {
@@ -197,20 +196,20 @@ static LRESULT CALLBACK ViewModeSetPass(HWND dlg, UINT msg, WPARAM wParam, LPARA
 	    if (strcmp(passwd1, passwd2) == 0) {
 	      strncpy_s(pvar->password, sizeof(pvar->password), passwd1, _TRUNCATE);
 	      MessageBox(NULL, "Password changed", "TTXViewMode", MB_OK | MB_ICONEXCLAMATION);
-	      TTEndDialog(dlg, IDOK);
+	      EndDialog(dlg, IDOK);
 	    }
 	    else {
 	      MessageBox(NULL, "New password not matched.", "TTXViewMode", MB_OK | MB_ICONEXCLAMATION);
-	      TTEndDialog(dlg, IDCANCEL);
+	      EndDialog(dlg, IDCANCEL);
 	    }
 	  }
 	  else {
 	    MessageBox(NULL, "Invalid Password", "TTXViewMode", MB_OK | MB_ICONEXCLAMATION);
-	    TTEndDialog(dlg, IDCANCEL);
+	    EndDialog(dlg, IDCANCEL);
 	  }
 	  return TRUE;
 	case IDCANCEL:
-	  TTEndDialog(dlg, IDCANCEL);
+	  EndDialog(dlg, IDCANCEL);
 	  return TRUE;
       }
       break;
@@ -223,9 +222,7 @@ static int PASCAL TTXProcessCommand(HWND hWin, WORD cmd) {
     case ID_MENU_VIEWMODE:
       if (pvar->enable) {
         if (strcmp(pvar->password, "") != 0) {
-          SetDialogFont(pvar->ts->DialogFontName, pvar->ts->DialogFontPoint, pvar->ts->DialogFontCharSet,
-						pvar->ts->UILanguageFile, "TTXViewMode", "DLG_TAHOMA_FONT");
-          switch (TTDialogBoxParam(hInst, MAKEINTRESOURCE(IDD_INPUT_PASSWORD), hWin, ViewModeInputPass, (LPARAM)NULL)) {
+          switch (DialogBoxParam(hInst, MAKEINTRESOURCE(IDD_INPUT_PASSWORD), hWin, ViewModeInputPass, (LPARAM)NULL)) {
             case IDOK:
               pvar->enable = FALSE;
 	      CheckMenuItem(pvar->ControlMenu, ID_MENU_VIEWMODE, MF_BYCOMMAND | MF_UNCHECKED);
@@ -250,9 +247,7 @@ static int PASCAL TTXProcessCommand(HWND hWin, WORD cmd) {
       }
       return 1;
     case ID_MENU_SETPASS:
-	  SetDialogFont(pvar->ts->DialogFontName, pvar->ts->DialogFontPoint, pvar->ts->DialogFontCharSet,
-					pvar->ts->UILanguageFile, "TTXViewMode", "DLG_TAHOMA_FONT");
-      switch (TTDialogBoxParam(hInst, MAKEINTRESOURCE(IDD_SET_PASSWORD), hWin, ViewModeSetPass, (LPARAM)NULL)) {
+      switch (DialogBoxParam(hInst, MAKEINTRESOURCE(IDD_SET_PASSWORD), hWin, ViewModeSetPass, (LPARAM)NULL)) {
 	case IDOK:
 	  break;
 	case IDCANCEL:

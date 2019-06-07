@@ -1,30 +1,30 @@
 #define AppName "Tera Term"
 #define AppVer "4.102"
-#define snapshot GetDateTimeString('yyyymmdd_hhnnss', '', '');
+;#define snapshot GetDateTimeString('yyyymmdd_hhnnss', '', '');
 
 [InnoIDE_PreCompile]
 Name: makechm.bat
-Name: build.bat
-;Name: build.bat; Parameters: rebuild
+;Name: build.bat
+Name: build.bat; Parameters: rebuild
 
 [InnoIDE_PostCompile]
-;Name: makearchive.bat; Parameters: release
+Name: makearchive.bat; Parameters: release
 
 [PreCompile]
 Name: makechm.bat
-Name: build.bat
-;Name: build.bat; Parameters: rebuild
+;Name: build.bat
+Name: build.bat; Parameters: rebuild
 
 [PostCompile]
-;Name: makearchive.bat; Parameters: release
+Name: makearchive.bat; Parameters: release
 
 [_ISToolPreCompile]
 Name: makechm.bat
-Name: build.bat
-;Name: build.bat; Parameters: rebuild
+;Name: build.bat
+Name: build.bat; Parameters: rebuild
 
 [_ISToolPostCompile]
-;Name: makearchive.bat; Parameters: release
+Name: makearchive.bat; Parameters: release
 
 [Setup]
 AppCopyright=(C) 2004-2019 TeraTerm Project
@@ -67,6 +67,7 @@ Name: {app}\lang; Components: TeraTerm
 [Files]
 Source: ..\teraterm\release\ttermpro.exe; DestDir: {app}; Components: TeraTerm; Flags: ignoreversion
 Source: ..\teraterm\release\ttpcmn.dll; DestDir: {app}; Components: TeraTerm; Flags: ignoreversion
+Source: ..\teraterm\release\ttpdlg.dll; DestDir: {app}; Components: TeraTerm; Flags: ignoreversion
 Source: ..\teraterm\release\ttpfile.dll; DestDir: {app}; Components: TeraTerm; Flags: ignoreversion
 Source: ..\teraterm\release\ttpset.dll; DestDir: {app}; Components: TeraTerm; Flags: ignoreversion
 Source: ..\teraterm\release\ttptek.dll; DestDir: {app}; Components: TeraTerm; Flags: ignoreversion
@@ -962,7 +963,6 @@ Name: {app}\copyfont.bat; Type: files
 Name: {app}\copyfont.pif; Type: files
 Name: {app}\libeay.txt; Type: files
 Name: {app}\cygterm+-x86_64\cyglaunch.exe; Type: files
-Name: {app}\ttpdlg.dll; Type: files
 
 [UninstallDelete]
 Name: {app}\cygterm.exe; Type: files

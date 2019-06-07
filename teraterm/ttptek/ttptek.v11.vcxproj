@@ -79,7 +79,6 @@
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <AdditionalLibraryDirectories>$(OutDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <ModuleDefinitionFile>$(ProjectName).def</ModuleDefinitionFile>
-      <DelayLoadDLLs>user32.dll;%(DelayLoadDLLs)</DelayLoadDLLs>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <SubSystem>Windows</SubSystem>
       <ImportLibrary>$(OutDir)$(ProjectName).lib</ImportLibrary>
@@ -118,7 +117,6 @@
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <AdditionalLibraryDirectories>$(OutDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <ModuleDefinitionFile>$(ProjectName).def</ModuleDefinitionFile>
-      <DelayLoadDLLs>user32.dll;%(DelayLoadDLLs)</DelayLoadDLLs>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <SubSystem>Windows</SubSystem>
       <ImportLibrary>$(OutDir)$(ProjectName).lib</ImportLibrary>
@@ -131,6 +129,7 @@
     <ClCompile Include="tttek.c" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="tek_res.h" />
     <ClInclude Include="tekesc.h" />
   </ItemGroup>
   <ItemGroup>
@@ -138,6 +137,7 @@
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="ttptek-version.rc" />
+    <ResourceCompile Include="ttptek.rc" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\ttpcmn\ttpcmn.v11.vcxproj">

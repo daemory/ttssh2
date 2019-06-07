@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 1994-1998 T. Teranishi
- * (C) 2005-2019 TeraTerm Project
+ * (C) 2005-2018 TeraTerm Project
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -36,7 +36,6 @@
 #include "ttime.h"
 #include "ttdialog.h"
 #include "ttcommon.h"
-#include "compat_win.h"
 
 #include "vtdisp.h"
 
@@ -101,6 +100,7 @@ int NumOfLines, NumOfColumns;
 int PageStart, BuffEnd;
 
 static BOOL CursorOnDBCS = FALSE;
+static LOGFONT VTlf;
 static BOOL SaveWinSize = FALSE;
 static int WinWidthOld, WinHeightOld;
 static HBRUSH Background;
@@ -110,8 +110,7 @@ static int Dx[TermWidthMax];
 // caret variables
 static int CaretStatus;
 static BOOL CaretEnabled = TRUE;
-BOOL IMEstat;				/* IME Status  TRUE=IME ON */
-BOOL IMECompositionState;	/* 変換状態 TRUE=変換中 */
+BOOL IMEstat;		/* IME Status  TRUE=IME ON */
 
 // ---- device context and status flags
 static HDC VTDC = NULL; /* Device context for VT window */
@@ -156,36 +155,36 @@ typedef struct _BGSrc
   char       fileTmp[MAX_PATH];
 }BGSrc;
 
-static BGSrc BGDest;
-static BGSrc BGSrc1;
-static BGSrc BGSrc2;
+BGSrc BGDest;
+BGSrc BGSrc1;
+BGSrc BGSrc2;
 
 int  BGEnable;
-static int  BGReverseTextAlpha;
-static int  BGUseAlphaBlendAPI;
+int  BGReverseTextAlpha;
+int  BGUseAlphaBlendAPI;
 BOOL BGNoFrame;
-static BOOL BGFastSizeMove;
+BOOL BGFastSizeMove;
 
-static char BGSPIPath[MAX_PATH];
+char BGSPIPath[MAX_PATH];
 
-static COLORREF BGVTColor[2];
-static COLORREF BGVTBoldColor[2];
-static COLORREF BGVTBlinkColor[2];
-static COLORREF BGVTReverseColor[2];
+COLORREF BGVTColor[2];
+COLORREF BGVTBoldColor[2];
+COLORREF BGVTBlinkColor[2];
+COLORREF BGVTReverseColor[2];
 /* begin - ishizaki */
-static COLORREF BGURLColor[2];
+COLORREF BGURLColor[2];
 /* end - ishizaki */
 
-static RECT BGPrevRect;
-static BOOL BGReverseText;
+RECT BGPrevRect;
+BOOL BGReverseText;
 
 BOOL   BGNoCopyBits;
-static BOOL   BGInSizeMove;
-static HBRUSH BGBrushInSizeMove;
+BOOL   BGInSizeMove;
+HBRUSH BGBrushInSizeMove;
 
-static HDC hdcBGWork;
-static HDC hdcBGBuffer;
-static HDC hdcBG;
+HDC hdcBGWork;
+HDC hdcBGBuffer;
+HDC hdcBG;
 
 typedef struct tagWallpaperInfo
 {
@@ -193,7 +192,16 @@ typedef struct tagWallpaperInfo
   int  pattern;
 }WallpaperInfo;
 
-static BOOL (WINAPI *BGAlphaBlend)(HDC,int,int,int,int,HDC,int,int,int,int,BLENDFUNCTION);
+typedef struct _BGBLENDFUNCTION
+{
+    BYTE     BlendOp;
+    BYTE     BlendFlags;
+    BYTE     SourceConstantAlpha;
+    BYTE     AlphaFormat;
+}BGBLENDFUNCTION;
+
+BOOL (WINAPI *BGAlphaBlend)(HDC,int,int,int,int,HDC,int,int,int,int,BGBLENDFUNCTION);
+BOOL (WINAPI *BGEnumDisplayMonitors)(HDC,LPCRECT,MONITORENUMPROC,LPARAM);
 
 static HBITMAP GetBitmapHandle(char *File);
 
@@ -210,13 +218,27 @@ static BOOL IsLoadImageOnlyEnabled(void)
 	return !IsWindowsVistaOrLater();
 }
 
+
+void dprintf(char *format, ...)
+{
+  va_list args;
+  char    buffer[1024];
+
+  va_start(args,format);
+
+  _vsnprintf_s(buffer,sizeof(buffer),_TRUNCATE,format,args);
+  strncat_s(buffer,sizeof(buffer),"\n",_TRUNCATE);
+
+  OutputDebugString(buffer);
+}
+
 HBITMAP CreateScreenCompatibleBitmap(int width,int height)
 {
   HDC     hdc;
   HBITMAP hbm;
 
   #ifdef _DEBUG
-    OutputDebugPrintf("CreateScreenCompatibleBitmap : width = %d height = %d\n",width,height);
+    dprintf("CreateScreenCompatibleBitmap : width = %d height = %d",width,height);
   #endif
 
   hdc = GetDC(NULL);
@@ -227,7 +249,7 @@ HBITMAP CreateScreenCompatibleBitmap(int width,int height)
 
   #ifdef _DEBUG
     if(!hbm)
-      OutputDebugPrintf("CreateScreenCompatibleBitmap : fail in CreateCompatibleBitmap\n");
+      dprintf("CreateScreenCompatibleBitmap : fail in CreateCompatibleBitmap");
   #endif
 
   return hbm;
@@ -240,7 +262,7 @@ HBITMAP CreateDIB24BPP(int width,int height,unsigned char **buf,int *lenBuf)
   BITMAPINFO bmi;
 
   #ifdef _DEBUG
-    OutputDebugPrintf("CreateDIB24BPP : width = %d height = %d\n",width,height);
+    dprintf("CreateDIB24BPP : width = %d height = %d",width,height);
   #endif
 
   if(!width || !height)
@@ -272,7 +294,7 @@ HDC  CreateBitmapDC(HBITMAP hbm)
   HDC hdc;
 
   #ifdef _DEBUG
-    OutputDebugPrintf("CreateBitmapDC : hbm = %p\n",hbm);
+    dprintf("CreateBitmapDC : hbm = %x",hbm);
   #endif
 
   hdc = CreateCompatibleDC(NULL);
@@ -288,7 +310,7 @@ void DeleteBitmapDC(HDC *hdc)
   HBITMAP hbm;
 
   #ifdef _DEBUG
-    OutputDebugPrintf("DeleteBitmapDC : *hdc = %p\n",hdc);
+    dprintf("DeleteBitmapDC : *hdc = %x",hdc);
   #endif
 
   if(!hdc)
@@ -314,7 +336,7 @@ void FillBitmapDC(HDC hdc,COLORREF color)
   HBRUSH  hBrush;
 
   #ifdef _DEBUG
-    OutputDebugPrintf("FillBitmapDC : hdc = %x color = %p\n",hdc,color);
+    dprintf("FillBitmapDC : hdc = %x color = %x",hdc,color);
   #endif
 
   if(!hdc)
@@ -432,9 +454,9 @@ BOOL LoadPictureWithSPI(char *nameSPI,char *nameFile,unsigned char *bufFile,long
   if(!hSPI)
     goto error;
 
-  SPI_GetPluginInfo = (void *)GetProcAddress(hSPI,"GetPluginInfo");
-  SPI_IsSupported   = (void *)GetProcAddress(hSPI,"IsSupported");
-  SPI_GetPicture    = (void *)GetProcAddress(hSPI,"GetPicture");
+  (FARPROC)SPI_GetPluginInfo = GetProcAddress(hSPI,"GetPluginInfo");
+  (FARPROC)SPI_IsSupported   = GetProcAddress(hSPI,"IsSupported");
+  (FARPROC)SPI_GetPicture    = GetProcAddress(hSPI,"GetPicture");
 
   if(!SPI_GetPluginInfo || !SPI_IsSupported || !SPI_GetPicture)
     goto error;
@@ -508,7 +530,7 @@ BOOL SaveBitmapFile(char *nameFile,unsigned char *pbuf,BITMAPINFO *pbmi)
   return TRUE;
 }
 
-static BOOL WINAPI AlphaBlendWithoutAPI(HDC hdcDest,int dx,int dy,int width,int height,HDC hdcSrc,int sx,int sy,int sw,int sh,BLENDFUNCTION bf)
+BOOL WINAPI AlphaBlendWithoutAPI(HDC hdcDest,int dx,int dy,int width,int height,HDC hdcSrc,int sx,int sy,int sw,int sh,BGBLENDFUNCTION bf)
 {
   HDC hdcDestWork,hdcSrcWork;
   int i,invAlpha,alpha;
@@ -544,13 +566,13 @@ static BOOL WINAPI AlphaBlendWithoutAPI(HDC hdcDest,int dx,int dy,int width,int 
 
 // 画像読み込み関係
 
-static void BGPreloadPicture(BGSrc *src)
+void BGPreloadPicture(BGSrc *src)
 {
   char  spiPath[MAX_PATH];
   char  filespec[MAX_PATH];
   char *filePart;
   int   fileSize;
-  DWORD readByte;
+  int   readByte;
   unsigned char *fileBuf;
 
   HBITMAP hbm;
@@ -559,7 +581,7 @@ static void BGPreloadPicture(BGSrc *src)
   WIN32_FIND_DATA fd;
 
   #ifdef _DEBUG
-    OutputDebugPrintf("Preload Picture : %s\n",src->file);
+    dprintf("Preload Picture : %s",src->file);
   #endif
 
   //ファイルを読み込む
@@ -598,19 +620,9 @@ static void BGPreloadPicture(BGSrc *src)
       BITMAPINFO *pbmi;
       char       *pbuf;
       char spiFileName[MAX_PATH];
-	  const char *ext;
 
       if(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
         continue;
-	  ext = strrchr(fd.cFileName, '.');
-	  if (ext == NULL) {
-		  // 拡張子がないファイル?
-		  continue;
-	  }
-	  if (strcmp(ext, ".dll") != 0 && strcmp(ext, ".spi") != 0) {
-		  // .dll or .spi 以外のファイル
-		  continue;
-	  }
 
       strncpy_s(spiFileName, sizeof(spiFileName), spiPath, _TRUNCATE);
       strncat_s(spiFileName, sizeof(spiFileName), fd.cFileName, _TRUNCATE);
@@ -664,9 +676,9 @@ static void BGPreloadPicture(BGSrc *src)
   }
 }
 
-static void BGGetWallpaperInfo(WallpaperInfo *wi)
+void BGGetWallpaperInfo(WallpaperInfo *wi)
 {
-  DWORD length;
+  int  length;
   int style;
   int  tile;
   char str[256];
@@ -878,7 +890,7 @@ static HBITMAP CreateStretched32BppBitmapBilinear(HBITMAP hbm, INT cxNew, INT cy
     return hbmNew;
 }
 
-static void BGPreloadWallpaper(BGSrc *src)
+void BGPreloadWallpaper(BGSrc *src)
 {
 	HBITMAP       hbm;
 	WallpaperInfo wi;
@@ -982,7 +994,7 @@ createdc:
 	src->color = GetSysColor(COLOR_DESKTOP);
 }
 
-static void BGPreloadSrc(BGSrc *src)
+void BGPreloadSrc(BGSrc *src)
 {
   DeleteBitmapDC(&(src->hdc));
 
@@ -1001,7 +1013,7 @@ static void BGPreloadSrc(BGSrc *src)
   }
 }
 
-static void BGStretchPicture(HDC hdcDest,BGSrc *src,int x,int y,int width,int height,BOOL bAntiAlias)
+void BGStretchPicture(HDC hdcDest,BGSrc *src,int x,int y,int width,int height,BOOL bAntiAlias)
 {
 	if(!hdcDest || !src)
 		return;
@@ -1038,9 +1050,10 @@ static void BGStretchPicture(HDC hdcDest,BGSrc *src,int x,int y,int width,int he
 	}
 }
 
-static void BGLoadPicture(HDC hdcDest,BGSrc *src)
+void BGLoadPicture(HDC hdcDest,BGSrc *src)
 {
   int x,y,width,height,pattern;
+  HDC hdc = NULL;
 
   FillBitmapDC(hdcDest,src->color);
 
@@ -1100,7 +1113,7 @@ typedef struct tagLoadWallpaperStruct
   BGSrc *src;
 }LoadWallpaperStruct;
 
-static BOOL CALLBACK BGLoadWallpaperEnumFunc(HMONITOR hMonitor,HDC hdcMonitor,LPRECT lprcMonitor,LPARAM dwData)
+BOOL CALLBACK BGLoadWallpaperEnumFunc(HMONITOR hMonitor,HDC hdcMonitor,LPRECT lprcMonitor,LPARAM dwData)
 {
   RECT rectDest;
   RECT rectRgn;
@@ -1191,9 +1204,9 @@ void BGLoadWallpaper(HDC hdcDest,BGSrc *src)
   lws.src        = src;
   lws.hdcDest    = hdcDest;
 
-  if(pEnumDisplayMonitors != NULL)
+  if(BGEnumDisplayMonitors)
   {
-    (*pEnumDisplayMonitors)(NULL,NULL,BGLoadWallpaperEnumFunc,(LPARAM)&lws);
+    (*BGEnumDisplayMonitors)(NULL,NULL,BGLoadWallpaperEnumFunc,(LPARAM)&lws);
   }else{
     RECT rectMonitor;
 
@@ -1205,7 +1218,7 @@ void BGLoadWallpaper(HDC hdcDest,BGSrc *src)
   SetWindowOrgEx(hdcDest,0,0,NULL);
 }
 
-static void BGLoadSrc(HDC hdcDest,BGSrc *src)
+void BGLoadSrc(HDC hdcDest,BGSrc *src)
 {
   switch(src->type)
   {
@@ -1245,7 +1258,7 @@ void BGSetupPrimary(BOOL forceSetup)
   CopyRect(&BGPrevRect,&rect);
 
   #ifdef _DEBUG
-    OutputDebugPrintf("BGSetupPrimary : BGInSizeMove = %d\n",BGInSizeMove);
+    dprintf("BGSetupPrimary : BGInSizeMove = %d",BGInSizeMove);
   #endif
 
   //作業用 DC 作成
@@ -1260,7 +1273,7 @@ void BGSetupPrimary(BOOL forceSetup)
 
   if(!BGInSizeMove)
   {
-    BLENDFUNCTION bf;
+    BGBLENDFUNCTION bf;
     HDC hdcSrc = NULL;
 
     //背景 HDC
@@ -1292,7 +1305,7 @@ void BGSetupPrimary(BOOL forceSetup)
   }
 }
 
-static COLORREF BGGetColor(char *name,COLORREF defcolor,char *file)
+COLORREF BGGetColor(char *name,COLORREF defcolor,char *file)
 {
   unsigned int r,g,b;
   char colorstr[256],defstr[256];
@@ -1308,7 +1321,7 @@ static COLORREF BGGetColor(char *name,COLORREF defcolor,char *file)
   return RGB(r,g,b);
 }
 
-static BG_PATTERN BGGetStrIndex(char *name,BG_PATTERN def,char *file,char **strList,int nList)
+BG_PATTERN BGGetStrIndex(char *name,BG_PATTERN def,char *file,char **strList,int nList)
 {
   char defstr[64],str[64];
   int  i;
@@ -1460,6 +1473,7 @@ void BGDestruct(void)
 void BGInitialize(void)
 {
   char path[MAX_PATH],config_file[MAX_PATH],tempPath[MAX_PATH];
+  char msimg32_dll[MAX_PATH],user32_dll[MAX_PATH];
 
   // VTColor を読み込み
   BGVTColor[0] = ts.VTColor[0];
@@ -1605,15 +1619,21 @@ void BGInitialize(void)
 
   // AlphaBlend のアドレスを読み込み
   if(BGUseAlphaBlendAPI) {
-	if(pAlphaBlend != NULL)
-	  BGAlphaBlend = pAlphaBlend;
-	else
-	  BGAlphaBlend = AlphaBlendWithoutAPI;
+    GetSystemDirectory(msimg32_dll, sizeof(msimg32_dll));
+    strncat_s(msimg32_dll, sizeof(msimg32_dll), "\\msimg32.dll", _TRUNCATE);
+    (FARPROC)BGAlphaBlend = GetProcAddressWithDllName(msimg32_dll,"AlphaBlend");
   }
   else {
-    BGAlphaBlend = AlphaBlendWithoutAPI;
+    BGAlphaBlend = NULL;
   }
 
+  if(!BGAlphaBlend)
+    BGAlphaBlend = AlphaBlendWithoutAPI;
+
+  //EnumDisplayMonitors を探す
+  GetSystemDirectory(user32_dll, sizeof(user32_dll));
+  strncat_s(user32_dll, sizeof(user32_dll), "\\user32.dll", _TRUNCATE);
+  (FARPROC)BGEnumDisplayMonitors = GetProcAddressWithDllName(user32_dll,"EnumDisplayMonitors");
 }
 
 void BGExchangeColor() {
@@ -1938,113 +1958,108 @@ void DispConvScreenToWin
        *Yw = (Ys - WinOrgY) * FontHeight;
 }
 
-static void SetLogFont(LOGFONTA *VTlf, BOOL mul)
+void SetLogFont()
 {
-  memset(VTlf, 0, sizeof(*VTlf));
-  VTlf->lfWeight = FW_NORMAL;
-  VTlf->lfItalic = 0;
-  VTlf->lfUnderline = 0;
-  VTlf->lfStrikeOut = 0;
-  VTlf->lfWidth = ts.VTFontSize.x;
-  VTlf->lfHeight = ts.VTFontSize.y;
-  VTlf->lfCharSet = ts.VTFontCharSet;
-  VTlf->lfOutPrecision  = OUT_CHARACTER_PRECIS;
-  VTlf->lfClipPrecision = CLIP_CHARACTER_PRECIS;
-  VTlf->lfQuality       = (BYTE)ts.FontQuality;
-  VTlf->lfPitchAndFamily = FIXED_PITCH | FF_DONTCARE;
-  strncpy_s(VTlf->lfFaceName, sizeof(VTlf->lfFaceName),ts.VTFont, _TRUNCATE);
-  if (mul) {
-	  const UINT uDpi = GetMonitorDpiFromWindow(HVTWin);
-	  VTlf->lfWidth = MulDiv(VTlf->lfWidth, uDpi, 96);
-	  VTlf->lfHeight = MulDiv(VTlf->lfHeight, uDpi, 96);
-  }
+  memset(&VTlf, 0, sizeof(LOGFONT));
+  VTlf.lfWeight = FW_NORMAL;
+  VTlf.lfItalic = 0;
+  VTlf.lfUnderline = 0;
+  VTlf.lfStrikeOut = 0;
+  VTlf.lfWidth = ts.VTFontSize.x;
+  VTlf.lfHeight = ts.VTFontSize.y;
+  VTlf.lfCharSet = ts.VTFontCharSet;
+  VTlf.lfOutPrecision  = OUT_CHARACTER_PRECIS;
+  VTlf.lfClipPrecision = CLIP_CHARACTER_PRECIS;
+  VTlf.lfQuality       = (BYTE)ts.FontQuality;
+  VTlf.lfPitchAndFamily = FIXED_PITCH | FF_DONTCARE;
+  strncpy_s(VTlf.lfFaceName, sizeof(VTlf.lfFaceName),ts.VTFont, _TRUNCATE);
 }
 
 void ChangeFont()
 {
-	int i, j;
-	TEXTMETRIC Metrics;
-	LOGFONTA VTlf;
+  int i, j;
+  TEXTMETRIC Metrics;
+  HDC TmpDC;
 
-	/* Delete Old Fonts */
-	for (i = 0 ; i <= AttrFontMask ; i++)
-	{
-		for (j = i+1 ; j <= AttrFontMask ; j++)
-			if (VTFont[j]==VTFont[i])
-				VTFont[j] = 0;
-		if (VTFont[i]!=0)
-			DeleteObject(VTFont[i]);
-	}
+  /* Delete Old Fonts */
+  for (i = 0 ; i <= AttrFontMask ; i++)
+  {
+    for (j = i+1 ; j <= AttrFontMask ; j++)
+      if (VTFont[j]==VTFont[i])
+        VTFont[j] = 0;
+    if (VTFont[i]!=0)
+      DeleteObject(VTFont[i]);
+  }
 
-	{
-		HDC TmpDC = GetDC(HVTWin);
+  /* Normal Font */
+  SetLogFont();
+  VTFont[0] = CreateFontIndirect(&VTlf);
 
-		/* Normal Font */
-		SetLogFont(&VTlf, TRUE);
-		VTFont[0] = CreateFontIndirect(&VTlf);
+  /* set IME font */
+  SetConversionLogFont(&VTlf);
 
-		/* set IME font */
-		SetConversionLogFont(HVTWin, &VTlf);
+  TmpDC = GetDC(HVTWin);
 
-		SelectObject(TmpDC, VTFont[0]);
-		GetTextMetrics(TmpDC, &Metrics);
-		FontWidth = Metrics.tmAveCharWidth + ts.FontDW;
-		FontHeight = Metrics.tmHeight + ts.FontDH;
+  SelectObject(TmpDC, VTFont[0]);
+  GetTextMetrics(TmpDC, &Metrics);
+  FontWidth = Metrics.tmAveCharWidth + ts.FontDW;
+  FontHeight = Metrics.tmHeight + ts.FontDH;
 
-		ReleaseDC(HVTWin,TmpDC);
-	}
+  ReleaseDC(HVTWin,TmpDC);
 
-	/* Underline */
-	VTlf.lfUnderline = 1;
-	VTFont[AttrUnder] = CreateFontIndirect(&VTlf);
+  /* Underline */
+  VTlf.lfUnderline = 1;
+  VTFont[AttrUnder] = CreateFontIndirect(&VTlf);
 
-	if (ts.FontFlag & FF_BOLD) {
-		/* Bold */
-		VTlf.lfUnderline = 0;
-		VTlf.lfWeight = FW_BOLD;
-		VTFont[AttrBold] = CreateFontIndirect(&VTlf);
-		/* Bold + Underline */
-		VTlf.lfUnderline = 1;
-		VTFont[AttrBold | AttrUnder] = CreateFontIndirect(&VTlf);
-	}
-	else {
-		VTFont[AttrBold] = VTFont[AttrDefault];
-		VTFont[AttrBold | AttrUnder] = VTFont[AttrUnder];
-	}
+  if (ts.FontFlag & FF_BOLD) {
+    /* Bold */
+    VTlf.lfUnderline = 0;
+    VTlf.lfWeight = FW_BOLD;
+    VTFont[AttrBold] = CreateFontIndirect(&VTlf);
+    /* Bold + Underline */
+    VTlf.lfUnderline = 1;
+    VTFont[AttrBold | AttrUnder] = CreateFontIndirect(&VTlf);
+  }
+  else {
+    VTFont[AttrBold] = VTFont[AttrDefault];
+    VTFont[AttrBold | AttrUnder] = VTFont[AttrUnder];
+  }
 
-	/* Special font */
-	VTlf.lfWeight = FW_NORMAL;
-	VTlf.lfUnderline = 0;
-	VTlf.lfWidth = FontWidth + 1; /* adjust width */
-	VTlf.lfHeight = FontHeight;
-	VTlf.lfCharSet = SYMBOL_CHARSET;
+  /* Special font */
+  VTlf.lfWeight = FW_NORMAL;
+  VTlf.lfUnderline = 0;
+  VTlf.lfWidth = FontWidth + 1; /* adjust width */
+  VTlf.lfHeight = FontHeight;
+  VTlf.lfCharSet = SYMBOL_CHARSET;
 
-	strncpy_s(VTlf.lfFaceName, sizeof(VTlf.lfFaceName),"Tera Special", _TRUNCATE);
-	VTFont[AttrSpecial] = CreateFontIndirect(&VTlf);
+  strncpy_s(VTlf.lfFaceName, sizeof(VTlf.lfFaceName),"Tera Special", _TRUNCATE);
+  VTFont[AttrSpecial] = CreateFontIndirect(&VTlf);
 
-	/* Special font (Underline) */
-	VTlf.lfUnderline = 1;
-	VTlf.lfHeight = FontHeight - 1; // adjust for underline
-	VTFont[AttrSpecial | AttrUnder] = CreateFontIndirect(&VTlf);
+  /* Special font (Underline) */
+  VTlf.lfUnderline = 1;
+  VTlf.lfHeight = FontHeight - 1; // adjust for underline
+  VTFont[AttrSpecial | AttrUnder] = CreateFontIndirect(&VTlf);
 
-	if (ts.FontFlag & FF_BOLD) {
-		/* Special font (Bold) */
-		VTlf.lfUnderline = 0;
-		VTlf.lfHeight = FontHeight;
-		VTlf.lfWeight = FW_BOLD;
-		VTFont[AttrSpecial | AttrBold] = CreateFontIndirect(&VTlf);
-		/* Special font (Bold + Underline) */
-		VTlf.lfUnderline = 1;
-		VTlf.lfHeight = FontHeight - 1; // adjust for underline
-		VTFont[AttrSpecial | AttrBold | AttrUnder] = CreateFontIndirect(&VTlf);
-	}
-	else {
-		VTFont[AttrSpecial | AttrBold] = VTFont[AttrSpecial];
-		VTFont[AttrSpecial | AttrBold | AttrUnder] = VTFont[AttrSpecial | AttrUnder];
-	}
+  if (ts.FontFlag & FF_BOLD) {
+    /* Special font (Bold) */
+    VTlf.lfUnderline = 0;
+    VTlf.lfHeight = FontHeight;
+    VTlf.lfWeight = FW_BOLD;
+    VTFont[AttrSpecial | AttrBold] = CreateFontIndirect(&VTlf);
+    /* Special font (Bold + Underline) */
+    VTlf.lfUnderline = 1;
+    VTlf.lfHeight = FontHeight - 1; // adjust for underline
+    VTFont[AttrSpecial | AttrBold | AttrUnder] = CreateFontIndirect(&VTlf);
+  }
+  else {
+    VTFont[AttrSpecial | AttrBold] = VTFont[AttrSpecial];
+    VTFont[AttrSpecial | AttrBold | AttrUnder] = VTFont[AttrSpecial | AttrUnder];
+  }
 
-	for (i = 0 ; i < TermWidthMax; i++)
-		Dx[i] = FontWidth;
+  SetLogFont();
+
+  for (i = 0 ; i < TermWidthMax; i++)
+    Dx[i] = FontWidth;
 }
 
 void ResetIME()
@@ -2056,29 +2071,20 @@ void ResetIME()
 	if ((ts.Language==IdJapanese) || (ts.Language==IdKorean) || (ts.Language==IdUtf8)) //HKS
 	{
 		if (ts.UseIME==0)
-			FreeIME(HVTWin);
-		else if (! LoadIME()) {
-			char uimsg[MAX_UIMSG];
-			get_lang_msg("MSG_TT_ERROR", uimsg, sizeof(uimsg),  "Tera Term: Error", ts.UILanguageFile);
-			get_lang_msg("MSG_USE_IME_ERROR", ts.UIMsg, sizeof(ts.UIMsg), "Can't use IME", ts.UILanguageFile);
-			MessageBoxA(0,ts.UIMsg,uimsg,MB_ICONEXCLAMATION);
-			WritePrivateProfileStringA("Tera Term","IME","off",ts.SetupFName);
+			FreeIME();
+		else if (! LoadIME())
 			ts.UseIME = 0;
-		}
 
 		if (ts.UseIME>0)
 		{
-			if (ts.IMEInline>0) {
-				LOGFONTA VTlf;
-				SetLogFont(&VTlf, TRUE);
-				SetConversionLogFont(HVTWin, &VTlf);
-			}
+			if (ts.IMEInline>0)
+				SetConversionLogFont(&VTlf);
 			else
 				SetConversionWindow(HVTWin,-1,0);
 		}
 	}
 	else
-		FreeIME(HVTWin);
+		FreeIME();
 
 	if (IsCaretOn()) CaretOn();
 }
@@ -2228,15 +2234,6 @@ void CaretOn()
 
 		CaretX = (CursorX-WinOrgX)*FontWidth;
 		CaretY = (CursorY-WinOrgY)*FontHeight;
-
-		if (IMEstat && IMECompositionState) {
-			// IME ON && 変換中の場合のみの処理する。
-			// 変換中(漢字や候補ウィンドウが表示されている状態)で
-			// ホストからのエコーを受信してcaret位置が変化した場合、
-			// 変換している位置を更新する必要がある。
-			SetConversionWindow(HVTWin,CaretX,CaretY);
-		}
-
 		if (ts.CursorShape!=IdVCur) {
 			if (ts.CursorShape==IdHCur) {
 				CaretY = CaretY+FontHeight-CurWidth;
@@ -2512,8 +2509,8 @@ void DispChangeWin()
     ANSIColor[IdBack ]   = ts.VTColor[1];
 
 #ifdef ALPHABLEND_TYPE2
-	ANSIColor[IdFore ]   = BGVTColor[0];
-	ANSIColor[IdBack ]   = BGVTColor[1];
+      ANSIColor[IdFore ]   = BGVTColor[0];
+     ANSIColor[IdBack ]   = BGVTColor[1];
 #endif  // ALPHABLEND_TYPE2
 
   }
@@ -2813,7 +2810,7 @@ void DispStr(PCHAR Buff, int Count, int Y, int* X)
     {
       if(BGReverseTextAlpha < 255)
       {
-        BLENDFUNCTION bf;
+        BGBLENDFUNCTION bf;
         HBRUSH hbr;
 
         hbr = CreateSolidBrush(GetBkColor(hdcBGBuffer));
@@ -3359,11 +3356,10 @@ void DispSetupFontDlg()
 //  reset window
 {
   BOOL Ok;
-  LOGFONTA VTlf;
 
   ts.VTFlag = 1;
   if (! LoadTTDLG()) return;
-  SetLogFont(&VTlf, FALSE);
+  SetLogFont();
   Ok = ChooseFontDlg(HVTWin,&VTlf,&ts);
   FreeTTDLG();
   if (! Ok) return;
@@ -3558,9 +3554,13 @@ void DispSetColor(unsigned int num, COLORREF color)
 
 void DispResetColor(unsigned int num)
 {
+	HDC TmpDC;
+
 	if (num == CS_UNSPEC) {
 		return;
 	}
+
+	TmpDC = GetDC(NULL);
 
 	switch(num) {
 #ifdef ALPHABLEND_TYPE2
@@ -3840,12 +3840,26 @@ void DispGetWindowSize(int *width, int *height, BOOL client) {
 
 void DispGetRootWinSize(int *x, int *y, BOOL inPixels)
 {
+	HMODULE mod;
+	HMONITOR monitor;
+	MONITORINFO monitorInfo;
 	RECT desktop, win, client;
 
 	GetWindowRect(HVTWin, &win);
 	GetClientRect(HVTWin, &client);
 
-	GetDesktopRect(HVTWin, &desktop);
+	if (((mod = GetModuleHandle("user32.dll")) != NULL) &&
+	    (GetProcAddress(mod,"MonitorFromWindow") != NULL)) {
+		// マルチモニタがサポートされている場合
+		monitor = MonitorFromWindow(HVTWin, MONITOR_DEFAULTTONEAREST);
+		monitorInfo.cbSize = sizeof(MONITORINFO);
+		GetMonitorInfo(monitor, &monitorInfo);
+		desktop = monitorInfo.rcWork;
+	}
+	else {
+		// マルチモニタがサポートされていない場合
+		SystemParametersInfo(SPI_GETWORKAREA, 0, &desktop, 0);
+	}
 
 	if (inPixels) {
 		*x = desktop.right - desktop.left;
@@ -3855,6 +3869,8 @@ void DispGetRootWinSize(int *x, int *y, BOOL inPixels)
 		*x = (desktop.right - desktop.left - (win.right - win.left - client.right)) / FontWidth;
 		*y = (desktop.bottom - desktop.top - (win.bottom - win.top - client.bottom)) / FontHeight;
 	}
+
+	return;
 }
 
 int DispFindClosestColor(int red, int green, int blue)

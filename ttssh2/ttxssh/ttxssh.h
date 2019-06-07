@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 1998-2001, Robert O'Callahan
- * (C) 2004-2019 TeraTerm Project
+ * (C) 2004-2017 TeraTerm Project
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -49,7 +49,6 @@ See LICENSE.TXT for the license.
 
 #include <winsock2.h>
 #include <ws2tcpip.h>
-#include <wspiapi.h>
 /* actual body of in6addr_any and in6addr_loopback is disappeared?? */
 #undef IN6_IS_ADDR_LOOPBACK
 #define IN6_IS_ADDR_LOOPBACK(a)         \
@@ -89,11 +88,6 @@ typedef struct _TInstVar *PTInstVar;
 #include "teraterm.h"
 #include "tttypes.h"
 #include "ttplugin.h"
-
-#if defined(_MSC_VER) && _MSC_VER < 1910
-// 2017未満のときは無効とする
-#define _Printf_format_string_
-#endif
 
 HANDLE hInst; /* Instance handle of TTXSSH.DLL */
 
@@ -141,15 +135,13 @@ we could put them there.
 typedef struct _TS_SSH {
 	BOOL Enabled;
 	int CompressionLevel; /* 0 = NONE, else 1-9 */
-
-	int DefaultUserType;	/* 0/1/2 = no input/DefaultUserName/Windows logon user */
 	char DefaultUserName[256];
 
 	/* this next option is a string of digits. Each digit represents a
 	   cipher. The first digit is the most preferred cipher, and so on.
 	   The digit SSH_CIPHER_NONE signifies that any ciphers after it are
 	   disabled. */
-	char CipherOrder[SSH_CIPHER_MAX+2];
+	char CipherOrder[SSH_CIPHER_MAX+1];
 
 	char KnownHostsFiles[2048];
 	int DefaultAuthMethod;
@@ -338,10 +330,6 @@ typedef struct _TInstVar {
 	char subsystem_name[256];
 
 	BOOL nosession;
-
-	// dialog resource
-	HFONT hFontFixed;		// hosts.c内のダイアログ用
-
 } TInstVar;
 
 // バージョンに合わせて自動変更される。 例: TTSSH_2-81_TS_data
@@ -365,16 +353,8 @@ void notify_closed_connection(PTInstVar pvar, char *send_msg);
 void notify_nonfatal_error(PTInstVar pvar, char *msg);
 void notify_fatal_error(PTInstVar pvar, char *msg, BOOL send_disconnect);
 void logputs(int level, char *msg);
-#if defined(_MSC_VER)
-void logprintf(int level, _Printf_format_string_ const char *fmt, ...);
-void logprintf_hexdump(int level, const char *data, int len, _Printf_format_string_ const char *fmt, ...);
-#elif defined(__GNUC__)
-void logprintf(int level, const char *fmt, ...) __attribute__ ((format (printf, 2, 3)));
-void logprintf_hexdump(int level, const char *data, int len, const char *fmt, ...) __attribute__ ((format (printf, 4, 5)));
-#else
-void logprintf(int level, const char *fmt, ...);
-void logprintf_hexdump(int level, const char *data, int len, const char *fmt, ...);
-#endif
+void logprintf(int level, char *fmt, ...);
+void logprintf_hexdump(int level, char *data, int len, char *fmt, ...);
 
 void get_teraterm_dir_relative_name(char *buf, int bufsize, char *basename);
 int copy_teraterm_dir_relative_path(char *dest, int destsize, char *basename);

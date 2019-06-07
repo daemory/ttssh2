@@ -69,12 +69,11 @@
 			/>
 			<Tool
 				Name="VCLinkerTool"
-				AdditionalDependencies="User32.lib gdi32.lib SHELL32.lib ole32.lib ttpcmn.lib"
+				AdditionalDependencies="ttpcmn.lib"
 				LinkIncremental="1"
 				SuppressStartupBanner="true"
 				AdditionalLibraryDirectories="$(OutDir)"
 				ModuleDefinitionFile="$(ProjectName).def"
-				DelayLoadDLLs="user32.dll"
 				GenerateDebugInformation="true"
 				SubSystem="2"
 				ImportLibrary="$(OutDir)\$(ProjectName).lib"
@@ -162,12 +161,11 @@
 			/>
 			<Tool
 				Name="VCLinkerTool"
-				AdditionalDependencies="User32.lib gdi32.lib SHELL32.lib ole32.lib ttpcmn.lib"
+				AdditionalDependencies="ttpcmn.lib"
 				LinkIncremental="1"
 				SuppressStartupBanner="true"
 				AdditionalLibraryDirectories="$(OutDir)"
 				ModuleDefinitionFile="$(ProjectName).def"
-				DelayLoadDLLs="user32.dll"
 				GenerateDebugInformation="true"
 				SubSystem="2"
 				ImportLibrary="$(OutDir)\$(ProjectName).lib"
@@ -224,6 +222,10 @@
 			Filter="h;hpp;hxx;hm;inl;fi;fd"
 			>
 			<File
+				RelativePath="tek_res.h"
+				>
+			</File>
+			<File
 				RelativePath="tekesc.h"
 				>
 			</File>
@@ -243,6 +245,10 @@
 			>
 			<File
 				RelativePath="ttptek-version.rc"
+				>
+			</File>
+			<File
+				RelativePath="ttptek.rc"
 				>
 			</File>
 		</Filter>

@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 1994-1998 T. Teranishi
- * (C) 2005-2019 TeraTerm Project
+ * (C) 2005-2018 TeraTerm Project
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -1239,24 +1239,11 @@ WORD TTLExec()
 		bRet = CreateProcess(NULL, Str, NULL, NULL, FALSE, NORMAL_PRIORITY_CLASS, NULL, NULL, &sui, &pi);
 	else
 		bRet = CreateProcess(NULL, Str, NULL, NULL, FALSE, NORMAL_PRIORITY_CLASS, NULL, CurDir, &sui, &pi);
-	if (bRet == FALSE) {
-		// 実行できなかった場合、resultに-1を返す
-		SetResult(-1);
-#if 0
-		// エラーになる
-		Err = ErrCantExec;
-#endif
-	} else {
-		if (wait) {
-			// 実行 & wait指定
-			WaitForSingleObject(pi.hProcess, INFINITE);
-			GetExitCodeProcess(pi.hProcess, &ret);
-			SetResult(ret);
-		} else {
-			SetResult(0);
-		}
-		CloseHandle(pi.hThread);
-		CloseHandle(pi.hProcess);
+	// TODO: check bRet
+	if (wait) {
+		WaitForSingleObject(pi.hProcess, INFINITE);
+		GetExitCodeProcess(pi.hProcess, &ret);
+		SetResult(ret);
 	}
 	return Err;
 }
@@ -3535,7 +3522,6 @@ int MessageCommand(int BoxId, LPWORD Err)
 		// return 
 		//   0以上: 選択項目
 		//   -1: キャンセル
-		//	 -2: close
 		ret = OpenListDlg(Str1, Str2, s, sel);
 
 		for (i = 0 ; i < ary_size ; i++) {
@@ -3543,10 +3529,6 @@ int MessageCommand(int BoxId, LPWORD Err)
 		}
 		free(s);
 
-		// リストボックスの閉じるボタン(&確認ダイアログ)で、マクロの終了とする。
-		if (ret == -2) {
-			TTLStatus = IdTTLEnd;
-		}
 		return (ret);
 
 	}

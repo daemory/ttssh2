@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 1998-2001, Robert O'Callahan
- * (C) 2004-2019 TeraTerm Project
+ * (C) 2004-2017 TeraTerm Project
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -32,36 +32,23 @@
 #include "ssh.h"
 #include "key.h"
 #include "ttlib.h"
-#include "dlglib.h"
 
 #include <io.h>
 #include <fcntl.h>
 #include <stdlib.h>
 #include <errno.h>
-#include <Lmcons.h>		// for UNLEN
-#include <crtdbg.h>
 
 #include "resource.h"
 #include "keyfiles.h"
 #include "libputty.h"
-#include "tipwin.h"
-#include "auth.h"
-
-#if defined(_DEBUG) && !defined(_CRTDBG_MAP_ALLOC)
-#define malloc(l) _malloc_dbg((l), _NORMAL_BLOCK, __FILE__, __LINE__)
-#define free(p)   _free_dbg((p), _NORMAL_BLOCK)
-#endif
 
 #define AUTH_START_USER_AUTH_ON_ERROR_END 1
 
 #define MAX_AUTH_CONTROL IDC_SSHUSEPAGEANT
 
-#undef DialogBoxParam
-#define DialogBoxParam(p1,p2,p3,p4,p5) \
-	TTDialogBoxParam(p1,p2,p3,p4,p5)
-#undef EndDialog
-#define EndDialog(p1,p2) \
-	TTEndDialog(p1, p2)
+static HFONT DlgAuthFont;
+static HFONT DlgTisFont;
+static HFONT DlgAuthSetupFont;
 
 void destroy_malloced_string(char **str)
 {
@@ -78,84 +65,32 @@ static int auth_types_to_control_IDs[] = {
 	-1, -1, -1, -1, -1, -1, -1, -1, -1, IDC_SSHUSEPAGEANT, -1
 };
 
-typedef struct {
-	WNDPROC ProcOrg;
-	PTInstVar pvar;
-	TipWin *tipwin;
-	BOOL *UseControlChar;
-} TPasswordControlData;
-
-static void password_wnd_proc_close_tooltip(TPasswordControlData *data)
+LRESULT CALLBACK password_wnd_proc(HWND control, UINT msg,
+                                   WPARAM wParam, LPARAM lParam)
 {
-	if (data->tipwin != NULL) {
-		TipWinDestroy(data->tipwin);
-		data->tipwin = NULL;
-	}
-}
-
-static LRESULT CALLBACK password_wnd_proc(HWND control, UINT msg,
-										  WPARAM wParam, LPARAM lParam)
-{
-	LRESULT result;
-	TPasswordControlData *data = (TPasswordControlData *)GetWindowLongPtr(control, GWLP_USERDATA);
 	switch (msg) {
 	case WM_CHAR:
-		if ((data->UseControlChar == NULL || *data->UseControlChar == TRUE) &&
-			(GetKeyState(VK_CONTROL) & 0x8000) != 0)
-		{	// 制御文字を使用する && CTRLキーが押されている
-			TCHAR chars[] = { (TCHAR) wParam, 0 };
+		if ((GetKeyState(VK_CONTROL) & 0x8000) != 0) {
+			char chars[] = { (char) wParam, 0 };
 
 			SendMessage(control, EM_REPLACESEL, (WPARAM) TRUE,
-			            (LPARAM) (TCHAR *) chars);
-
-			if (data->tipwin == NULL) {
-				TCHAR uimsg[MAX_UIMSG];
-				RECT rect;
-				PTInstVar pvar = data->pvar;
-				UTIL_get_lang_msg("DLG_AUTH_TIP_CONTROL_CODE", pvar, "control character is entered");
-				_tcscpy_s(uimsg, _countof(uimsg), pvar->ts->UIMsg);
-				if (wParam == 'V' - 'A' + 1) {
-					// CTRL + V
-					_tcscat_s(uimsg, _countof(uimsg), _T("\n"));
-					UTIL_get_lang_msg("DLG_AUTH_TIP_PASTE_KEY", pvar, "Use Shift + Insert to paste from clipboard");
-					_tcscat_s(uimsg, _countof(uimsg), pvar->ts->UIMsg);
-				}
-				GetWindowRect(control, &rect);
-				data->tipwin = TipWinCreate(control, rect.left, rect.bottom, uimsg);
-			}
-
+			            (LPARAM) (char *) chars);
 			return 0;
-		} else {
-			password_wnd_proc_close_tooltip(data);
 		}
-		break;
-	case WM_KILLFOCUS:
-		password_wnd_proc_close_tooltip(data);
-		break;
 	}
 
-	result = CallWindowProc((WNDPROC)data->ProcOrg,
-							control, msg, wParam, lParam);
-
-	if (msg == WM_NCDESTROY) {
-		SetWindowLongPtr(control, GWLP_WNDPROC, (LONG_PTR)data->ProcOrg);
-		password_wnd_proc_close_tooltip(data);
-		free(data);
-	}
-
-	return result;
+	return CallWindowProc((WNDPROC) GetWindowLong(control, GWL_USERDATA),
+	                      control, msg, wParam, lParam);
 }
 
-void init_password_control(PTInstVar pvar, HWND dlg, int item, BOOL *UseControlChar)
+static void init_password_control(HWND dlg)
 {
-	HWND passwordControl = GetDlgItem(dlg, item);
-	TPasswordControlData *data = (TPasswordControlData *)malloc(sizeof(TPasswordControlData));
-	data->ProcOrg = (WNDPROC)GetWindowLongPtr(passwordControl, GWLP_WNDPROC);
-	data->pvar = pvar;
-	data->tipwin = NULL;
-	data->UseControlChar = UseControlChar;
-	SetWindowLongPtr(passwordControl, GWLP_WNDPROC, (LONG_PTR)password_wnd_proc);
-	SetWindowLongPtr(passwordControl, GWLP_USERDATA, (LONG_PTR)data);
+	HWND passwordControl = GetDlgItem(dlg, IDC_SSHPASSWORD);
+
+	SetWindowLong(passwordControl, GWL_USERDATA,
+	              SetWindowLong(passwordControl, GWL_WNDPROC,
+	                            (LONG) password_wnd_proc));
+
 	SetFocus(passwordControl);
 }
 
@@ -171,7 +106,6 @@ static void set_auth_options_status(HWND dlg, int controlID)
 
 	EnableWindow(GetDlgItem(dlg, IDC_SSHPASSWORDCAPTION), (!TIS_enabled && !PAGEANT_enabled));
 	EnableWindow(GetDlgItem(dlg, IDC_SSHPASSWORD), (!TIS_enabled && !PAGEANT_enabled));
-	EnableWindow(GetDlgItem(dlg, IDC_SSHPASSWORD_OPTION), (!TIS_enabled && !PAGEANT_enabled));
 
 	for (i = IDC_CHOOSERSAFILE; i <= IDC_RSAFILENAME; i++) {
 		EnableWindow(GetDlgItem(dlg, i), RSA_enabled);
@@ -242,60 +176,62 @@ static void update_server_supported_types(PTInstVar pvar, HWND dlg)
 	}
 }
 
-static LRESULT CALLBACK username_proc(HWND hWnd, UINT msg,
-									  WPARAM wParam, LPARAM lParam)
+static void init_auth_dlg(PTInstVar pvar, HWND dlg)
 {
-	const WNDPROC ProcOrg = (WNDPROC)GetWindowLongPtr(hWnd, GWLP_USERDATA);
-	const LRESULT result = CallWindowProc(ProcOrg, hWnd, msg, wParam, lParam);
-	switch (msg) {
-	case WM_CHAR:
-	case WM_SETTEXT: {
-		// ユーザー名が入力されていた場合、オプションを使うことはないので、
-		// tabでのフォーカス移動時、オプションボタンをパスするようにする
-		// 従来と同じキー操作でユーザー名とパスフレーズを入力可能とする
-		const HWND dlg = GetParent(hWnd);
-		const HWND hWndOption = GetDlgItem(dlg, IDC_USERNAME_OPTION);
-		const int len = GetWindowTextLength(hWnd);
-		LONG_PTR style = GetWindowLongPtr(hWndOption, GWL_STYLE);
-		if (len > 0) {
-			// 不要tabstop
-			style = style & (~(LONG_PTR)WS_TABSTOP);
-		} else {
-			// 要tabstop
-			style = style | WS_TABSTOP;
-		}
-		SetWindowLongPtr(hWndOption, GWL_STYLE, style);
-	}
-	}
-	return result;
-}
-
-static void init_auth_dlg(PTInstVar pvar, HWND dlg, BOOL *UseControlChar)
-{
-	const static DlgTextInfo text_info[] = {
-		{ 0, "DLG_AUTH_TITLE" },
-		{ IDC_SSHAUTHBANNER, "DLG_AUTH_BANNER" },
-		{ IDC_SSHAUTHBANNER2, "DLG_AUTH_BANNER2" },
-		{ IDC_SSHUSERNAMELABEL, "DLG_AUTH_USERNAME" },
-		{ IDC_SSHPASSWORDCAPTION, "DLG_AUTH_PASSWORD" },
-		{ IDC_REMEMBER_PASSWORD, "DLG_AUTH_REMEMBER_PASSWORD" },
-		{ IDC_FORWARD_AGENT, "DLG_AUTH_FWDAGENT" },
-		{ IDC_SSHUSEPASSWORD, "DLG_AUTH_METHOD_PASSWORD" },
-		{ IDC_SSHUSERSA, "DLG_AUTH_METHOD_RSA" },
-		{ IDC_SSHUSERHOSTS, "DLG_AUTH_METHOD_RHOST" },
-		{ IDC_SSHUSEPAGEANT, "DLG_AUTH_METHOD_PAGEANT" },
-		{ IDC_RSAFILENAMELABEL, "DLG_AUTH_PRIVATEKEY" },
-		{ IDC_LOCALUSERNAMELABEL, "DLG_AUTH_LOCALUSER" },
-		{ IDC_HOSTRSAFILENAMELABEL, "DLG_AUTH_HOST_PRIVATEKEY" },
-		{ IDOK, "BTN_OK" },
-		{ IDCANCEL, "BTN_DISCONNECT" },
-	};
 	int default_method = pvar->session_settings.DefaultAuthMethod;
+	char uimsg[MAX_UIMSG];
 
-	SetI18DlgStrs("TTSSH", dlg, text_info, _countof(text_info), pvar->ts->UILanguageFile);
+	GetWindowText(dlg, uimsg, sizeof(uimsg));
+	UTIL_get_lang_msg("DLG_AUTH_TITLE", pvar, uimsg);
+	SetWindowText(dlg, pvar->ts->UIMsg);
+	GetDlgItemText(dlg, IDC_SSHAUTHBANNER, uimsg, sizeof(uimsg));
+	UTIL_get_lang_msg("DLG_AUTH_BANNER", pvar, uimsg);
+	SetDlgItemText(dlg, IDC_SSHAUTHBANNER, pvar->ts->UIMsg);
+	GetDlgItemText(dlg, IDC_SSHAUTHBANNER2, uimsg, sizeof(uimsg));
+	UTIL_get_lang_msg("DLG_AUTH_BANNER2", pvar, uimsg);
+	SetDlgItemText(dlg, IDC_SSHAUTHBANNER2, pvar->ts->UIMsg);
+	GetDlgItemText(dlg, IDC_SSHUSERNAMELABEL, uimsg, sizeof(uimsg));
+	UTIL_get_lang_msg("DLG_AUTH_USERNAME", pvar, uimsg);
+	SetDlgItemText(dlg, IDC_SSHUSERNAMELABEL, pvar->ts->UIMsg);
+	GetDlgItemText(dlg, IDC_SSHPASSWORDCAPTION, uimsg, sizeof(uimsg));
+	UTIL_get_lang_msg("DLG_AUTH_PASSWORD", pvar, uimsg);
+	SetDlgItemText(dlg, IDC_SSHPASSWORDCAPTION, pvar->ts->UIMsg);
+	GetDlgItemText(dlg, IDC_REMEMBER_PASSWORD, uimsg, sizeof(uimsg));
+	UTIL_get_lang_msg("DLG_AUTH_REMEMBER_PASSWORD", pvar, uimsg);
+	SetDlgItemText(dlg, IDC_REMEMBER_PASSWORD, pvar->ts->UIMsg);
+	GetDlgItemText(dlg, IDC_FORWARD_AGENT, uimsg, sizeof(uimsg));
+	UTIL_get_lang_msg("DLG_AUTH_FWDAGENT", pvar, uimsg);
+	SetDlgItemText(dlg, IDC_FORWARD_AGENT, pvar->ts->UIMsg);
+	GetDlgItemText(dlg, IDC_SSHUSEPASSWORD, uimsg, sizeof(uimsg));
+	UTIL_get_lang_msg("DLG_AUTH_METHOD_PASSWORD", pvar, uimsg);
+	SetDlgItemText(dlg, IDC_SSHUSEPASSWORD, pvar->ts->UIMsg);
+	GetDlgItemText(dlg, IDC_SSHUSERSA, uimsg, sizeof(uimsg));
+	UTIL_get_lang_msg("DLG_AUTH_METHOD_RSA", pvar, uimsg);
+	SetDlgItemText(dlg, IDC_SSHUSERSA, pvar->ts->UIMsg);
+	GetDlgItemText(dlg, IDC_SSHUSERHOSTS, uimsg, sizeof(uimsg));
+	UTIL_get_lang_msg("DLG_AUTH_METHOD_RHOST", pvar, uimsg);
+	SetDlgItemText(dlg, IDC_SSHUSERHOSTS, pvar->ts->UIMsg);
+	GetDlgItemText(dlg, IDC_SSHUSEPAGEANT, uimsg, sizeof(uimsg));
+	UTIL_get_lang_msg("DLG_AUTH_METHOD_PAGEANT", pvar, uimsg);
+	SetDlgItemText(dlg, IDC_SSHUSEPAGEANT, pvar->ts->UIMsg);
+	GetDlgItemText(dlg, IDC_CHOOSERSAFILE, uimsg, sizeof(uimsg));
+	UTIL_get_lang_msg("DLG_AUTH_PRIVATEKEY", pvar, uimsg);
+	SetDlgItemText(dlg, IDC_CHOOSERSAFILE, pvar->ts->UIMsg);
+	GetDlgItemText(dlg, IDC_LOCALUSERNAMELABEL, uimsg, sizeof(uimsg));
+	UTIL_get_lang_msg("DLG_AUTH_LOCALUSER", pvar, uimsg);
+	SetDlgItemText(dlg, IDC_LOCALUSERNAMELABEL, pvar->ts->UIMsg);
+	GetDlgItemText(dlg, IDC_CHOOSEHOSTRSAFILE, uimsg, sizeof(uimsg));
+	UTIL_get_lang_msg("DLG_AUTH_HOST_PRIVATEKEY", pvar, uimsg);
+	SetDlgItemText(dlg, IDC_CHOOSEHOSTRSAFILE, pvar->ts->UIMsg);
+	GetDlgItemText(dlg, IDOK, uimsg, sizeof(uimsg));
+	UTIL_get_lang_msg("BTN_OK", pvar, uimsg);
+	SetDlgItemText(dlg, IDOK, pvar->ts->UIMsg);
+	GetDlgItemText(dlg, IDCANCEL, uimsg, sizeof(uimsg));
+	UTIL_get_lang_msg("BTN_DISCONNECT", pvar, uimsg);
+	SetDlgItemText(dlg, IDCANCEL, pvar->ts->UIMsg);
 
 	init_auth_machine_banner(pvar, dlg);
-	init_password_control(pvar, dlg, IDC_SSHPASSWORD, UseControlChar);
+	init_password_control(dlg);
 
 	// 認証失敗後はラベルを書き換え
 	if (pvar->auth_state.failed_method != SSH_AUTH_NONE) {
@@ -328,56 +264,21 @@ static void init_auth_dlg(PTInstVar pvar, HWND dlg, BOOL *UseControlChar)
 		SetDlgItemText(dlg, IDC_SSHUSETIS, pvar->ts->UIMsg);
 	}
 
-	// usernameのサブクラス化
-	{
-		HWND hWndUserName = GetDlgItem(dlg, IDC_SSHUSERNAME);
-		LONG_PTR ProcOrg =
-			SetWindowLongPtr(hWndUserName, GWLP_WNDPROC, (LONG_PTR)username_proc);
-		SetWindowLongPtr(hWndUserName, GWLP_USERDATA, ProcOrg);
-	}
-
 	if (pvar->auth_state.user != NULL) {
 		SetDlgItemText(dlg, IDC_SSHUSERNAME, pvar->auth_state.user);
 		EnableWindow(GetDlgItem(dlg, IDC_SSHUSERNAME), FALSE);
-		EnableWindow(GetDlgItem(dlg, IDC_USERNAME_OPTION), FALSE);
 		EnableWindow(GetDlgItem(dlg, IDC_SSHUSERNAMELABEL), FALSE);
 	}
 	else if (strlen(pvar->ssh2_username) > 0) {
 		SetDlgItemText(dlg, IDC_SSHUSERNAME, pvar->ssh2_username);
 		if (pvar->ssh2_autologin == 1) {
 			EnableWindow(GetDlgItem(dlg, IDC_SSHUSERNAME), FALSE);
-			EnableWindow(GetDlgItem(dlg, IDC_USERNAME_OPTION), FALSE);
 			EnableWindow(GetDlgItem(dlg, IDC_SSHUSERNAMELABEL), FALSE);
 		}
 	}
-	else {
-		switch(pvar->session_settings.DefaultUserType) {
-		case 0:
-			// 入力しない
-			break;
-		case 1:
-			// use DefaultUserName
-			if (pvar->session_settings.DefaultUserName[0] == 0) {
-				// 「入力しない」にしておく
-				pvar->session_settings.DefaultUserType = 0;
-			} else {
-				SetDlgItemText(dlg, IDC_SSHUSERNAME,
-							   pvar->session_settings.DefaultUserName);
-			}
-			break;
-		case 2: {
-			TCHAR user_name[UNLEN+1];
-			DWORD len = _countof(user_name);
-			BOOL r = GetUserName(user_name, &len);
-			if (r != 0) {
-				SetDlgItemText(dlg, IDC_SSHUSERNAME, user_name);
-			}
-			break;
-		}
-		default:
-			// 入力しないにしておく
-			pvar->session_settings.DefaultUserType = 0;
-		}
+	else if (pvar->session_settings.DefaultUserName[0] != 0) {
+		SetDlgItemText(dlg, IDC_SSHUSERNAME,
+		               pvar->session_settings.DefaultUserName);
 	}
 
 	if (strlen(pvar->ssh2_password) > 0) {
@@ -385,7 +286,6 @@ static void init_auth_dlg(PTInstVar pvar, HWND dlg, BOOL *UseControlChar)
 		if (pvar->ssh2_autologin == 1) {
 			EnableWindow(GetDlgItem(dlg, IDC_SSHPASSWORD), FALSE);
 			EnableWindow(GetDlgItem(dlg, IDC_SSHPASSWORDCAPTION), FALSE);
-			EnableWindow(GetDlgItem(dlg, IDC_SSHPASSWORD_OPTION), FALSE);
 		}
 	}
 
@@ -412,14 +312,12 @@ static void init_auth_dlg(PTInstVar pvar, HWND dlg, BOOL *UseControlChar)
 	} else if (pvar->ssh2_authmethod == SSH_AUTH_TIS) {
 		CheckRadioButton(dlg, IDC_SSHUSEPASSWORD, MAX_AUTH_CONTROL, IDC_SSHUSETIS);
 		EnableWindow(GetDlgItem(dlg, IDC_SSHPASSWORD), FALSE);
-		EnableWindow(GetDlgItem(dlg, IDC_SSHPASSWORD_OPTION), FALSE);
 		SetDlgItemText(dlg, IDC_SSHPASSWORD, "");
 
 	// /auth=pageant を追加
 	} else if (pvar->ssh2_authmethod == SSH_AUTH_PAGEANT) {
 		CheckRadioButton(dlg, IDC_SSHUSEPASSWORD, MAX_AUTH_CONTROL, IDC_SSHUSEPAGEANT);
 		EnableWindow(GetDlgItem(dlg, IDC_SSHPASSWORD), FALSE);
-		EnableWindow(GetDlgItem(dlg, IDC_SSHPASSWORD_OPTION), FALSE);
 		SetDlgItemText(dlg, IDC_SSHPASSWORD, "");
 
 	} else {
@@ -771,49 +669,12 @@ static BOOL end_auth_dlg(PTInstVar pvar, HWND dlg)
 	}
 
 	EndDialog(dlg, 1);
+	if (DlgAuthFont != NULL) {
+		DeleteObject(DlgAuthFont);
+	}
 
 	return TRUE;
 }
-
-/**
- *	クリップボードからANSI文字列を取得する
- *	文字列長が必要なときはstrlen()すること
- *	@param	hWnd
- *	@param	emtpy	TRUEのときクリップボードを空にする
- *	@retval	文字列へのポインタ 使用後free()すること
- *			文字がない(またはエラー時)はNULL
- */
-char *GetClipboardTextA(HWND hWnd, BOOL empty)
-{
-	HGLOBAL hGlobal;
-	const char *lpStr;
-	size_t length;
-	char *pool;
-
-    OpenClipboard(hWnd);
-    hGlobal = (HGLOBAL)GetClipboardData(CF_TEXT);
-    if (hGlobal == NULL) {
-        CloseClipboard();
-		return NULL;
-    }
-    lpStr = (const char *)GlobalLock(hGlobal);
-	length = GlobalSize(hGlobal);
-	if (length == 0) {
-		pool = NULL;
-	} else {
-		pool = (char *)malloc(length + 1);	// +1 for terminator
-		memcpy(pool, lpStr, length);
-		pool[length] = '\0';
-	}
-	GlobalUnlock(hGlobal);
-	if (empty) {
-		EmptyClipboard();
-	}
-	CloseClipboard();
-
-	return pool;
-}
-
 
 BOOL autologin_sent_none;
 static BOOL CALLBACK auth_dlg_proc(HWND dlg, UINT msg, WPARAM wParam,
@@ -824,10 +685,8 @@ static BOOL CALLBACK auth_dlg_proc(HWND dlg, UINT msg, WPARAM wParam,
 	const int IDC_TIMER3 = 302; // challenge で ask4passwd でCheckAuthListFirst が FALSE のとき
 	const int autologin_timeout = 10; // ミリ秒
 	PTInstVar pvar;
-	static BOOL UseControlChar;
-	static BOOL ShowPassPhrase;
-	static HICON hIconDropdown;
-	TCHAR uimsg[MAX_UIMSG];
+	LOGFONT logfont;
+	HFONT font;
 
 	switch (msg) {
 	case WM_INITDIALOG:
@@ -835,15 +694,36 @@ static BOOL CALLBACK auth_dlg_proc(HWND dlg, UINT msg, WPARAM wParam,
 		pvar->auth_state.auth_dialog = dlg;
 		SetWindowLong(dlg, DWL_USER, lParam);
 
-		UseControlChar = TRUE;
-		ShowPassPhrase = FALSE;
-		init_auth_dlg(pvar, dlg, &UseControlChar);
+		init_auth_dlg(pvar, dlg);
 
-		// "▼"画像をセットする
-		hIconDropdown = LoadImage(hInst, MAKEINTRESOURCE(IDI_DROPDOWN),
-								  IMAGE_ICON, 0, 0, LR_DEFAULTCOLOR);
-		SendMessage(GetDlgItem(dlg, IDC_USERNAME_OPTION), BM_SETIMAGE, IMAGE_ICON, (LPARAM)hIconDropdown);
-		SendMessage(GetDlgItem(dlg, IDC_SSHPASSWORD_OPTION), BM_SETIMAGE, IMAGE_ICON, (LPARAM)hIconDropdown);
+		font = (HFONT)SendMessage(dlg, WM_GETFONT, 0, 0);
+		GetObject(font, sizeof(LOGFONT), &logfont);
+		if (UTIL_get_lang_font("DLG_TAHOMA_FONT", dlg, &logfont, &DlgAuthFont, pvar)) {
+			SendDlgItemMessage(dlg, IDC_SSHAUTHBANNER, WM_SETFONT, (WPARAM)DlgAuthFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_SSHAUTHBANNER2, WM_SETFONT, (WPARAM)DlgAuthFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_SSHUSERNAMELABEL, WM_SETFONT, (WPARAM)DlgAuthFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_SSHUSERNAME, WM_SETFONT, (WPARAM)DlgAuthFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_SSHPASSWORDCAPTION, WM_SETFONT, (WPARAM)DlgAuthFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_SSHPASSWORD, WM_SETFONT, (WPARAM)DlgAuthFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_REMEMBER_PASSWORD, WM_SETFONT, (WPARAM)DlgAuthFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_FORWARD_AGENT, WM_SETFONT, (WPARAM)DlgAuthFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_SSHUSEPASSWORD, WM_SETFONT, (WPARAM)DlgAuthFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_SSHUSERSA, WM_SETFONT, (WPARAM)DlgAuthFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_CHOOSERSAFILE, WM_SETFONT, (WPARAM)DlgAuthFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_RSAFILENAME, WM_SETFONT, (WPARAM)DlgAuthFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_SSHUSERHOSTS, WM_SETFONT, (WPARAM)DlgAuthFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_LOCALUSERNAMELABEL, WM_SETFONT, (WPARAM)DlgAuthFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_LOCALUSERNAME, WM_SETFONT, (WPARAM)DlgAuthFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_CHOOSEHOSTRSAFILE, WM_SETFONT, (WPARAM)DlgAuthFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_HOSTRSAFILENAME, WM_SETFONT, (WPARAM)DlgAuthFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_SSHUSETIS, WM_SETFONT, (WPARAM)DlgAuthFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_SSHUSEPAGEANT, WM_SETFONT, (WPARAM)DlgAuthFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDOK, WM_SETFONT, (WPARAM)DlgAuthFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDCANCEL, WM_SETFONT, (WPARAM)DlgAuthFont, MAKELPARAM(TRUE,0));
+		}
+		else {
+			DlgAuthFont = NULL;
+		}
 
 		// SSH2 autologinが有効の場合は、タイマを仕掛ける。 (2004.12.1 yutaka)
 		if (pvar->ssh2_autologin == 1) {
@@ -866,7 +746,6 @@ static BOOL CALLBACK auth_dlg_proc(HWND dlg, UINT msg, WPARAM wParam,
 				SetTimer(dlg, IDC_TIMER3, autologin_timeout, 0);
 			}
 		}
-		CenterWindow(dlg, GetParent(dlg));
 		return FALSE;			/* because we set the focus */
 
 	case WM_TIMER:
@@ -927,7 +806,6 @@ static BOOL CALLBACK auth_dlg_proc(HWND dlg, UINT msg, WPARAM wParam,
 
 					// ユーザ名を変更させない
 					EnableWindow(GetDlgItem(dlg, IDC_SSHUSERNAME), FALSE);
-					EnableWindow(GetDlgItem(dlg, IDC_USERNAME_OPTION), FALSE);
 
 					// 認証メソッド none を送る
 					do_SSH2_userauth(pvar);
@@ -992,6 +870,11 @@ canceled:
 			pvar->auth_state.auth_dialog = NULL;
 			notify_closed_connection(pvar, "authentication cancelled");
 			EndDialog(dlg, 0);
+
+			if (DlgAuthFont != NULL) {
+				DeleteObject(DlgAuthFont);
+			}
+
 			return TRUE;
 
 		case IDC_SSHUSERNAME:
@@ -1016,7 +899,6 @@ canceled:
 
 					// ユーザ名を変更させない
 					EnableWindow(GetDlgItem(dlg, IDC_SSHUSERNAME), FALSE);
-					EnableWindow(GetDlgItem(dlg, IDC_USERNAME_OPTION), FALSE);
 
 					// 認証メソッド none を送る
 					do_SSH2_userauth(pvar);
@@ -1047,145 +929,9 @@ canceled:
 			pvar->session_settings.ForwardAgent = IsDlgButtonChecked(dlg, IDC_FORWARD_AGENT);
 			return TRUE;
 
-		case IDC_SSHPASSWORD_OPTION: {
-			RECT rect;
-			HWND hWndButton;
-			int result;
-			HMENU hMenu= CreatePopupMenu();
-			char *clipboard = GetClipboardTextA(dlg, FALSE);
-			GetI18nStrT("TTSSH", "DLG_AUTH_PASTE_CLIPBOARD",
-						uimsg, _countof(uimsg),
-						"Paste from &clipboard",
-						pvar->ts->UILanguageFile);
-			AppendMenu(hMenu, MF_ENABLED | MF_STRING | (clipboard == NULL ? MFS_DISABLED : 0), 1, uimsg);
-			GetI18nStrT("ttssh", "DLG_AUTH_CLEAR_CLIPBOARD",
-						uimsg, _countof(uimsg),
-						"Paste from &clipboard and cl&ear clipboard",
-						pvar->ts->UILanguageFile);
-			AppendMenu(hMenu, MF_ENABLED | MF_STRING | (clipboard == NULL ? MFS_DISABLED : 0), 2, uimsg);
-			GetI18nStrT("ttssh", "DLG_AUTH_USE_CONTORL_CHARACTERS",
-						uimsg, _countof(uimsg),
-						"Use control charac&ters",
-						pvar->ts->UILanguageFile);
-			AppendMenu(hMenu, MF_ENABLED | MF_STRING  | (UseControlChar ? MFS_CHECKED : 0), 3, uimsg);
-			GetI18nStrT("ttssh", "DLG_AUTH_SHOW_PASSPHRASE",
-						uimsg, _countof(uimsg),
-						"&Show passphrase",
-						pvar->ts->UILanguageFile);
-			AppendMenu(hMenu, MF_ENABLED | MF_STRING | (ShowPassPhrase ? MFS_CHECKED : 0), 4, uimsg);
-			if (clipboard != NULL) {
-				free(clipboard);
-			}
-			hWndButton = GetDlgItem(dlg, IDC_SSHPASSWORD_OPTION);
-			GetWindowRect(hWndButton, &rect);
-			result = TrackPopupMenu(hMenu, TPM_RETURNCMD, rect.left, rect.bottom, 0 , hWndButton, NULL);
-			DestroyMenu(hMenu);
-			switch(result) {
-			case 1:
-			case 2: {
-				// クリップボードからペースト
-				BOOL clear_clipboard = result == 2;
-				clipboard = GetClipboardTextA(dlg, clear_clipboard);
-				if (clipboard != NULL) {
-					SetDlgItemTextA(dlg, IDC_SSHPASSWORD, clipboard);
-					free(clipboard);
-					SendDlgItemMessage(dlg, IDC_SSHPASSWORD, EM_SETSEL, 0, -1);
-					SendMessage(dlg, WM_NEXTDLGCTL, (WPARAM)GetDlgItem(dlg, IDC_SSHPASSWORD), TRUE);
-					return FALSE;
-				}
-				return TRUE;
-			}
-			case 3:
-				// 制御コード使用/未使用
-				UseControlChar = !UseControlChar;
-				break;
-			case 4:
-				// パスフレーズ表示/非表示
-				ShowPassPhrase = !ShowPassPhrase;
-				{
-					// 伏せ字 on/off を切り替える
-					HWND hWnd = GetDlgItem(dlg, IDC_SSHPASSWORD);
-					static wchar_t password_char;
-					if (password_char == 0) {
-						wchar_t c = (wchar_t)SendMessage(hWnd, EM_GETPASSWORDCHAR, 0, 0);
-						password_char = c;
-					}
-					if (ShowPassPhrase) {
-						SendMessage(hWnd, EM_SETPASSWORDCHAR, 0, 0);
-					} else {
-#if !defined(UNICODE)
-						if (password_char < 0x100) {
-							SendMessageA(hWnd, EM_SETPASSWORDCHAR, (WPARAM)password_char, 0);
-						} else {
-							// TODO W系直呼び ↓うまくいかない
-							//SendMessageW(hWnd, EM_SETPASSWORDCHAR, (WPARAM)password_char, 0);
-							SendMessageA(hWnd, EM_SETPASSWORDCHAR, (WPARAM)'*', 0);
-						}
-#else
-						SendMessageW(hWnd, EM_SETPASSWORDCHAR, (WPARAM)password_char, 0);
-#endif
-					}
-					//InvalidateRect(hWnd, NULL, TRUE);
-					SendDlgItemMessage(dlg, IDC_SSHPASSWORD, EM_SETSEL, 0, -1);
-					SendMessage(dlg, WM_NEXTDLGCTL, (WPARAM)GetDlgItem(dlg, IDC_SSHPASSWORD), TRUE);
-					return TRUE;
-				}
-				break;
-			}
-			break;
-		}
-
-		case IDC_USERNAME_OPTION: {
-			RECT rect;
-			HWND hWndButton;
-			HMENU hMenu= CreatePopupMenu();
-			int result;
-			const BOOL DisableDefaultUserName = pvar->session_settings.DefaultUserName[0] == 0;
-			GetI18nStrT("TTSSH", "DLG_AUTH_USE_DEFAULT_USERNAME",
-						uimsg, _countof(uimsg),
-						"Use &default username",
-						pvar->ts->UILanguageFile);
-			AppendMenu(hMenu, MF_ENABLED | MF_STRING | (DisableDefaultUserName ? MFS_DISABLED : 0), 1,
-					   uimsg);
-			GetI18nStrT("TTSSH", "DLG_AUTH_USE_SYSTEM_USERNAME",
-						uimsg, _countof(uimsg),
-						"Use &system username",
-						pvar->ts->UILanguageFile);
-			AppendMenu(hMenu, MF_ENABLED | MF_STRING, 2, uimsg);
-			hWndButton = GetDlgItem(dlg, IDC_USERNAME_OPTION);
-			GetWindowRect(hWndButton, &rect);
-			result = TrackPopupMenu(hMenu, TPM_RETURNCMD, rect.left, rect.bottom, 0 , hWndButton, NULL);
-			DestroyMenu(hMenu);
-			switch (result) {
-			case 1:
-				SetDlgItemText(dlg, IDC_SSHUSERNAME, pvar->session_settings.DefaultUserName);
-				goto after_user_name_set;
-			case 2: {
-				TCHAR user_name[UNLEN+1];
-				DWORD len = _countof(user_name);
-				BOOL r = GetUserName(user_name, &len);
-				if (r == 0) {
-					break;
-				}
-				SetDlgItemText(dlg, IDC_SSHUSERNAME, user_name);
-			after_user_name_set:
-				SendDlgItemMessage(dlg, IDC_SSHUSERNAME, EM_SETSEL, 0, -1);
-				SendMessage(dlg, WM_NEXTDLGCTL, (WPARAM)GetDlgItem(dlg, IDC_SSHUSERNAME), TRUE);
-				break;
-			}
-			}
-			return TRUE;
-		}
-
 		default:
 			return FALSE;
 		}
-
-	case WM_DESTROY:
-		if (hIconDropdown != NULL) {
-			DeleteObject(hIconDropdown);
-		}
-		return FALSE;
 
 	default:
 		return FALSE;
@@ -1356,7 +1102,7 @@ static void init_TIS_dlg(PTInstVar pvar, HWND dlg)
 	SetDlgItemText(dlg, IDCANCEL, pvar->ts->UIMsg);
 
 	init_auth_machine_banner(pvar, dlg);
-	init_password_control(pvar, dlg, IDC_SSHPASSWORD, NULL);
+	init_password_control(dlg);
 
 	if (pvar->auth_state.TIS_prompt != NULL) {
 		if (strlen(pvar->auth_state.TIS_prompt) > 10000) {
@@ -1365,10 +1111,6 @@ static void init_TIS_dlg(PTInstVar pvar, HWND dlg)
 		SetDlgItemText(dlg, IDC_SSHAUTHBANNER2,
 					   pvar->auth_state.TIS_prompt);
 		destroy_malloced_string(&pvar->auth_state.TIS_prompt);
-	}
-
-	if (pvar->auth_state.echo) {
-		SendMessage(GetDlgItem(dlg, IDC_SSHPASSWORD), EM_SETPASSWORDCHAR, 0, 0);
 	}
 }
 
@@ -1397,6 +1139,8 @@ static BOOL CALLBACK TIS_dlg_proc(HWND dlg, UINT msg, WPARAM wParam,
                                   LPARAM lParam)
 {
 	PTInstVar pvar;
+	LOGFONT logfont;
+	HFONT font;
 
 	switch (msg) {
 	case WM_INITDIALOG:
@@ -1406,13 +1150,25 @@ static BOOL CALLBACK TIS_dlg_proc(HWND dlg, UINT msg, WPARAM wParam,
 
 		init_TIS_dlg(pvar, dlg);
 
+		font = (HFONT)SendMessage(dlg, WM_GETFONT, 0, 0);
+		GetObject(font, sizeof(LOGFONT), &logfont);
+		if (UTIL_get_lang_font("DLG_TAHOMA_FONT", dlg, &logfont, &DlgTisFont, pvar)) {
+			SendDlgItemMessage(dlg, IDC_SSHAUTHBANNER, WM_SETFONT, (WPARAM)DlgTisFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_SSHAUTHBANNER2, WM_SETFONT, (WPARAM)DlgTisFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_SSHPASSWORD, WM_SETFONT, (WPARAM)DlgTisFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDOK, WM_SETFONT, (WPARAM)DlgTisFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDCANCEL, WM_SETFONT, (WPARAM)DlgTisFont, MAKELPARAM(TRUE,0));
+		}
+		else {
+			DlgTisFont = NULL;
+		}
+
 		// /auth=challenge を追加 (2007.10.5 maya)
 		if (pvar->ssh2_autologin == 1) {
 			SetDlgItemText(dlg, IDC_SSHPASSWORD, pvar->ssh2_password);
 			SendMessage(dlg, WM_COMMAND, IDOK, 0);
 		}
 
-		CenterWindow(dlg, GetParent(dlg));
 		return FALSE;			/* because we set the focus */
 
 	case WM_COMMAND:
@@ -1420,12 +1176,21 @@ static BOOL CALLBACK TIS_dlg_proc(HWND dlg, UINT msg, WPARAM wParam,
 
 		switch (LOWORD(wParam)) {
 		case IDOK:
+			if (DlgTisFont != NULL) {
+				DeleteObject(DlgTisFont);
+			}
+
 			return end_TIS_dlg(pvar, dlg);
 
 		case IDCANCEL:			/* kill the connection */
 			pvar->auth_state.auth_dialog = NULL;
 			notify_closed_connection(pvar, "authentication cancelled");
 			EndDialog(dlg, 0);
+
+			if (DlgTisFont != NULL) {
+				DeleteObject(DlgTisFont);
+			}
+
 			return TRUE;
 
 		default:
@@ -1469,32 +1234,50 @@ void AUTH_do_cred_dialog(PTInstVar pvar)
 
 static void init_default_auth_dlg(PTInstVar pvar, HWND dlg)
 {
-	int id;
-	TCHAR user_name[UNLEN+1];
-	DWORD len;
-	TCHAR uimsg[MAX_UIMSG];
-	TCHAR uimsg2[MAX_UIMSG];
-	const static DlgTextInfo text_info[] = {
-		{ 0, "DLG_AUTHSETUP_TITLE" },
-		{ IDC_SSHAUTHBANNER, "DLG_AUTHSETUP_BANNER" },
-		{ IDC_SSH_NO_USERNAME, "DLG_AUTHSETUP_NO_USERNAME" },
-		{ IDC_SSH_DEFAULTUSERNAME, "DLG_AUTHSETUP_DEFAULT_USERNAME" },
-		{ IDC_SSH_WINDOWS_USERNAME, "DLG_AUTHSETUP_SYSTEM_USERNAME" },
-		{ IDC_SSH_WINDOWS_USERNAME_TEXT, "DLG_AUTHSETUP_SYSTEM_USERNAME_TEXT" },
-		{ IDC_SSHUSEPASSWORD, "DLG_AUTHSETUP_METHOD_PASSWORD" },
-		{ IDC_SSHUSERSA, "DLG_AUTHSETUP_METHOD_RSA" },
-		{ IDC_SSHUSERHOSTS, "DLG_AUTHSETUP_METHOD_RHOST" },
-		{ IDC_SSHUSETIS, "DLG_AUTHSETUP_METHOD_CHALLENGE" },
-		{ IDC_SSHUSEPAGEANT, "DLG_AUTHSETUP_METHOD_PAGEANT" },
-		{ IDC_RSAFILENAMELABEL, "DLG_AUTH_PRIVATEKEY" },
-		{ IDC_LOCALUSERNAMELABEL, "DLG_AUTH_LOCALUSER" },
-		{ IDC_HOSTRSAFILENAMELABEL, "DLG_AUTH_HOST_PRIVATEKEY" },
-		{ IDC_CHECKAUTH, "DLG_AUTHSETUP_CHECKAUTH" },
-		{ IDOK, "BTN_OK" },
-		{ IDCANCEL, "BTN_CANCEL" },
-	};
+	char uimsg[MAX_UIMSG];
 
-	SetI18DlgStrs("TTSSH", dlg, text_info, _countof(text_info), pvar->ts->UILanguageFile);
+	GetWindowText(dlg, uimsg, sizeof(uimsg));
+	UTIL_get_lang_msg("DLG_AUTHSETUP_TITLE", pvar, uimsg);
+	SetWindowText(dlg, pvar->ts->UIMsg);
+	GetDlgItemText(dlg, IDC_SSHAUTHBANNER, uimsg, sizeof(uimsg));
+	UTIL_get_lang_msg("DLG_AUTHSETUP_BANNER", pvar, uimsg);
+	SetDlgItemText(dlg, IDC_SSHAUTHBANNER, pvar->ts->UIMsg);
+	GetDlgItemText(dlg, IDC_SSHUSERNAMELABEL, uimsg, sizeof(uimsg));
+	UTIL_get_lang_msg("DLG_AUTHSETUP_USERNAME", pvar, uimsg);
+	SetDlgItemText(dlg, IDC_SSHUSERNAMELABEL, pvar->ts->UIMsg);
+	GetDlgItemText(dlg, IDC_SSHUSEPASSWORD, uimsg, sizeof(uimsg));
+	UTIL_get_lang_msg("DLG_AUTHSETUP_METHOD_PASSWORD", pvar, uimsg);
+	SetDlgItemText(dlg, IDC_SSHUSEPASSWORD, pvar->ts->UIMsg);
+	GetDlgItemText(dlg, IDC_SSHUSERSA, uimsg, sizeof(uimsg));
+	UTIL_get_lang_msg("DLG_AUTHSETUP_METHOD_RSA", pvar, uimsg);
+	SetDlgItemText(dlg, IDC_SSHUSERSA, pvar->ts->UIMsg);
+	GetDlgItemText(dlg, IDC_SSHUSERHOSTS, uimsg, sizeof(uimsg));
+	UTIL_get_lang_msg("DLG_AUTHSETUP_METHOD_RHOST", pvar, uimsg);
+	SetDlgItemText(dlg, IDC_SSHUSERHOSTS, pvar->ts->UIMsg);
+	GetDlgItemText(dlg, IDC_SSHUSETIS, uimsg, sizeof(uimsg));
+	UTIL_get_lang_msg("DLG_AUTHSETUP_METHOD_CHALLENGE", pvar, uimsg);
+	SetDlgItemText(dlg, IDC_SSHUSETIS, pvar->ts->UIMsg);
+	GetDlgItemText(dlg, IDC_SSHUSEPAGEANT, uimsg, sizeof(uimsg));
+	UTIL_get_lang_msg("DLG_AUTHSETUP_METHOD_PAGEANT", pvar, uimsg);
+	SetDlgItemText(dlg, IDC_SSHUSEPAGEANT, pvar->ts->UIMsg);
+	GetDlgItemText(dlg, IDC_CHOOSERSAFILE, uimsg, sizeof(uimsg));
+	UTIL_get_lang_msg("DLG_AUTH_PRIVATEKEY", pvar, uimsg);
+	SetDlgItemText(dlg, IDC_CHOOSERSAFILE, pvar->ts->UIMsg);
+	GetDlgItemText(dlg, IDC_LOCALUSERNAMELABEL, uimsg, sizeof(uimsg));
+	UTIL_get_lang_msg("DLG_AUTH_LOCALUSER", pvar, uimsg);
+	SetDlgItemText(dlg, IDC_LOCALUSERNAMELABEL, pvar->ts->UIMsg);
+	GetDlgItemText(dlg, IDC_CHOOSEHOSTRSAFILE, uimsg, sizeof(uimsg));
+	UTIL_get_lang_msg("DLG_AUTH_HOST_PRIVATEKEY", pvar, uimsg);
+	SetDlgItemText(dlg, IDC_CHOOSEHOSTRSAFILE, pvar->ts->UIMsg);
+	GetDlgItemText(dlg, IDC_CHECKAUTH, uimsg, sizeof(uimsg));
+	UTIL_get_lang_msg("DLG_AUTHSETUP_CHECKAUTH", pvar, uimsg);
+	SetDlgItemText(dlg, IDC_CHECKAUTH, pvar->ts->UIMsg);
+	GetDlgItemText(dlg, IDOK, uimsg, sizeof(uimsg));
+	UTIL_get_lang_msg("BTN_OK", pvar, uimsg);
+	SetDlgItemText(dlg, IDOK, pvar->ts->UIMsg);
+	GetDlgItemText(dlg, IDCANCEL, uimsg, sizeof(uimsg));
+	UTIL_get_lang_msg("BTN_CANCEL", pvar, uimsg);
+	SetDlgItemText(dlg, IDCANCEL, pvar->ts->UIMsg);
 
 	switch (pvar->settings.DefaultAuthMethod) {
 	case SSH_AUTH_RSA:
@@ -1531,23 +1314,6 @@ static void init_default_auth_dlg(PTInstVar pvar, HWND dlg)
 	if (pvar->settings.CheckAuthListFirst) {
 		CheckDlgButton(dlg, IDC_CHECKAUTH, TRUE);
 	}
-
-	if (pvar->settings.DefaultUserType == 1 &&
-		pvar->session_settings.DefaultUserName[0] == 0) {
-		// 空なので「入力しない」にしておく
-		pvar->settings.DefaultUserType = 0;
-	}
-	id = pvar->settings.DefaultUserType == 1 ? IDC_SSH_DEFAULTUSERNAME :
-		pvar->settings.DefaultUserType == 2 ? IDC_SSH_WINDOWS_USERNAME :
-		IDC_SSH_NO_USERNAME;
-	CheckRadioButton(dlg, IDC_SSH_NO_USERNAME, IDC_SSH_WINDOWS_USERNAME, id);
-
-	len = _countof(user_name);
-	GetUserName(user_name, &len);
-
-	GetDlgItemText(dlg, IDC_SSH_WINDOWS_USERNAME_TEXT, uimsg, _countof(uimsg));
-	_stprintf_s(uimsg2, _countof(uimsg2), uimsg, user_name);
-	SetDlgItemText(dlg, IDC_SSH_WINDOWS_USERNAME_TEXT, uimsg2);
 }
 
 static BOOL end_default_auth_dlg(PTInstVar pvar, HWND dlg)
@@ -1579,9 +1345,6 @@ static BOOL end_default_auth_dlg(PTInstVar pvar, HWND dlg)
 	GetDlgItemText(dlg, IDC_LOCALUSERNAME,
 	               pvar->settings.DefaultRhostsLocalUserName,
 	               sizeof(pvar->settings.DefaultRhostsLocalUserName));
-	pvar->settings.DefaultUserType =
-		IsDlgButtonChecked(dlg, IDC_SSH_DEFAULTUSERNAME) ? 1 :
-		IsDlgButtonChecked(dlg, IDC_SSH_WINDOWS_USERNAME) ? 2 : 0;
 
 	if (IsDlgButtonChecked(dlg, IDC_CHECKAUTH)) {
 		pvar->settings.CheckAuthListFirst = TRUE;
@@ -1598,6 +1361,8 @@ static BOOL CALLBACK default_auth_dlg_proc(HWND dlg, UINT msg,
 										   WPARAM wParam, LPARAM lParam)
 {
 	PTInstVar pvar;
+	LOGFONT logfont;
+	HFONT font;
 
 	switch (msg) {
 	case WM_INITDIALOG:
@@ -1605,7 +1370,32 @@ static BOOL CALLBACK default_auth_dlg_proc(HWND dlg, UINT msg,
 		SetWindowLong(dlg, DWL_USER, lParam);
 
 		init_default_auth_dlg(pvar, dlg);
-		CenterWindow(dlg, GetParent(dlg));
+
+		font = (HFONT)SendMessage(dlg, WM_GETFONT, 0, 0);
+		GetObject(font, sizeof(LOGFONT), &logfont);
+		if (UTIL_get_lang_font("DLG_TAHOMA_FONT", dlg, &logfont, &DlgAuthSetupFont, pvar)) {
+			SendDlgItemMessage(dlg, IDC_SSHAUTHBANNER, WM_SETFONT, (WPARAM)DlgAuthSetupFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_SSHUSERNAMELABEL, WM_SETFONT, (WPARAM)DlgAuthSetupFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_SSHUSERNAME, WM_SETFONT, (WPARAM)DlgAuthSetupFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_SSHUSEPASSWORD, WM_SETFONT, (WPARAM)DlgAuthSetupFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_SSHUSERSA, WM_SETFONT, (WPARAM)DlgAuthSetupFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_CHOOSERSAFILE, WM_SETFONT, (WPARAM)DlgAuthSetupFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_RSAFILENAME, WM_SETFONT, (WPARAM)DlgAuthSetupFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_SSHUSERHOSTS, WM_SETFONT, (WPARAM)DlgAuthSetupFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_LOCALUSERNAMELABEL, WM_SETFONT, (WPARAM)DlgAuthSetupFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_LOCALUSERNAME, WM_SETFONT, (WPARAM)DlgAuthSetupFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_CHOOSEHOSTRSAFILE, WM_SETFONT, (WPARAM)DlgAuthSetupFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_HOSTRSAFILENAME, WM_SETFONT, (WPARAM)DlgAuthSetupFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_SSHUSETIS, WM_SETFONT, (WPARAM)DlgAuthSetupFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_SSHUSEPAGEANT, WM_SETFONT, (WPARAM)DlgAuthSetupFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_CHECKAUTH, WM_SETFONT, (WPARAM)DlgAuthSetupFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDOK, WM_SETFONT, (WPARAM)DlgAuthSetupFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDCANCEL, WM_SETFONT, (WPARAM)DlgAuthSetupFont, MAKELPARAM(TRUE,0));
+		}
+		else {
+			DlgAuthSetupFont = NULL;
+		}
+
 		return TRUE;			/* because we do not set the focus */
 
 	case WM_COMMAND:
@@ -1613,10 +1403,20 @@ static BOOL CALLBACK default_auth_dlg_proc(HWND dlg, UINT msg,
 
 		switch (LOWORD(wParam)) {
 		case IDOK:
+
+			if (DlgAuthSetupFont != NULL) {
+				DeleteObject(DlgAuthSetupFont);
+			}
+
 			return end_default_auth_dlg(pvar, dlg);
 
 		case IDCANCEL:
 			EndDialog(dlg, 0);
+
+			if (DlgAuthSetupFont != NULL) {
+				DeleteObject(DlgAuthSetupFont);
+			}
+
 			return TRUE;
 
 		case IDC_CHOOSERSAFILE:
@@ -1643,7 +1443,6 @@ void AUTH_init(PTInstVar pvar)
 	pvar->auth_state.user = NULL;
 	pvar->auth_state.flags = 0;
 	pvar->auth_state.TIS_prompt = NULL;
-	pvar->auth_state.echo = 0;
 	pvar->auth_state.supported_types = 0;
 	pvar->auth_state.cur_cred.method = SSH_AUTH_NONE;
 	pvar->auth_state.cur_cred.password = NULL;
@@ -1658,7 +1457,7 @@ void AUTH_set_generic_mode(PTInstVar pvar)
 	destroy_malloced_string(&pvar->auth_state.TIS_prompt);
 }
 
-void AUTH_set_TIS_mode(PTInstVar pvar, char *prompt, int len, int echo)
+void AUTH_set_TIS_mode(PTInstVar pvar, char *prompt, int len)
 {
 	if (pvar->auth_state.cur_cred.method == SSH_AUTH_TIS) {
 		pvar->auth_state.mode = TIS_AUTH_MODE;
@@ -1667,7 +1466,6 @@ void AUTH_set_TIS_mode(PTInstVar pvar, char *prompt, int len, int echo)
 		pvar->auth_state.TIS_prompt = malloc(len + 1);
 		memcpy(pvar->auth_state.TIS_prompt, prompt, len);
 		pvar->auth_state.TIS_prompt[len] = 0;
-		pvar->auth_state.echo = echo;
 	} else {
 		AUTH_set_generic_mode(pvar);
 	}

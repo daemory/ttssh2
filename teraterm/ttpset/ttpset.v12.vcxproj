@@ -81,7 +81,6 @@
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <AdditionalLibraryDirectories>$(OutDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <ModuleDefinitionFile>$(ProjectName).def</ModuleDefinitionFile>
-      <DelayLoadDLLs>user32.dll;%(DelayLoadDLLs)</DelayLoadDLLs>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <SubSystem>Windows</SubSystem>
       <ImportLibrary>$(OutDir)$(ProjectName).lib</ImportLibrary>
@@ -120,7 +119,6 @@
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <AdditionalLibraryDirectories>$(OutDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <ModuleDefinitionFile>$(ProjectName).def</ModuleDefinitionFile>
-      <DelayLoadDLLs>user32.dll;%(DelayLoadDLLs)</DelayLoadDLLs>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <SubSystem>Windows</SubSystem>
       <ImportLibrary>$(OutDir)$(ProjectName).lib</ImportLibrary>
@@ -132,6 +130,7 @@
     <ClCompile Include="ttset.c" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="set_res.h" />
     <ClInclude Include="..\common\teraterm.h" />
     <ClInclude Include="..\common\tt-version.h" />
     <ClInclude Include="..\common\ttlib.h" />
@@ -142,6 +141,7 @@
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="ttpset-version.rc" />
+    <ResourceCompile Include="ttpset.rc" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\ttpcmn\ttpcmn.v12.vcxproj">

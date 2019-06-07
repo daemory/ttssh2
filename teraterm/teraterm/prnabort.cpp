@@ -43,21 +43,28 @@ LRESULT CALLBACK CPrnAbortDlg::OnDlgProc(HWND hDlgWnd, UINT msg, WPARAM wp, LPAR
 		{ IDC_PRNABORT_PRINTING, "DLG_PRNABORT_PRINTING" }, 
 		{ IDCANCEL, "BTN_CANCEL" },
 	};
+	static const int FontIDs[] = {
+		IDC_PRNABORT_PRINTING, IDCANCEL
+	};
 
 	CPrnAbortDlg *self = (CPrnAbortDlg *)GetWindowLongPtr(hDlgWnd, DWLP_USER);
 
 	switch (msg) {
 	case WM_INITDIALOG:
 	{
-		self = (CPrnAbortDlg *)lp;
+		CPrnAbortDlg *self = (CPrnAbortDlg *)lp;
 		SetWindowLongPtr(hDlgWnd, DWLP_USER, (LONG_PTR)self);
 		SetDlgTexts(hDlgWnd, TextInfos, _countof(TextInfos), self->m_ts->UILanguageFile);
+		self->m_hNewFont =
+			SetDlgFonts(hDlgWnd, FontIDs, _countof(FontIDs),
+						self->m_ts->UILanguageFile, "DLG_SYSTEM_FONT");
 		return TRUE;
 	}
 
 	case WM_COMMAND:
 	{
-		const WORD wID = GET_WM_COMMAND_ID(wp, lp);
+		WORD wID = GET_WM_COMMAND_ID(wp, lp);
+		const WORD wCMD = GET_WM_COMMAND_CMD(wp, lp);
 		if (wID == IDOK) {
 			self->DestroyWindow();
 		}
@@ -108,6 +115,7 @@ void CPrnAbortDlg::OnCancel()
 
 void CPrnAbortDlg::PostNcDestroy()
 {
+	::DeleteObject(m_hNewFont);
 	delete this;
 }
 

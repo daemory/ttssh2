@@ -69,10 +69,9 @@
 			/>
 			<Tool
 				Name="VCLinkerTool"
-				AdditionalDependencies="odbc32.lib odbccp32.lib comctl32.lib version.lib user32.lib gdi32.lib comdlg32.lib Advapi32.lib Shell32.lib Ole32.lib"
+				AdditionalDependencies="odbc32.lib odbccp32.lib comctl32.lib version.lib"
 				LinkIncremental="1"
 				SuppressStartupBanner="true"
-				DelayLoadDLLs="user32.dll"
 				GenerateDebugInformation="true"
 				SubSystem="2"
 				TargetMachine="1"
@@ -158,10 +157,9 @@
 			/>
 			<Tool
 				Name="VCLinkerTool"
-				AdditionalDependencies="odbc32.lib odbccp32.lib comctl32.lib version.lib user32.lib gdi32.lib comdlg32.lib Advapi32.lib Shell32.lib Ole32.lib"
+				AdditionalDependencies="odbc32.lib odbccp32.lib comctl32.lib version.lib"
 				LinkIncremental="1"
 				SuppressStartupBanner="true"
-				DelayLoadDLLs="user32.dll"
 				GenerateDebugInformation="true"
 				SubSystem="2"
 				TargetMachine="1"
@@ -195,14 +193,6 @@
 	<References>
 	</References>
 	<Files>
-		<File
-			RelativePath="..\teraterm\common\codeconv.cpp"
-			>
-		</File>
-		<File
-			RelativePath="..\teraterm\common\codeconv.h"
-			>
-		</File>
 		<File
 			RelativePath="..\teraterm\common\i18n.c"
 			>

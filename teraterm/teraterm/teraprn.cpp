@@ -28,6 +28,7 @@
  */
 
 /* TERATERM.EXE, Printing routines */
+#include "stdafx.h"
 #include "teraterm.h"
 #include "tttypes.h"
 #include <commdlg.h>
@@ -40,23 +41,20 @@
 #include "win16api.h"
 
 #include "tt_res.h"
-#include "tmfc.h"
 #include "prnabort.h"
 
 #include "teraprn.h"
 
-#if 0 //def _DEBUG
+#ifdef _DEBUG
 #define new DEBUG_NEW
 #undef THIS_FILE
 static char THIS_FILE[] = __FILE__;
 #endif
 
-#define CWnd TTCWnd
-
 static PRINTDLG PrnDlg;
 
 static HDC PrintDC;
-static LOGFONTA Prnlf;
+static LOGFONT Prnlf;
 static HFONT PrnFont[AttrFontMask+1];
 static int PrnFW, PrnFH;
 static RECT Margin;
@@ -126,7 +124,7 @@ HDC PrnBox(HWND HWin, PBOOL Sel)
 
 BOOL PrnStart(LPSTR DocumentName)
 {
-	DOCINFOA Doc;
+	DOCINFO Doc;
 	char DocName[50];
 	CWnd* pParent;
 
@@ -148,13 +146,13 @@ BOOL PrnStart(LPSTR DocumentName)
 
 	SetAbortProc(PrintDC,PrnAbortProc);
 
-	Doc.cbSize = sizeof(Doc);
+	Doc.cbSize = sizeof(DOCINFO);
 	strncpy_s(DocName,sizeof(DocName),DocumentName,_TRUNCATE);
 	Doc.lpszDocName = DocName;
 	Doc.lpszOutput = NULL;
 	Doc.lpszDatatype = NULL;
 	Doc.fwType = 0;
-	if (StartDocA(PrintDC, &Doc) > 0) {
+	if (StartDoc(PrintDC, &Doc) > 0) {
 		Printing = TRUE;
 	}
 	else {
@@ -245,7 +243,7 @@ int VTPrintInit(int PrnFlag)
 	                 (int)((float)ts.PrnMargin[3] / 100.0 * (float)PPI.y);
 
 	/* create test font */
-	memset(&Prnlf, 0, sizeof(Prnlf));
+	memset(&Prnlf, 0, sizeof(LOGFONT));
 
 	if (ts.PrnFont[0]==0) {
 		Prnlf.lfHeight = ts.VTFontSize.y;
@@ -268,7 +266,7 @@ int VTPrintInit(int PrnFlag)
 	Prnlf.lfQuality = DEFAULT_QUALITY;
 	Prnlf.lfPitchAndFamily = FIXED_PITCH | FF_DONTCARE;
 
-	PrnFont[0] = CreateFontIndirectA(&Prnlf);
+	PrnFont[0] = CreateFontIndirect(&Prnlf);
 
 	DC = GetDC(HVTWin);
 	SelectObject(DC, PrnFont[0]);
@@ -287,23 +285,23 @@ int VTPrintInit(int PrnFlag)
 	/* Normal Font */
 	Prnlf.lfWeight = FW_NORMAL;
 	Prnlf.lfUnderline = 0;
-	PrnFont[0] = CreateFontIndirectA(&Prnlf);
+	PrnFont[0] = CreateFontIndirect(&Prnlf);
 	SelectObject(PrintDC,PrnFont[0]);
 	GetTextMetrics(PrintDC, &Metrics);
 	PrnFW = Metrics.tmAveCharWidth;
 	PrnFH = Metrics.tmHeight;
 	/* Under line */
 	Prnlf.lfUnderline = 1;
-	PrnFont[AttrUnder] = CreateFontIndirectA(&Prnlf);
+	PrnFont[AttrUnder] = CreateFontIndirect(&Prnlf);
 
 	if (ts.FontFlag & FF_BOLD) {
 		/* Bold */
 		Prnlf.lfUnderline = 0;
 		Prnlf.lfWeight = FW_BOLD;
-		PrnFont[AttrBold] = CreateFontIndirectA(&Prnlf);
+		PrnFont[AttrBold] = CreateFontIndirect(&Prnlf);
 		/* Bold + Underline */
 		Prnlf.lfUnderline = 1;
-		PrnFont[AttrBold | AttrUnder] = CreateFontIndirectA(&Prnlf);
+		PrnFont[AttrBold | AttrUnder] = CreateFontIndirect(&Prnlf);
 	}
 	else {
 		PrnFont[AttrBold] = PrnFont[AttrDefault];
@@ -317,7 +315,7 @@ int VTPrintInit(int PrnFlag)
 	Prnlf.lfCharSet = SYMBOL_CHARSET;
 
 	strncpy_s(Prnlf.lfFaceName, sizeof(Prnlf.lfFaceName),"Tera Special", _TRUNCATE);
-	PrnFont[AttrSpecial] = CreateFontIndirectA(&Prnlf);
+	PrnFont[AttrSpecial] = CreateFontIndirect(&Prnlf);
 	PrnFont[AttrSpecial | AttrBold] = PrnFont[AttrSpecial];
 	PrnFont[AttrSpecial | AttrUnder] = PrnFont[AttrSpecial];
 	PrnFont[AttrSpecial | AttrBold | AttrUnder] = PrnFont[AttrSpecial];
@@ -418,7 +416,7 @@ void PrnOutText(PCHAR Buff, int Count)
 			Ptr2 = Ptr;
 			do {
 				Ptr1 = Ptr2;
-				Ptr2 = CharNextA(Ptr1);
+				Ptr2 = CharNext(Ptr1);
 			} while ((Ptr2!=NULL) && ((Ptr2-Ptr)<=i));
 			i = Ptr1-Ptr;
 			if (i<=0) {
@@ -430,7 +428,7 @@ void PrnOutText(PCHAR Buff, int Count)
 		RText.right = PrnX + i*PrnFW;
 		RText.top = PrnY;
 		RText.bottom = PrnY+PrnFH;
-		ExtTextOutA(PrintDC,PrnX,PrnY,6,&RText,Ptr,i,&PrnDx[0]);
+		ExtTextOut(PrintDC,PrnX,PrnY,6,&RText,Ptr,i,&PrnDx[0]);
 		PrnX = RText.right;
 		Count=Count-i;
 		Ptr = Ptr + i;
@@ -476,8 +474,8 @@ void OpenPrnFile()
 		return;
 	}
 	if (PrnFName[0] == 0) {
-		GetTempPathA(sizeof(Temp),Temp);
-		if (GetTempFileNameA(Temp,"tmp",0,PrnFName)==0) {
+		GetTempPath(sizeof(Temp),Temp);
+		if (GetTempFileName(Temp,"tmp",0,PrnFName)==0) {
 			return;
 		}
 		HPrnFile = _lcreat(PrnFName,0);

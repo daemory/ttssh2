@@ -106,10 +106,9 @@ static void PASCAL TTXReadIniFile(PCHAR fn, PTTSet ts) {
 
 void WriteData(HANDLE fh, char *buff, int len) {
   struct timeval t;
-  int b[3];
-  DWORD w;
+  int b[3], w;
 
-  gettimeofday(&t /*, NULL*/ );
+  gettimeofday(&t, NULL);
   b[0] = t.tv_sec;
   b[1] = t.tv_usec;
   b[2] = len;

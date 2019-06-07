@@ -9,11 +9,7 @@
        SDK でインストールされたディレクトリが最優先になるよう、INCLUDE および LIB 環境変数を設定します。
        例: INCLUDE "C:\Program Files\Microsoft Platform SDK for Windows Server 2003 R2\Include"
            LIB     "C:\Program Files\Microsoft Platform SDK for Windows Server 2003 R2\Lib"
-           修正バッチファイル C:\Program Files\Microsoft Visual Studio 8\Common7\Tools\vsvars32.bat
-           
 - サポートされているコンパイラ
--- Visual Studio 2005 Express Edition
-   注: Tera Term 4.103から対応しました。
 -- Visual Studio 2008 SP1 (Standard Edition 以上)
    注: コンパイルされた実行ファイルは Windows NT 4.0, 95, 98, Me で動きません。
 -- Visual Studio 2010 SP1 (Professional Edition 以上)
@@ -31,8 +27,6 @@
 -- Visual Studio Community 2017 
    注: コンパイルされた実行ファイルは Windows Vista, XP, 2000, NT 4.0, 95, 98, Me で動きません。
        Windows Vista, XP をサポートするには v141_xp を指定してください。
--- Visual Studio Community 2019
-   注: コンパイルされた実行ファイルは Windows Vista, XP, 2000, NT 4.0, 95, 98, Me で動きません。
 - バッチファイルからビルドするために
   Visual Studio のコマンドプロンプトからバッチファイルを実行するか、以下のように環境変数を設定してください。
   使用したいバージョンの Visual Studio の "(x86) Native Tools Command Prompt" を実行し、コンパイラのパスに関係する PATH と VSINSTALLDIR 変数を環境変数に登録してください。
@@ -54,8 +48,8 @@
 
 
 ■ ライブラリ
-- Oniguruma 6.9.2 (https://github.com/kkos/oniguruma)
-- OpenSSL 1.0.2s (http://www.openssl.org/)
+- Oniguruma 6.9.1 (https://github.com/kkos/oniguruma)
+- OpenSSL 1.0.2r (http://www.openssl.org/)
 - zlib 1.2.11 (http://www.zlib.net/)
 - PuTTY 0.70 (http://www.chiark.greenend.org.uk/~sgtatham/putty/)
 - SFMT 1.5.1 (http://www.math.sci.hiroshima-u.ac.jp/~m-mat/MT/SFMT/index-jp.html)

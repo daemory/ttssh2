@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2010-2019 TeraTerm Project
+ * Copyright (C) 2010-2017 TeraTerm Project
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -31,10 +31,9 @@
  */
 #include <winsock2.h>
 #include <ws2tcpip.h>
-#include <wspiapi.h>
 #include <windows.h>
 #include <process.h>
-#include "WSAAsyncGetAddrInfo.h"
+#include "WSAASyncGetAddrInfo.h"
 #include "ttwsk.h"
 
 static unsigned __stdcall getaddrinfo_thread(void * p);

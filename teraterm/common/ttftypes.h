@@ -133,7 +133,7 @@ typedef struct {
   DWORD StartTime;
 
   // log rotate
-  int RotateMode;  //  enum rotate_mode RotateMode;
+  enum rotate_mode RotateMode;
   LONG RotateSize;
   int RotateStep;
 

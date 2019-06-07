@@ -20,16 +20,31 @@ using namespace yebisuya;
 
 extern char UILanguageFile[MAX_PATH];
 
-void UTIL_get_lang_msg(const char *key, PCHAR buf, int buf_len, const char *def)
+void UTIL_get_lang_msg(PCHAR key, PCHAR buf, int buf_len, PCHAR def)
 {
     GetI18nStr("TTProxy", key, buf, buf_len, def, UILanguageFile);
+}
+
+int UTIL_get_lang_font(PCHAR key, HWND dlg, PLOGFONT logfont, HFONT *font)
+{
+    if (GetI18nLogfont("TTProxy", key, logfont,
+                       GetDeviceCaps(GetDC(dlg),LOGPIXELSY),
+                       UILanguageFile) == FALSE) {
+        return FALSE;
+    }
+
+    if ((*font = CreateFontIndirect(logfont)) == NULL) {
+        return FALSE;
+    }
+
+    return TRUE;
 }
 
 class ProxyWSockHook {
 public:
     class MessageShower {
     public:
-        virtual void showMessage(const char* message)const = 0;
+        virtual void showMessage(const char* message)const = NULL;
     };
 private:
     struct DUMMYHOSTENT {
@@ -715,7 +730,7 @@ private:
         Window conn;
         Window erro;
         Window log;
-//      HFONT DlgFont;
+        HFONT DlgFont;
     protected:
         virtual bool dispatch(int message, int wParam, long lParam) {
             if (message == WM_COMMAND && wParam == MAKEWPARAM(IDC_REFER, BN_CLICKED)) {
@@ -750,8 +765,41 @@ private:
         }
         virtual bool onInitDialog() {
             char uimsg[MAX_UIMSG], uitmp[MAX_UIMSG];
+            LOGFONT logfont;
+            HFONT font;
 
             Dialog::onInitDialog();
+
+            font = (HFONT)SendMessage(WM_GETFONT, 0, 0);
+            GetObject(font, sizeof(LOGFONT), &logfont);
+            if (UTIL_get_lang_font("DLG_TAHOMA_FONT", HWND(), &logfont, &DlgFont)) {
+                SendDlgItemMessage(IDC_GRP_COMMON, WM_SETFONT, (WPARAM)DlgFont, MAKELPARAM(TRUE,0));
+                SendDlgItemMessage(IDC_TIMEOUT_LABEL, WM_SETFONT, (WPARAM)DlgFont, MAKELPARAM(TRUE,0));
+                SendDlgItemMessage(IDC_TIMEOUT, WM_SETFONT, (WPARAM)DlgFont, MAKELPARAM(TRUE,0));
+                SendDlgItemMessage(IDC_TIMEOUT_SECONDS, WM_SETFONT, (WPARAM)DlgFont, MAKELPARAM(TRUE,0));
+                SendDlgItemMessage(IDC_LOGFILE_LABEL, WM_SETFONT, (WPARAM)DlgFont, MAKELPARAM(TRUE,0));
+                SendDlgItemMessage(IDC_LOGFILE, WM_SETFONT, (WPARAM)DlgFont, MAKELPARAM(TRUE,0));
+                SendDlgItemMessage(IDC_REFER, WM_SETFONT, (WPARAM)DlgFont, MAKELPARAM(TRUE,0));
+                SendDlgItemMessage(IDC_GRP_SOCKS, WM_SETFONT, (WPARAM)DlgFont, MAKELPARAM(TRUE,0));
+                SendDlgItemMessage(IDC_RESOLVE_LABEL, WM_SETFONT, (WPARAM)DlgFont, MAKELPARAM(TRUE,0));
+                SendDlgItemMessage(CBS_DROPDOWNLIST, WM_SETFONT, (WPARAM)DlgFont, MAKELPARAM(TRUE,0));
+                SendDlgItemMessage(IDC_GRP_TELNET, WM_SETFONT, (WPARAM)DlgFont, MAKELPARAM(TRUE,0));
+                SendDlgItemMessage(IDC_HOSTNAME_LABEL, WM_SETFONT, (WPARAM)DlgFont, MAKELPARAM(TRUE,0));
+                SendDlgItemMessage(IDC_HOSTNAME, WM_SETFONT, (WPARAM)DlgFont, MAKELPARAM(TRUE,0));
+                SendDlgItemMessage(IDC_USERNAME_LABEL, WM_SETFONT, (WPARAM)DlgFont, MAKELPARAM(TRUE,0));
+                SendDlgItemMessage(IDC_USERNAME, WM_SETFONT, (WPARAM)DlgFont, MAKELPARAM(TRUE,0));
+                SendDlgItemMessage(IDC_PASSWORD_LABEL, WM_SETFONT, (WPARAM)DlgFont, MAKELPARAM(TRUE,0));
+                SendDlgItemMessage(IDC_PASSWORD, WM_SETFONT, (WPARAM)DlgFont, MAKELPARAM(TRUE,0));
+                SendDlgItemMessage(IDC_CONNECTED_LABEL, WM_SETFONT, (WPARAM)DlgFont, MAKELPARAM(TRUE,0));
+                SendDlgItemMessage(IDC_CONNECTED, WM_SETFONT, (WPARAM)DlgFont, MAKELPARAM(TRUE,0));
+                SendDlgItemMessage(IDC_ERROR_LABEL, WM_SETFONT, (WPARAM)DlgFont, MAKELPARAM(TRUE,0));
+                SendDlgItemMessage(IDC_ERROR, WM_SETFONT, (WPARAM)DlgFont, MAKELPARAM(TRUE,0));
+                SendDlgItemMessage(IDOK, WM_SETFONT, (WPARAM)DlgFont, MAKELPARAM(TRUE,0));
+                SendDlgItemMessage(IDCANCEL, WM_SETFONT, (WPARAM)DlgFont, MAKELPARAM(TRUE,0));
+            }
+            else {
+                DlgFont = NULL;
+            }
 
             GetWindowText(uitmp, sizeof(uitmp));
             UTIL_get_lang_msg("DLG_OTHER_TITLE", uimsg, sizeof(uimsg), uitmp);
@@ -829,8 +877,6 @@ private:
             if (logfile != NULL)
                 log.SetWindowText(logfile);
 
-            CenterWindow((HWND)*this, GetParent());
-
             return true;
         }
         virtual void onOK() {
@@ -858,9 +904,15 @@ private:
 
             logfile = log.GetWindowTextLength() > 0 ? log.GetWindowText() : NULL;
 
+            if (DlgFont != NULL) {
+                DeleteObject(DlgFont);
+            }
             Dialog::onOK();
         }
         virtual void onCancel() {
+            if (DlgFont != NULL) {
+                DeleteObject(DlgFont);
+            }
             Dialog::onCancel();
         }
     public:
@@ -889,6 +941,7 @@ private:
         EditBoxCtrl  user;
         EditBoxCtrl  pass;
         bool lock;
+        HFONT DlgFont;
     protected:
         virtual bool dispatch(int message, int wParam, long lParam) {
             if (message == WM_COMMAND) {
@@ -910,8 +963,33 @@ private:
         }
         virtual bool onInitDialog() {
             char uimsg[MAX_UIMSG], uitmp[MAX_UIMSG];
+            LOGFONT logfont;
+            HFONT font;
 
             Dialog::onInitDialog();
+
+            font = (HFONT)SendMessage(WM_GETFONT, 0, 0);
+            GetObject(font, sizeof(LOGFONT), &logfont);
+            if (UTIL_get_lang_font("DLG_TAHOMA_FONT", HWND(), &logfont, &DlgFont)) {
+                SendDlgItemMessage(IDC_URL_LABEL, WM_SETFONT, (WPARAM)DlgFont, MAKELPARAM(TRUE,0));
+                SendDlgItemMessage(IDC_URL, WM_SETFONT, (WPARAM)DlgFont, MAKELPARAM(TRUE,0));
+                SendDlgItemMessage(IDC_TYPE_LEBEL, WM_SETFONT, (WPARAM)DlgFont, MAKELPARAM(TRUE,0));
+                SendDlgItemMessage(IDC_TYPE, WM_SETFONT, (WPARAM)DlgFont, MAKELPARAM(TRUE,0));
+                SendDlgItemMessage(IDC_HOSTNAME_LABEL, WM_SETFONT, (WPARAM)DlgFont, MAKELPARAM(TRUE,0));
+                SendDlgItemMessage(IDC_HOSTNAME, WM_SETFONT, (WPARAM)DlgFont, MAKELPARAM(TRUE,0));
+                SendDlgItemMessage(IDC_PORT_LABEL, WM_SETFONT, (WPARAM)DlgFont, MAKELPARAM(TRUE,0));
+                SendDlgItemMessage(IDC_PORT, WM_SETFONT, (WPARAM)DlgFont, MAKELPARAM(TRUE,0));
+                SendDlgItemMessage(IDC_USERNAME_LABEL, WM_SETFONT, (WPARAM)DlgFont, MAKELPARAM(TRUE,0));
+                SendDlgItemMessage(IDC_USERNAME, WM_SETFONT, (WPARAM)DlgFont, MAKELPARAM(TRUE,0));
+                SendDlgItemMessage(IDC_PASSWORD_LABEL, WM_SETFONT, (WPARAM)DlgFont, MAKELPARAM(TRUE,0));
+                SendDlgItemMessage(IDC_PASSWORD, WM_SETFONT, (WPARAM)DlgFont, MAKELPARAM(TRUE,0));
+                SendDlgItemMessage(IDC_OPTIONS, WM_SETFONT, (WPARAM)DlgFont, MAKELPARAM(TRUE,0));
+                SendDlgItemMessage(IDOK, WM_SETFONT, (WPARAM)DlgFont, MAKELPARAM(TRUE,0));
+                SendDlgItemMessage(IDCANCEL, WM_SETFONT, (WPARAM)DlgFont, MAKELPARAM(TRUE,0));
+            }
+            else {
+                DlgFont = NULL;
+            }
 
             GetWindowText(uitmp, sizeof(uitmp));
             UTIL_get_lang_msg("DLG_SETUP_TITLE", uimsg, sizeof(uimsg), uitmp);
@@ -985,7 +1063,6 @@ private:
             }
             lock = false;
             onChanged(0);
-            CenterWindow((HWND)*this, GetParent());
             return true;
         }
         virtual void onOK() {
@@ -1004,9 +1081,15 @@ private:
                     return;
                 }
             }
+            if (DlgFont != NULL) {
+                DeleteObject(DlgFont);
+            }
             Dialog::onOK();
         }
         virtual void onCancel() {
+            if (DlgFont != NULL) {
+                DeleteObject(DlgFont);
+            }
             Dialog::onCancel();
         }
         void onOptions() {
@@ -1111,12 +1194,25 @@ private:
 
     class AboutDialog : public Dialog {
     private:
+        HFONT DlgFont;
         virtual bool onInitDialog() {
             String buf;
             char *buf2;
             const char *ver;
             int n, a, b, c, d, len;
             char uimsg[MAX_UIMSG], uimsg2[MAX_UIMSG], uimsg3[MAX_UIMSG];
+            LOGFONT logfont;
+            HFONT font;
+
+            font = (HFONT)SendMessage(WM_GETFONT, 0, 0);
+            GetObject(font, sizeof(LOGFONT), &logfont);
+            if (UTIL_get_lang_font("DLG_TAHOMA_FONT", HWND(), &logfont, &DlgFont)) {
+                SendDlgItemMessage(IDC_VERSION, WM_SETFONT, (WPARAM)DlgFont, MAKELPARAM(TRUE,0));
+                SendDlgItemMessage(IDOK, WM_SETFONT, (WPARAM)DlgFont, MAKELPARAM(TRUE,0));
+            }
+            else {
+                DlgFont = NULL;
+            }
 
             GetWindowText(uimsg2, sizeof(uimsg2));
             UTIL_get_lang_msg("DLG_ABOUT_TITLE", uimsg, sizeof(uimsg), uimsg2);
@@ -1145,11 +1241,12 @@ private:
             UTIL_get_lang_msg("BTN_OK", uimsg, sizeof(uimsg),"OK");
             SetDlgItemText(IDOK, uimsg);
 
-            CenterWindow((HWND)*this, GetParent());
-
             return true;
         }
         virtual void onOK() {
+            if (DlgFont != NULL) {
+                DeleteObject(DlgFont);
+            }
             Dialog::onOK();
         }
     public :
@@ -1292,9 +1389,9 @@ private:
         static const char base64_table[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
         char buf[1024];
         int status_code;
-        if (sendToSocketFormat(s, strchr((const char *)realhost,':')?"CONNECT [%s]:%d HTTP/1.1\r\n":"CONNECT %s:%d HTTP/1.1\r\n", (const char *)realhost, realport) == SOCKET_ERROR)
+        if (sendToSocketFormat(s, strchr(realhost,':')?"CONNECT [%s]:%d HTTP/1.1\r\n":"CONNECT %s:%d HTTP/1.1\r\n", realhost, realport) == SOCKET_ERROR)
             return SOCKET_ERROR;
-        if (sendToSocketFormat(s, strchr((const char *)realhost,':')?"Host: [%s]:%d\r\n":"Host: %s:%d\r\n", (const char *)realhost, realport) == SOCKET_ERROR)
+        if (sendToSocketFormat(s, strchr(realhost,':')?"Host: [%s]:%d\r\n":"Host: %s:%d\r\n", realhost, realport) == SOCKET_ERROR)
             return SOCKET_ERROR;
         if (proxy.user != NULL) {
             int userlen = strlen(proxy.user);
@@ -1635,15 +1732,15 @@ private:
         while (!err) {
             switch (wait_for_prompt(s, prompt_table, countof(prompt_table), 10)) {
             case 0: /* Hostname prompt */
-                if (sendToSocketFormat(s, strchr((const char *)realhost,':')?"[%s]:%d\n":"%s:%d\n", (const char *)realhost, realport) == SOCKET_ERROR)
+                if (sendToSocketFormat(s, strchr(realhost,':')?"[%s]:%d\n":"%s:%d\n", realhost, realport) == SOCKET_ERROR)
                     return SOCKET_ERROR;
                 break;
             case 1: /* Username prompt */
-                if (sendToSocketFormat(s, "%s\n", (const char *)proxy.user) == SOCKET_ERROR)
+                if (sendToSocketFormat(s, "%s\n", proxy.user) == SOCKET_ERROR)
                     return SOCKET_ERROR;
                 break;
             case 2: /* Password prompt */
-                if (sendToSocketFormat(s, "%s\n", (const char *)proxy.pass) == SOCKET_ERROR)
+                if (sendToSocketFormat(s, "%s\n", proxy.pass) == SOCKET_ERROR)
                     return SOCKET_ERROR;
                 break;
             case 3: /* Established message */

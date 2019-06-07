@@ -29,28 +29,31 @@
 
 /* TTMACRO.EXE, message dialog box */
 
-#include "ttm_res.h"
-
-class CMsgDlg : public TTCDialog
+class CMsgDlg : public CDialog
 {
 public:
-	CMsgDlg(const TCHAR *Text, const TCHAR *Title, BOOL YesNo, int x, int y);
-	INT_PTR DoModal();
+	CMsgDlg(PCHAR Text, PCHAR Title, BOOL YesNo,
+	        int x, int y);
 
-private:
+	//{{AFX_DATA(CMsgDlg)
 	enum { IDD = IDD_MSGDLG };
+	//}}AFX_DATA
 
-	const TCHAR *TextStr;
-	const TCHAR *TitleStr;
+	//{{AFX_VIRTUAL(CMsgDlg)
+	virtual BOOL OnCommand(WPARAM wParam, LPARAM lParam);
+	//}}AFX_VIRTUAL
+
+protected:
+	PCHAR TextStr, TitleStr;
 	BOOL YesNoFlag;
 	int  PosX, PosY, init_WW, WW, WH, TW, TH, BH, BW;
 	SIZE s;
+	HFONT DlgFont;
 
+	//{{AFX_MSG(CMsgDlg)
 	virtual BOOL OnInitDialog();
-	virtual BOOL OnClose();
-	virtual BOOL OnCancel();
-	virtual LRESULT DlgProc(UINT msg, WPARAM wp, LPARAM lp);
-
-	LRESULT OnExitSizeMove(WPARAM wParam, LPARAM lParam);
+	afx_msg LONG OnExitSizeMove(UINT wParam, LONG lParam);
+	//}}AFX_MSG
 	void Relocation(BOOL is_init, int WW);
+	DECLARE_MESSAGE_MAP()
 };

@@ -224,9 +224,8 @@ void WriteInt6(PCHAR Sect, PCHAR Key, PCHAR FName,
 	WritePrivateProfileString(Sect, Key, Temp, FName);
 }
 
-// フォント情報書き込み、4パラメータ版
-static void WriteFont(PCHAR Sect, PCHAR Key, PCHAR FName,
-					  PCHAR Name, int x, int y, int charset)
+void WriteFont(PCHAR Sect, PCHAR Key, PCHAR FName,
+			   PCHAR Name, int x, int y, int charset)
 {
 	char Temp[80];
 	if (Name[0] != 0)
@@ -237,49 +236,7 @@ static void WriteFont(PCHAR Sect, PCHAR Key, PCHAR FName,
 	WritePrivateProfileString(Sect, Key, Temp, FName);
 }
 
-// フォント情報読み込み、4パラメータ版
-static void ReadFont(
-	const char *Sect, const char *Key, const char *Default, const char *FName,
-	char *FontName, size_t FontNameLen, POINT *FontSize, int *FontCharSet)
-{
-	char Temp[MAX_PATH];
-	GetPrivateProfileString(Sect, Key, Default,
-	                        Temp, _countof(Temp), FName);
-	if (Temp[0] == 0) {
-		// デフォルトがセットされていない & iniにエントリーがない場合
-		FontName[0] = 0;
-		FontSize->x = 0;
-		FontSize->y = 0;
-		*FontCharSet = 0;
-	} else {
-		GetNthString(Temp, 1, FontNameLen, FontName);
-		GetNthNum(Temp, 2, &(FontSize->x));
-		GetNthNum(Temp, 3, &(FontSize->y));
-		GetNthNum(Temp, 4, FontCharSet);
-		// TODO ちゃんとパースする
-	}
-}
 
-// フォント情報読み込み、3パラメータ版
-static void ReadFont3(
-	const char *Sect, const char *Key, const char *Default, const char *FName,
-	char *FontName, size_t FontNameLen, int *FontPoint, int *FontCharSet)
-{
-	char Temp[MAX_PATH];
-	GetPrivateProfileString(Sect, Key, Default,
-	                        Temp, _countof(Temp), FName);
-	if (Temp[0] == 0) {
-		// デフォルトがセットされていない & iniにエントリーがない場合
-		FontName[0] = 0;
-		*FontPoint = 0;
-		*FontCharSet = 0;
-	} else {
-		GetNthString(Temp, 1, FontNameLen, FontName);
-		GetNthNum(Temp, 2, FontPoint);
-		GetNthNum(Temp, 3, FontCharSet);
-		// TODO ちゃんとパースする
-	}
-}
 
 #define CYGTERM_FILE "cygterm.cfg"  // CygTerm configuration file
 #define CYGTERM_FILE_MAXLINE 100
@@ -968,9 +925,12 @@ void PASCAL ReadIniFile(PCHAR FName, PTTSet ts)
 	ts->TEKColorEmu = GetOnOff(Section, "TEKColorEmulation", FName, FALSE);
 
 	/* VT Font */
-	ReadFont(Section, "VTFont", "Terminal,0,-13,1", FName,
-			 ts->VTFont, _countof(ts->VTFont),
-			 &ts->VTFontSize, &(ts->VTFontCharSet));
+	GetPrivateProfileString(Section, "VTFont", "Terminal,0,-13,1",
+	                        Temp, sizeof(Temp), FName);
+	GetNthString(Temp, 1, sizeof(ts->VTFont), ts->VTFont);
+	GetNthNum(Temp, 2, (int far *) &(ts->VTFontSize.x));
+	GetNthNum(Temp, 3, (int far *) &(ts->VTFontSize.y));
+	GetNthNum(Temp, 4, &(ts->VTFontCharSet));
 
 	/* Bold font flag */
 	if (GetOnOff(Section, "EnableBold", FName, TRUE))
@@ -982,9 +942,12 @@ void PASCAL ReadIniFile(PCHAR FName, PTTSet ts)
 	ts->RussFont = str2id(RussList, Temp, IdWindows);
 
 	/* TEK Font */
-	ReadFont(Section, "TEKFont", "Courier,0,-13,0", FName,
-			 ts->TEKFont, _countof(ts->TEKFont),
-			 &ts->TEKFontSize, &(ts->TEKFontCharSet));
+	GetPrivateProfileString(Section, "TEKFont", "Courier,0,-13,0",
+	                        Temp, sizeof(Temp), FName);
+	GetNthString(Temp, 1, sizeof(ts->TEKFont), ts->TEKFont);
+	GetNthNum(Temp, 2, (int far *) &(ts->TEKFontSize.x));
+	GetNthNum(Temp, 3, (int far *) &(ts->TEKFontSize.y));
+	GetNthNum(Temp, 4, &(ts->TEKFontCharSet));
 
 	/* BS key */
 	GetPrivateProfileString(Section, "BSKey", "",
@@ -1369,9 +1332,20 @@ void PASCAL ReadIniFile(PCHAR FName, PTTSet ts)
 		ts->TermFlag |= TF_PRINTERCTRL;
 
 	/* Printer Font --- special option */
-	ReadFont(Section, "PrnFont", NULL, FName,
-			 ts->PrnFont, _countof(ts->PrnFont),
-			 &ts->PrnFontSize, &(ts->PrnFontCharSet));
+	GetPrivateProfileString(Section, "PrnFont", "",
+	                        Temp, sizeof(Temp), FName);
+	if (strlen(Temp) == 0) {
+		ts->PrnFont[0] = 0;
+		ts->PrnFontSize.x = 0;
+		ts->PrnFontSize.y = 0;
+		ts->PrnFontCharSet = 0;
+	}
+	else {
+		GetNthString(Temp, 1, sizeof(ts->PrnFont), ts->PrnFont);
+		GetNthNum(Temp, 2, (int far *) &(ts->PrnFontSize.x));
+		GetNthNum(Temp, 3, (int far *) &(ts->PrnFontSize.y));
+		GetNthNum(Temp, 4, &(ts->PrnFontCharSet));
+	}
 
 	// Page margins (left, right, top, bottom) for printing
 	//    -- special option
@@ -1617,13 +1591,20 @@ void PASCAL ReadIniFile(PCHAR FName, PTTSet ts)
 	                        Temp, sizeof(Temp), FName);
 	strncpy_s(ts->Locale, sizeof(ts->Locale), Temp, _TRUNCATE);
 
-	// UI language message file (相対パス)
+	// UI language message file
 	GetPrivateProfileString(Section, "UILanguageFile", "lang\\Default.lng",
-	                        ts->UILanguageFile_ini, sizeof(ts->UILanguageFile_ini), FName);
+	                        Temp, sizeof(Temp), FName);
+	{
+		char CurDir[MAX_PATH];
 
-	// UI language message file (full path)
-	GetUILanguageFileFull(ts->HomeDir, ts->UILanguageFile_ini,
-						  ts->UILanguageFile, sizeof(ts->UILanguageFile));
+		// フルパス化する前に読み込み時の設定を取っておく
+		strncpy_s(ts->UILanguageFile_ini, sizeof(ts->UILanguageFile_ini), Temp, _TRUNCATE);
+
+		GetCurrentDirectory(sizeof(CurDir), CurDir);
+		SetCurrentDirectory(ts->HomeDir);
+		_fullpath(ts->UILanguageFile, Temp, sizeof(ts->UILanguageFile));
+		SetCurrentDirectory(CurDir);
+	}
 
 	// Broadcast Command History (2007.3.3 maya)
 	ts->BroadcastCommandHistory =
@@ -2082,11 +2063,6 @@ void PASCAL ReadIniFile(PCHAR FName, PTTSet ts)
 
 	// CygTerm Configuration File
 	ReadCygtermConfFile(ts);
-
-	// dialog font
-	ReadFont3("Tera Term", "DlgFont", NULL, FName,
-			  ts->DialogFontName, sizeof(ts->DialogFontName),
-			  &ts->DialogFontPoint, &ts->DialogFontCharSet);
 }
 
 void PASCAL WriteIniFile(PCHAR FName, PTTSet ts)
@@ -3428,13 +3404,6 @@ void PASCAL WriteIniFile(PCHAR FName, PTTSet ts)
 
 	// CygTerm Configuration File
 	WriteCygtermConfFile(ts);
-
-	// dialog font
-	_snprintf_s(Temp, sizeof(Temp), _TRUNCATE, "%s,%d,%d",
-				ts->DialogFontName,
-				ts->DialogFontPoint,
-				ts->DialogFontCharSet);
-	WritePrivateProfileStringA("Tera Term", "DlgFont", Temp, FName);
 }
 
 #define VTEditor "VT editor keypad"

@@ -72,12 +72,7 @@ static void loadExtension(ExtensionList * * extensions, char const * fileName) {
   if (NumExtensions>=MAXNUMEXTENSIONS) return;
   LibHandle[NumExtensions] = LoadLibrary(fileName);
   if (LibHandle[NumExtensions] != NULL) {
-#if defined(_MSC_VER)
-    const char *TTXBIND = "_TTXBind@8";
-#else
-    const char *TTXBIND = "TTXBind@8";
-#endif
-    TTXBindProc bind = (TTXBindProc)GetProcAddress(LibHandle[NumExtensions], TTXBIND);
+    TTXBindProc bind = (TTXBindProc)GetProcAddress(LibHandle[NumExtensions], "_TTXBind@8");
     if (bind==NULL)
       bind = (TTXBindProc)GetProcAddress(LibHandle[NumExtensions], "TTXBind");
     if (bind != NULL) {
