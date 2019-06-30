@@ -213,8 +213,6 @@ static Channel_t *ssh2_channel_new(unsigned int window, unsigned int maxpack,
 	c->type = type;
 	c->local_num = local_num;  // alloc_channel()の返値を保存しておく
 	c->bufchain = NULL;
-	c->bufchain_amount = 0;
-	c->bufchain_recv_suspended = FALSE;
 	if (type == TYPE_SCP) {
 		c->scp.state = SCP_INIT;
 		c->scp.progress_window = NULL;
@@ -233,8 +231,7 @@ static Channel_t *ssh2_channel_new(unsigned int window, unsigned int maxpack,
 }
 
 // remote_windowの空きがない場合に、送れなかったバッファをリスト（入力順）へつないでおく。
-// ここで確保したメモリは ssh2_channel_retry_send_bufchain() で解放する。
-static void ssh2_channel_add_bufchain(PTInstVar pvar, Channel_t *c, unsigned char *buf, unsigned int buflen)
+static void ssh2_channel_add_bufchain(Channel_t *c, unsigned char *buf, unsigned int buflen)
 {
 	bufchain_t *p, *old;
 
@@ -258,22 +255,12 @@ static void ssh2_channel_add_bufchain(PTInstVar pvar, Channel_t *c, unsigned cha
 			old = old->next;
 		old->next = p;
 	}
-
-	// バッファサイズの合計を更新する(記録用)
-	c->bufchain_amount += buflen;
-
-	// remote_windowの空きがないので、local connectionからのパケット受信の
-	// 停止指示を出す。すぐに通知が止まるわけではない。
-	FWD_suspend_resume_local_connection(pvar, c, FALSE);
 }
 
-// remote_windowの空きができたら、リストに残っているデータを順番に送る。
-// 送信ができたらメモリを解放する。
 static void ssh2_channel_retry_send_bufchain(PTInstVar pvar, Channel_t *c)
 {
 	bufchain_t *ch;
 	unsigned int size;
-	bufchain_t* ch_origin = c->bufchain;
 
 	while (c->bufchain) {
 		// 先頭から先に送る
@@ -292,15 +279,6 @@ static void ssh2_channel_retry_send_bufchain(PTInstVar pvar, Channel_t *c)
 
 		buffer_free(ch->msg);
 		free(ch);
-
-		// バッファサイズの合計を更新する(記録用)
-		c->bufchain_amount -= size;
-	}
-
-	// 元々あったリストが空になったら、
-	// local connectionからのパケット通知を再開する。
-	if (ch_origin && c->bufchain == NULL) {
-		FWD_suspend_resume_local_connection(pvar, c, TRUE);
 	}
 }
 
@@ -392,7 +370,7 @@ static Channel_t *ssh2_channel_lookup(int id)
 // SSH1で管理しているchannel構造体から、SSH2向けのChannel_tへ変換する。
 // TODO: 将来的にはチャネル構造体は1つに統合する。
 // (2005.6.12 yutaka)
-Channel_t *ssh2_local_channel_lookup(int local_num)
+static Channel_t *ssh2_local_channel_lookup(int local_num)
 {
 	int i;
 	Channel_t *c;
@@ -1151,7 +1129,7 @@ void finish_send_packet_special(PTInstVar pvar, int skip_compress)
 	}
 
 	if (SSHv1(pvar)) {
-		unsigned int padding = 8 - ((len + 4) % 8);
+		int padding = 8 - ((len + 4) % 8);
 
 		data = pvar->ssh_state.outbuf + 8 - padding;
 		data_length = padding + len + 8;
@@ -3463,14 +3441,14 @@ void SSH2_send_channel_data(PTInstVar pvar, Channel_t *c, unsigned char *buf, un
 	// これによりパケットが壊れたように見える現象が改善される。
 	// (2012.10.14 yutaka)
 	if (retry == 0 && c->bufchain) {
-		ssh2_channel_add_bufchain(pvar, c, buf, buflen);
+		ssh2_channel_add_bufchain(c, buf, buflen);
 		return;
 	}
 
 	if ((unsigned int)buflen > c->remote_window) {
 		unsigned int offset = 0;
 		// 送れないデータはいったん保存しておく
-		ssh2_channel_add_bufchain(pvar, c, buf + offset, buflen - offset);
+		ssh2_channel_add_bufchain(c, buf + offset, buflen - offset);
 		buflen = offset;
 		return;
 	}

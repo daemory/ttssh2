@@ -1573,11 +1573,10 @@ WORD TTLFilenameBox()
 		}
 		BringupWindow(HMainWin);
 		if (SaveFlag) {
-			ofn.Flags = OFN_FILEMUSTEXIST | OFN_HIDEREADONLY;
+			ofn.Flags = OFN_OVERWRITEPROMPT;
 			ret = GetSaveFileName(&ofn);
 		}
 		else {
-			ofn.Flags = OFN_PATHMUSTEXIST | OFN_OVERWRITEPROMPT;
 			ret = GetOpenFileName(&ofn);
 		}
 		SetResult(ret);
@@ -1622,13 +1621,13 @@ WORD TTLFileOpen()
 	}
 	if (FH == INVALID_HANDLE_VALUE) {
 		SetIntVal(VarId, -1);
-		return Err;
+		return ErrCantOpen;
 	}
 	fhi = HandlePut(FH);
 	if (fhi == -1) {
 		SetIntVal(VarId, -1);
 		_lclose(FH);
-		return Err;
+		return ErrCantOpen;
 	}
 	SetIntVal(VarId, fhi);
 	if (Append!=0) {

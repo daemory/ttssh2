@@ -91,6 +91,8 @@
 DEFINE_GUID(GUID_DEVINTERFACE_USB_DEVICE, 0xA5DCBF10L, 0x6530, 0x11D2, 0x90, 0x1F, 0x00, \
              0xC0, 0x4F, 0xB9, 0x51, 0xED);
 
+#define CFrameWnd	TTCFrameWnd
+
 #define VTClassName _T("VTWin32")
 
 #undef SetDlgItemText
@@ -146,6 +148,150 @@ static int AutoDisconnectedPort = -1;
 
 /////////////////////////////////////////////////////////////////////////////
 // CVTWindow
+
+#if 0
+BEGIN_MESSAGE_MAP(CVTWindow, CFrameWnd)
+	//{{AFX_MSG_MAP(CVTWindow)
+	ON_WM_ACTIVATE()
+	ON_WM_CHAR()
+	ON_WM_CLOSE()
+	ON_WM_DESTROY()
+	ON_WM_DROPFILES()
+	ON_WM_GETMINMAXINFO()
+	ON_WM_HSCROLL()
+	ON_WM_INITMENUPOPUP()
+	ON_WM_KEYDOWN()
+	ON_WM_KEYUP()
+	ON_WM_KILLFOCUS()
+	ON_WM_LBUTTONDBLCLK()
+	ON_WM_LBUTTONDOWN()
+	ON_WM_LBUTTONUP()
+	ON_WM_MBUTTONDOWN()
+	ON_WM_MBUTTONUP()
+	ON_WM_MOUSEACTIVATE()
+	ON_WM_MOUSEMOVE()
+	ON_WM_MOUSEWHEEL()
+	ON_WM_MOVE()
+	ON_WM_NCLBUTTONDBLCLK()
+	ON_WM_NCRBUTTONDOWN()
+	ON_WM_NCCALCSIZE()
+	ON_WM_PAINT()
+	ON_WM_RBUTTONDOWN()
+	ON_WM_RBUTTONUP()
+	ON_WM_SETFOCUS()
+	ON_WM_SIZE()
+	ON_WM_SIZING()
+	ON_WM_SYSCHAR()
+	ON_WM_SYSCOLORCHANGE()
+	ON_WM_SYSCOMMAND()
+	ON_WM_SYSKEYDOWN()
+	ON_WM_SYSKEYUP()
+	ON_WM_TIMER()
+	ON_WM_VSCROLL()
+	ON_WM_DEVICECHANGE()
+	ON_MESSAGE(WM_IME_STARTCOMPOSITION,OnIMEStartComposition)
+	ON_MESSAGE(WM_IME_ENDCOMPOSITION,OnIMEEndComposition)
+	ON_MESSAGE(WM_IME_COMPOSITION,OnIMEComposition)
+	ON_MESSAGE(WM_INPUTLANGCHANGE,OnIMEInputChange)
+	ON_MESSAGE(WM_IME_NOTIFY,OnIMENotify)
+	ON_MESSAGE(WM_IME_REQUEST,OnIMERequest)
+//<!--by AKASI
+	ON_MESSAGE(WM_WINDOWPOSCHANGING,OnWindowPosChanging)
+	ON_MESSAGE(WM_SETTINGCHANGE,OnSettingChange)
+	ON_MESSAGE(WM_ENTERSIZEMOVE,OnEnterSizeMove)
+	ON_MESSAGE(WM_EXITSIZEMOVE ,OnExitSizeMove)
+//-->
+	ON_MESSAGE(WM_USER_ACCELCOMMAND, OnAccelCommand)
+	ON_MESSAGE(WM_USER_CHANGEMENU,OnChangeMenu)
+	ON_MESSAGE(WM_USER_CHANGETBAR,OnChangeTBar)
+	ON_MESSAGE(WM_USER_COMMNOTIFY,OnCommNotify)
+	ON_MESSAGE(WM_USER_COMMOPEN,OnCommOpen)
+	ON_MESSAGE(WM_USER_COMMSTART,OnCommStart)
+	ON_MESSAGE(WM_USER_DDEEND,OnDdeEnd)
+	ON_MESSAGE(WM_USER_DLGHELP2,OnDlgHelp)
+	ON_MESSAGE(WM_USER_FTCANCEL,OnFileTransEnd)
+	ON_MESSAGE(WM_USER_GETSERIALNO,OnGetSerialNo)
+	ON_MESSAGE(WM_USER_KEYCODE,OnKeyCode)
+	ON_MESSAGE(WM_USER_PROTOCANCEL,OnProtoEnd)
+	ON_MESSAGE(WM_USER_CHANGETITLE,OnChangeTitle)
+	ON_MESSAGE(WM_COPYDATA,OnReceiveIpcMessage)
+	ON_MESSAGE(WM_USER_NONCONFIRM_CLOSE, OnNonConfirmClose)
+	ON_MESSAGE(WM_USER_NOTIFYICON, OnNotifyIcon)
+	ON_COMMAND(ID_FILE_NEWCONNECTION, OnFileNewConnection)
+	ON_COMMAND(ID_FILE_DUPLICATESESSION, OnDuplicateSession)
+	ON_COMMAND(ID_FILE_CYGWINCONNECTION, OnCygwinConnection)
+	ON_COMMAND(ID_FILE_TERATERMMENU, OnTTMenuLaunch)
+	ON_COMMAND(ID_FILE_LOGMEIN, OnLogMeInLaunch)
+	ON_COMMAND(ID_FILE_LOG, OnFileLog)
+	ON_COMMAND(ID_FILE_COMMENTTOLOG, OnCommentToLog)
+	ON_COMMAND(ID_FILE_VIEWLOG, OnViewLog)
+	ON_COMMAND(ID_FILE_SHOWLOGDIALOG, OnShowLogDialog)
+	ON_COMMAND(ID_FILE_REPLAYLOG, OnReplayLog)
+	ON_COMMAND(ID_FILE_SENDFILE, OnFileSend)
+	ON_COMMAND(ID_FILE_KERMITRCV, OnFileKermitRcv)
+	ON_COMMAND(ID_FILE_KERMITGET, OnFileKermitGet)
+	ON_COMMAND(ID_FILE_KERMITSEND, OnFileKermitSend)
+	ON_COMMAND(ID_FILE_KERMITFINISH, OnFileKermitFinish)
+	ON_COMMAND(ID_FILE_XRCV, OnFileXRcv)
+	ON_COMMAND(ID_FILE_XSEND, OnFileXSend)
+	ON_COMMAND(ID_FILE_YRCV, OnFileYRcv)
+	ON_COMMAND(ID_FILE_YSEND, OnFileYSend)
+	ON_COMMAND(ID_FILE_ZRCV, OnFileZRcv)
+	ON_COMMAND(ID_FILE_ZSEND, OnFileZSend)
+	ON_COMMAND(ID_FILE_BPRCV, OnFileBPRcv)
+	ON_COMMAND(ID_FILE_BPSEND, OnFileBPSend)
+	ON_COMMAND(ID_FILE_QVRCV, OnFileQVRcv)
+	ON_COMMAND(ID_FILE_QVSEND, OnFileQVSend)
+	ON_COMMAND(ID_FILE_CHANGEDIR, OnFileChangeDir)
+	ON_COMMAND(ID_FILE_PRINT2, OnFilePrint)
+	ON_COMMAND(ID_FILE_DISCONNECT, OnFileDisconnect)
+	ON_COMMAND(ID_FILE_EXIT, OnFileExit)
+	ON_COMMAND(ID_FILE_EXITALL, OnAllClose)
+	ON_COMMAND(ID_EDIT_COPY2, OnEditCopy)
+	ON_COMMAND(ID_EDIT_COPYTABLE, OnEditCopyTable)
+	ON_COMMAND(ID_EDIT_PASTE2, OnEditPaste)
+	ON_COMMAND(ID_EDIT_PASTECR, OnEditPasteCR)
+	ON_COMMAND(ID_EDIT_CLEARSCREEN, OnEditClearScreen)
+	ON_COMMAND(ID_EDIT_CLEARBUFFER, OnEditClearBuffer)
+	ON_COMMAND(ID_EDIT_CANCELSELECT, OnEditCancelSelection)
+	ON_COMMAND(ID_EDIT_SELECTALL, OnEditSelectAllBuffer)
+	ON_COMMAND(ID_EDIT_SELECTSCREEN, OnEditSelectScreenBuffer)
+	ON_COMMAND(ID_SETUP_ADDITIONALSETTINGS, OnExternalSetup)
+	ON_COMMAND(ID_SETUP_TERMINAL, OnSetupTerminal)
+	ON_COMMAND(ID_SETUP_WINDOW, OnSetupWindow)
+	ON_COMMAND(ID_SETUP_FONT, OnSetupFont)
+	ON_COMMAND(ID_SETUP_KEYBOARD, OnSetupKeyboard)
+	ON_COMMAND(ID_SETUP_SERIALPORT, OnSetupSerialPort)
+	ON_COMMAND(ID_SETUP_TCPIP, OnSetupTCPIP)
+	ON_COMMAND(ID_SETUP_GENERAL, OnSetupGeneral)
+	ON_COMMAND(ID_SETUP_SAVE, OnSetupSave)
+	ON_COMMAND(ID_SETUP_RESTORE, OnSetupRestore)
+	ON_COMMAND(ID_OPEN_SETUP, OnOpenSetupDirectory)
+	ON_COMMAND(ID_SETUP_LOADKEYMAP, OnSetupLoadKeyMap)
+	ON_COMMAND(ID_CONTROL_RESETTERMINAL, OnControlResetTerminal)
+	ON_COMMAND(ID_CONTROL_RESETREMOTETITLE, OnControlResetRemoteTitle)
+	ON_COMMAND(ID_CONTROL_AREYOUTHERE, OnControlAreYouThere)
+	ON_COMMAND(ID_CONTROL_SENDBREAK, OnControlSendBreak)
+	ON_COMMAND(ID_CONTROL_RESETPORT, OnControlResetPort)
+	ON_COMMAND(ID_CONTROL_BROADCASTCOMMAND, OnControlBroadcastCommand)
+	ON_COMMAND(ID_CONTROL_OPENTEK, OnControlOpenTEK)
+	ON_COMMAND(ID_CONTROL_CLOSETEK, OnControlCloseTEK)
+	ON_COMMAND(ID_CONTROL_MACRO, OnControlMacro)
+	ON_COMMAND(ID_CONTROL_SHOW_MACRO, OnShowMacroWindow)
+	ON_COMMAND(ID_WINDOW_WINDOW, OnWindowWindow)
+	ON_COMMAND(ID_WINDOW_MINIMIZEALL, OnWindowMinimizeAll)
+	ON_COMMAND(ID_WINDOW_CASCADEALL, OnWindowCascade)
+	ON_COMMAND(ID_WINDOW_STACKED, OnWindowStacked)
+	ON_COMMAND(ID_WINDOW_SIDEBYSIDE, OnWindowSidebySide)
+	ON_COMMAND(ID_WINDOW_RESTOREALL, OnWindowRestoreAll)
+	ON_COMMAND(ID_WINDOW_UNDO, OnWindowUndo)
+	ON_COMMAND(ID_HELP_INDEX2, OnHelpIndex)
+	ON_COMMAND(ID_HELP_ABOUT, OnHelpAbout)
+	ON_MESSAGE(WM_USER_DROPNOTIFY, OnDropNotify)
+	ON_MESSAGE(WM_DPICHANGED, OnDpiChanged)
+	//}}AFX_MSG_MAP
+END_MESSAGE_MAP()
+#endif
 
 static HINSTANCE AfxGetInstanceHandle()
 {
@@ -803,6 +949,21 @@ CVTWindow::CVTWindow()
 	DropLists = NULL;
 	DropListCount = 0;
 }
+
+/////////////////////////////////////////////////////////////////////////////
+
+#if 0 //def _DEBUG
+void CVTWindow::AssertValid() const
+{
+	CFrameWnd::AssertValid();
+}
+
+void CVTWindow::Dump(CDumpContext& dc) const
+{
+	CFrameWnd::Dump(dc);
+}
+
+#endif //_DEBUG
 
 /////////////////////////////////////////////////////////////////////////////
 
@@ -1633,6 +1794,32 @@ void CVTWindow::OpenTEK()
 /////////////////////////////////////////////////////////////////////////////
 // CVTWindow message handler
 
+LRESULT CVTWindow::DefWindowProc(UINT message, WPARAM wParam, LPARAM lParam)
+{
+	LRESULT Result;
+
+	if (message == MsgDlgHelp) {
+		OnDlgHelp(wParam,lParam);
+		return 0;
+	}
+	else if ((ts.HideTitle>0) &&
+	         (message == WM_NCHITTEST)) {
+		Result = CFrameWnd::DefWindowProc(message,wParam,lParam);
+		if ((Result==HTCLIENT) && AltKey())
+#ifdef ALPHABLEND_TYPE2
+			if(ShiftKey())
+				Result = HTBOTTOMRIGHT;
+			else
+				Result = HTCAPTION;
+#else
+			Result = HTCAPTION;
+#endif
+		return Result;
+	}
+
+	return (CFrameWnd::DefWindowProc(message,wParam,lParam));
+}
+
 BOOL CVTWindow::OnCommand(WPARAM wParam, LPARAM lParam)
 {
 	WORD wID = LOWORD(wParam);
@@ -1714,7 +1901,7 @@ BOOL CVTWindow::OnCommand(WPARAM wParam, LPARAM lParam)
 			return TRUE;
 		}
 		else { /* TTPLUG */
-			return TTCFrameWnd::OnCommand(wParam, lParam);
+			return CFrameWnd::OnCommand(wParam, lParam);
 		}
 	}
 }
@@ -1871,7 +2058,7 @@ void CVTWindow::OnDestroy()
 
 	FreeBuffer();
 
-	TTCFrameWnd::OnDestroy();
+	CFrameWnd::OnDestroy();
 	TTXEnd(); /* TTPLUG */
 
 	DeleteNotifyIcon(&cv);
@@ -2272,7 +2459,7 @@ void CVTWindow::OnKillFocus(HWND hNewWnd)
 {
 	DispDestroyCaret();
 	FocusReport(FALSE);
-//	TTCFrameWnd::OnKillFocus(hNewWnd);		// TODO
+//	CFrameWnd::OnKillFocus(hNewWnd);		// TODO
 
 	if (IsCaretOn()) {
 		CaretKillFocus(TRUE);
@@ -2478,6 +2665,15 @@ BOOL CVTWindow::OnMouseWheel(
 
 	return (TRUE);
 }
+
+#if 0
+// 何もしていない
+void CVTWindow::OnNcCalcSize(BOOL valid, NCCALCSIZE_PARAMS *sizeinfo)
+{
+	CWnd::OnNcCalcSize(valid, sizeinfo);
+	return;
+}
+#endif
 
 void CVTWindow::OnNcLButtonDblClk(UINT nHitTest, POINTS point)
 {
@@ -2726,7 +2922,7 @@ void CVTWindow::OnSizing(UINT fwSide, LPRECT pRect)
 		break;
 	}
 
-//TODO	TTCFrameWnd::OnSizing(fwSide, pRect);
+//TODO	CFrameWnd::OnSizing(fwSide, pRect);
 }
 
 void CVTWindow::OnSysChar(UINT nChar, UINT nRepCnt, UINT nFlags)
@@ -2778,8 +2974,16 @@ void CVTWindow::OnSysChar(UINT nChar, UINT nRepCnt, UINT nFlags)
 		return;
 	}
 
-	TTCFrameWnd::DefWindowProc(WM_SYSCHAR, nChar, MAKELONG(nRepCnt, nFlags));
+	CFrameWnd::DefWindowProc(WM_SYSCHAR, nChar, MAKELONG(nRepCnt, nFlags));
 }
+
+// 何もしていない、不要
+#if 0
+void CVTWindow::OnSysColorChange()
+{
+	CFrameWnd::OnSysColorChange();
+}
+#endif
 
 void CVTWindow::OnSysCommand(UINT nID, LPARAM lParam)
 {
@@ -2794,7 +2998,7 @@ void CVTWindow::OnSysCommand(UINT nID, LPARAM lParam)
 	}
 #if 0
 	else {
-		TTCFrameWnd::OnSysCommand(nID,lParam);
+		CFrameWnd::OnSysCommand(nID,lParam);
 	}
 #endif
 }
@@ -2806,7 +3010,7 @@ void CVTWindow::OnSysKeyDown(UINT nChar, UINT nRepCnt, UINT nFlags)
 		// OnKeyDown(nChar,nRepCnt,nFlags);
 	}
 	else {
-		TTCFrameWnd::OnSysKeyDown(nChar,nRepCnt,nFlags);
+		CFrameWnd::OnSysKeyDown(nChar,nRepCnt,nFlags);
 	}
 }
 
@@ -2816,7 +3020,7 @@ void CVTWindow::OnSysKeyUp(UINT nChar, UINT nRepCnt, UINT nFlags)
 		OnKeyUp(nChar,nRepCnt,nFlags);
 	}
 	else {
-		TTCFrameWnd::OnSysKeyUp(nChar,nRepCnt,nFlags);
+		CFrameWnd::OnSysKeyUp(nChar,nRepCnt,nFlags);
 	}
 }
 
@@ -3029,7 +3233,7 @@ LRESULT CVTWindow::OnWindowPosChanging(WPARAM wParam, LPARAM lParam)
 	}
 #endif
 
-	return TTCFrameWnd::DefWindowProc(WM_WINDOWPOSCHANGING,wParam,lParam);
+	return CFrameWnd::DefWindowProc(WM_WINDOWPOSCHANGING,wParam,lParam);
 }
 
 LRESULT CVTWindow::OnSettingChange(WPARAM wParam, LPARAM lParam)
@@ -3037,7 +3241,7 @@ LRESULT CVTWindow::OnSettingChange(WPARAM wParam, LPARAM lParam)
 #ifdef ALPHABLEND_TYPE2
 	BGOnSettingChange();
 #endif
-	return TTCFrameWnd::DefWindowProc(WM_SETTINGCHANGE,wParam,lParam);
+	return CFrameWnd::DefWindowProc(WM_SETTINGCHANGE,wParam,lParam);
 }
 
 LRESULT CVTWindow::OnEnterSizeMove(WPARAM wParam, LPARAM lParam)
@@ -3047,7 +3251,7 @@ LRESULT CVTWindow::OnEnterSizeMove(WPARAM wParam, LPARAM lParam)
 #ifdef ALPHABLEND_TYPE2
 	BGOnEnterSizeMove();
 #endif
-	return TTCFrameWnd::DefWindowProc(WM_ENTERSIZEMOVE,wParam,lParam);
+	return CFrameWnd::DefWindowProc(WM_ENTERSIZEMOVE,wParam,lParam);
 }
 
 LRESULT CVTWindow::OnExitSizeMove(WPARAM wParam, LPARAM lParam)
@@ -3058,7 +3262,7 @@ LRESULT CVTWindow::OnExitSizeMove(WPARAM wParam, LPARAM lParam)
 
 	EnableSizeTip(0);
 
-	return TTCFrameWnd::DefWindowProc(WM_EXITSIZEMOVE,wParam,lParam);
+	return CFrameWnd::DefWindowProc(WM_EXITSIZEMOVE,wParam,lParam);
 }
 //-->
 
@@ -3071,13 +3275,13 @@ LRESULT CVTWindow::OnIMEStartComposition(WPARAM wParam, LPARAM lParam)
 	int CaretY = (CursorY-WinOrgY)*FontHeight;
 	SetConversionWindow(HVTWin,CaretX,CaretY);
 
-	return TTCFrameWnd::DefWindowProc(WM_IME_STARTCOMPOSITION,wParam,lParam);
+	return CFrameWnd::DefWindowProc(WM_IME_STARTCOMPOSITION,wParam,lParam);
 }
 
 LRESULT CVTWindow::OnIMEEndComposition(WPARAM wParam, LPARAM lParam)
 {
 	IMECompositionState = FALSE;
-	return TTCFrameWnd::DefWindowProc(WM_IME_ENDCOMPOSITION,wParam,lParam);
+	return CFrameWnd::DefWindowProc(WM_IME_ENDCOMPOSITION,wParam,lParam);
 }
 
 LRESULT CVTWindow::OnIMEComposition(WPARAM wParam, LPARAM lParam)
@@ -3107,14 +3311,14 @@ LRESULT CVTWindow::OnIMEComposition(WPARAM wParam, LPARAM lParam)
 			return 0;
 		}
 	}
-	return TTCFrameWnd::DefWindowProc(WM_IME_COMPOSITION,wParam,lParam);
+	return CFrameWnd::DefWindowProc(WM_IME_COMPOSITION,wParam,lParam);
 }
 
 LRESULT CVTWindow::OnIMEInputChange(WPARAM wParam, LPARAM lParam)
 {
 	ChangeCaret();
 
-	return TTCFrameWnd::DefWindowProc(WM_INPUTLANGCHANGE,wParam,lParam);
+	return CFrameWnd::DefWindowProc(WM_INPUTLANGCHANGE,wParam,lParam);
 }
 
 LRESULT CVTWindow::OnIMENotify(WPARAM wParam, LPARAM lParam)
@@ -3160,7 +3364,7 @@ LRESULT CVTWindow::OnIMENotify(WPARAM wParam, LPARAM lParam)
 		break;
 	}
 
-	return TTCFrameWnd::DefWindowProc(WM_IME_NOTIFY,wParam,lParam);
+	return CFrameWnd::DefWindowProc(WM_IME_NOTIFY,wParam,lParam);
 }
 
 static LRESULT ReplyIMERequestDocumentfeed(HWND hWnd, LPARAM lParam)
@@ -3235,7 +3439,7 @@ LRESULT CVTWindow::OnIMERequest(WPARAM wParam, LPARAM lParam)
 			break;
 		}
 	}
-	return TTCFrameWnd::DefWindowProc(WM_IME_REQUEST,wParam,lParam);
+	return CFrameWnd::DefWindowProc(WM_IME_REQUEST,wParam,lParam);
 }
 
 LONG CVTWindow::OnAccelCommand(UINT wParam, LONG lParam)
@@ -4876,8 +5080,9 @@ static void openFileDirectory(char *path, char *filename, BOOL open_directory_on
 static BOOL convertVirtualStore(char *path, char *filename, char *vstore_path, int vstore_pathlen)
 {
 	BOOL ret = FALSE;
-	const char *s, **p;
-	const char *virstore_env[] = {
+	int flag = 0;
+	char *s, **p;
+	char *virstore_env[] = {
 		"ProgramFiles",
 		"ProgramData",
 		"SystemRoot",
@@ -6258,7 +6463,7 @@ LRESULT CVTWindow::Proc(UINT msg, WPARAM wp, LPARAM lp)
 		OnMButtonUp(wp, MAKEPOINTS(lp));
 		break;
 	case WM_MOUSEACTIVATE:
-		retval = OnMouseActivate((HWND)wp, LOWORD(lp), HIWORD(lp));
+		OnMouseActivate((HWND)wp, LOWORD(lp), HIWORD(lp));
 		break;
 	case WM_MOUSEMOVE:
 		OnMouseMove(wp, MAKEPOINTS(lp));
@@ -6276,6 +6481,11 @@ LRESULT CVTWindow::Proc(UINT msg, WPARAM wp, LPARAM lp)
 	case WM_NCRBUTTONDOWN:
 		OnNcRButtonDown((UINT)wp, MAKEPOINTS(lp));
 		break;
+#if 0
+		// 何もしていない
+	case WM_NCCALCSIZE:
+		break;
+#endif
 	case WM_PAINT:
 		OnPaint();
 		break;
@@ -6295,9 +6505,15 @@ LRESULT CVTWindow::Proc(UINT msg, WPARAM wp, LPARAM lp)
 	case WM_SIZING:
 		OnSizing(wp, (LPRECT)lp);
 		break;
+#if 1
 	case WM_SYSCHAR:
 		OnSysChar(wp, LOWORD(lp), HIWORD(lp));
 		break;
+#endif
+#if 0	// 何もしていない、不要
+	case WM_SYSCOLORCHANGE:
+		break;
+#endif
 	case WM_SYSCOMMAND:
 		OnSysCommand(wp, lp);
 		DefWindowProc(msg, wp, lp);
@@ -6484,7 +6700,7 @@ LRESULT CVTWindow::Proc(UINT msg, WPARAM wp, LPARAM lp)
 		break;
 	}
 	case WM_NCHITTEST: {
-		retval = TTCFrameWnd::DefWindowProc(msg, wp ,lp);
+		retval = CFrameWnd::DefWindowProc(msg, wp ,lp);
 		if (ts.HideTitle>0) {
 			if ((retval == HTCLIENT) && AltKey()) {
 #ifdef ALPHABLEND_TYPE2
@@ -6497,8 +6713,8 @@ LRESULT CVTWindow::Proc(UINT msg, WPARAM wp, LPARAM lp)
 #endif
 			}
 		}
-		break;
 	}
+		break;
 	default:
 		retval = DefWindowProc(msg, wp, lp);
 		break;
