@@ -3205,7 +3205,8 @@ static int get_keys_file_name(HWND parent, char *buf, int bufsize,
 		                  "Choose a read/write known-hosts file");
 	}
 	params.lpstrTitle = pvar->ts->UIMsg;
-	params.Flags = OFN_FILEMUSTEXIST | OFN_HIDEREADONLY;
+	params.Flags = (readonly ? OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST : 0)
+	             | OFN_HIDEREADONLY | (!readonly ? OFN_NOREADONLYRETURN : 0);
 	params.lpstrDefExt = NULL;
 
 	if (GetOpenFileName(&params) != 0) {
@@ -3855,8 +3856,12 @@ static BOOL CALLBACK TTXScpDialog(HWND dlg, UINT msg, WPARAM wParam,
 #endif
 			ofn.lpstrTitle = "Choose a sending file with SCP";
 
-			ofn.Flags = OFN_FILEMUSTEXIST | OFN_HIDEREADONLY;
-			ofn.Flags |= OFN_FORCESHOWHIDDEN;
+// WINVER がセットされないためにマクロが定義されないので、ここで定義する(2008.1.21 maya)
+#ifndef OFN_FORCESHOWHIDDEN
+/* from commdlg.h */
+#define OFN_FORCESHOWHIDDEN          0x10000000
+#endif
+			ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_FORCESHOWHIDDEN | OFN_HIDEREADONLY;
 			if (GetOpenFileName(&ofn) != 0) {
 				hWnd = GetDlgItem(dlg, IDC_SENDFILE_EDIT);
 				SendMessage(hWnd, WM_SETTEXT , 0, (LPARAM)sendfile);
@@ -4501,6 +4506,8 @@ static BOOL CALLBACK TTXKeyGenerator(HWND dlg, UINT msg, WPARAM wParam,
 			FILE *fp;
 			char comment[1024]; // comment string in private key
 
+			arc4random_stir();
+
 			// saving file dialog
 			ZeroMemory(&ofn, sizeof(ofn));
 			ofn.lStructSize = get_OPENFILENAME_SIZE();
@@ -4546,7 +4553,6 @@ static BOOL CALLBACK TTXKeyGenerator(HWND dlg, UINT msg, WPARAM wParam,
 			default:
 				break;
 			}
-			ofn.Flags = OFN_PATHMUSTEXIST | OFN_OVERWRITEPROMPT;
 			ofn.lpstrFile = filename;
 			ofn.nMaxFile = sizeof(filename);
 			UTIL_get_lang_msg("FILEDLG_SAVE_PUBLICKEY_TITLE", pvar,
@@ -4763,7 +4769,6 @@ public_error:
 			default:
 				break;
 			}
-			ofn.Flags = OFN_PATHMUSTEXIST | OFN_OVERWRITEPROMPT;
 			ofn.lpstrFile = filename;
 			ofn.nMaxFile = sizeof(filename);
 			UTIL_get_lang_msg("FILEDLG_SAVE_PRIVATEKEY_TITLE", pvar,
