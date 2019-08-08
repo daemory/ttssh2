@@ -29,5 +29,5 @@
 /* teraterm local header   */
 /*	teraterm/ folder only  */
 
-void AddModelessHandle(HWND hWnd);
-void RemoveModelessHandle(HWND hWnd);
+void AddModalHandle(HWND hWnd);
+void RemoveModalHandle(HWND hWnd);

@@ -201,7 +201,7 @@ BOOL CFileTransDlg::OnInitDialog()
 	::PostMessage(GetSafeHwnd(), WM_SETICON, ICON_BIG,
 				  (LPARAM)BigIcon);
 
-	AddModelessHandle(m_hWnd);
+	AddModalHandle(m_hWnd);
 
 	return TRUE;
 }
@@ -244,7 +244,7 @@ BOOL CFileTransDlg::PostNcDestroy()
 		BigIcon = NULL;
 	}
 
-	RemoveModelessHandle(m_hWnd);
+	RemoveModalHandle(m_hWnd);
 
 	delete this;
 	return TRUE;

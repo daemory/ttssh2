@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2018-2019 TeraTerm Project
+ * Copyright (C) 2018 TeraTerm Project
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -508,8 +508,6 @@ LRESULT TTCDialog::WndProcBase(UINT msg, WPARAM wp, LPARAM lp)
  */
 INT_PTR TTCDialog::DoModal(HINSTANCE hInstance, HWND hParent, int idd)
 {
-	m_hInst = hInstance;
-	m_hParentWnd = hParent;
 	pseudoPtr = this;
 #if defined(REWRITE_TEMPLATE)
 	INT_PTR result =
@@ -642,6 +640,7 @@ TTCPropertyPage::TTCPropertyPage(HINSTANCE inst, int id, TTCPropertySheet *sheet
 	m_psp.dwFlags |= PSP_DLGINDIRECT;
 	m_psp.pResource = TTGetDlgTemplate(inst, m_psp.pszTemplate);
 #endif
+//	m_psp.pfnDlgProc = (DLGPROC)Proc;
 	m_psp.pfnDlgProc = Proc;
 	m_psp.lParam = (LPARAM)this;
 
@@ -651,11 +650,6 @@ TTCPropertyPage::TTCPropertyPage(HINSTANCE inst, int id, TTCPropertySheet *sheet
 TTCPropertyPage::~TTCPropertyPage()
 {
 	free((void *)m_psp.pResource);
-}
-
-HPROPSHEETPAGE TTCPropertyPage::CreatePropertySheetPage()
-{
-	return ::CreatePropertySheetPage((PROPSHEETPAGE *)&m_psp);
 }
 
 void TTCPropertyPage::OnInitDialog()

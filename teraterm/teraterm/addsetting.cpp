@@ -510,7 +510,7 @@ BOOL CCopypastePropPageDlg::OnCommand(WPARAM wParam, LPARAM lParam)
 				get_lang_msg("FILEDLG_SELECT_CONFIRM_STRING_APP_TITLE", uimsg, sizeof(uimsg),
 				             "Choose a file including strings for ConfirmChangePaste", ts.UILanguageFile);
 				ofn.lpstrTitle = uimsg;
-				ofn.Flags = OFN_FILEMUSTEXIST | OFN_HIDEREADONLY;
+				ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_FORCESHOWHIDDEN | OFN_HIDEREADONLY;
 				if (GetOpenFileNameA(&ofn) != 0) {
 					SetDlgItemTextA(IDC_CONFIRM_STRING_FILE, ts.ConfirmChangePasteStringFile);
 				}
@@ -1201,7 +1201,7 @@ BOOL CLogPropPageDlg::OnCommand(WPARAM wParam, LPARAM lParam)
 				get_lang_msg("FILEDLG_SELECT_LOGVIEW_APP_TITLE", uimsg, sizeof(uimsg),
 				             "Choose a executing file with launching logging file", ts.UILanguageFile);
 				ofn.lpstrTitle = uimsg;
-				ofn.Flags = OFN_FILEMUSTEXIST | OFN_HIDEREADONLY;
+				ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_FORCESHOWHIDDEN | OFN_HIDEREADONLY;
 				if (GetOpenFileNameA(&ofn) != 0) {
 					SetDlgItemTextA(IDC_VIEWLOG_EDITOR, ts.ViewlogEditor);
 				}
@@ -1489,13 +1489,13 @@ CAddSettingPropSheetDlg::CAddSettingPropSheetDlg(
 	m_VisualPage = new CVisualPropPageDlg(hInstance, this);
 	m_LogPage = new CLogPropPageDlg(hInstance, this);
 	m_CygwinPage = new CCygwinPropPageDlg(hInstance, this);
-
-	hPsp[0] = m_GeneralPage->CreatePropertySheetPage();
-	hPsp[1] = m_SequencePage->CreatePropertySheetPage();
-	hPsp[2] = m_CopypastePage->CreatePropertySheetPage();
-	hPsp[3] = m_VisualPage->CreatePropertySheetPage();
-	hPsp[4] = m_LogPage->CreatePropertySheetPage();
-	hPsp[5] = m_CygwinPage->CreatePropertySheetPage();
+		
+	hPsp[0] = CreatePropertySheetPage(&m_GeneralPage->m_psp);
+	hPsp[1] = CreatePropertySheetPage(&m_SequencePage->m_psp);
+	hPsp[2] = CreatePropertySheetPage(&m_CopypastePage->m_psp);
+	hPsp[3] = CreatePropertySheetPage(&m_VisualPage->m_psp);
+	hPsp[4] = CreatePropertySheetPage(&m_LogPage->m_psp);
+	hPsp[5] = CreatePropertySheetPage(&m_CygwinPage->m_psp);
 	m_psh.nPages = 6;
 	m_psh.phpage = hPsp;
 

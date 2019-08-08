@@ -183,12 +183,11 @@ BOOL GetFileName(HWND HWin)
 
 	// sizeof(OPENFILENAME) では Windows98/NT で終了してしまうため (2006.8.14 maya)
 	FNameRec.lStructSize = get_OPENFILENAME_SIZE();
-	FNameRec.Flags = OFN_FILEMUSTEXIST | OFN_HIDEREADONLY;
-	FNameRec.hwndOwner = HWin;
-	FNameRec.lpstrFilter = FNFilter;
-	FNameRec.nFilterIndex = 1;
-	FNameRec.lpstrFile = FileName;
-	FNameRec.nMaxFile = sizeof(FileName);
+	FNameRec.hwndOwner	 = HWin;
+	FNameRec.lpstrFilter	 = FNFilter;
+	FNameRec.nFilterIndex  = 1;
+	FNameRec.lpstrFile  = FileName;
+	FNameRec.nMaxFile  = sizeof(FileName);
 	// 以前読み込んだ .ttl ファイルのパスを記憶できるように、初期ディレクトリを固定にしない。
 	// (2008.4.7 yutaka)
 #if 0
@@ -278,7 +277,7 @@ void BringupStatDlg()
  * @retval -1		cancelボタン
  * @retval -2		closeボタン
  */
-int OpenListDlg(PCHAR Text, PCHAR Caption, const CHAR **Lists, int Selected)
+int OpenListDlg(PCHAR Text, PCHAR Caption, CHAR **Lists, int Selected)
 {
 	CListDlg ListDlg(Text, Caption, Lists, Selected, DlgPosX, DlgPosY);
 	INT_PTR r = ListDlg.DoModal();

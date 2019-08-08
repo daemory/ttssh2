@@ -144,6 +144,10 @@ static void init_TTSSH(PTInstVar pvar)
 	FWDUI_init(pvar);
 
 	ssh_heartbeat_lock_initialize();
+
+	pvar->evpcip[MODE_IN] = EVP_CIPHER_CTX_new();
+	pvar->evpcip[MODE_OUT] = EVP_CIPHER_CTX_new();
+	/*** TODO: OPENSSL1.1.1 ERROR CHECK(ticket#39335で処置予定) ***/
 }
 
 static void uninit_TTSSH(PTInstVar pvar)
@@ -175,6 +179,9 @@ static void uninit_TTSSH(PTInstVar pvar)
 	}
 
 	ssh_heartbeat_lock_finalize();
+
+	EVP_CIPHER_CTX_free(pvar->evpcip[MODE_IN]);
+	EVP_CIPHER_CTX_free(pvar->evpcip[MODE_OUT]);
 }
 
 static void PASCAL TTXInit(PTTSet ts, PComVar cv)
@@ -1252,8 +1259,8 @@ LRESULT CALLBACK HostnameEditProc(HWND dlg, UINT msg,
 	return CallWindowProc(OrigHostnameEditProc, dlg, msg, wParam, lParam);
 }
 
-static INT_PTR CALLBACK TTXHostDlg(HWND dlg, UINT msg, WPARAM wParam,
-								   LPARAM lParam)
+static BOOL CALLBACK TTXHostDlg(HWND dlg, UINT msg, WPARAM wParam,
+                                LPARAM lParam)
 {
 	static char *ssh_version[] = {"SSH1", "SSH2", NULL};
 	PGetHNRec GetHNRec;
@@ -1271,7 +1278,7 @@ static INT_PTR CALLBACK TTXHostDlg(HWND dlg, UINT msg, WPARAM wParam,
 	switch (msg) {
 	case WM_INITDIALOG:
 		GetHNRec = (PGetHNRec) lParam;
-		SetWindowLongPtr(dlg, DWLP_USER, lParam);
+		SetWindowLong(dlg, DWL_USER, lParam);
 
 		GetWindowText(dlg, uimsg, sizeof(uimsg));
 		UTIL_get_lang_msg("DLG_HOST_TITLE", pvar, uimsg);
@@ -1348,8 +1355,8 @@ static INT_PTR CALLBACK TTXHostDlg(HWND dlg, UINT msg, WPARAM wParam,
 		// C-n/C-p のためにサブクラス化 (2007.9.4 maya)
 		hwndHostname = GetDlgItem(dlg, IDC_HOSTNAME);
 		hwndHostnameEdit = GetWindow(hwndHostname, GW_CHILD);
-		OrigHostnameEditProc = (WNDPROC)GetWindowLongPtr(hwndHostnameEdit, GWLP_WNDPROC);
-		SetWindowLongPtr(hwndHostnameEdit, GWLP_WNDPROC, (LONG_PTR)HostnameEditProc);
+		OrigHostnameEditProc = (WNDPROC)GetWindowLong(hwndHostnameEdit, GWL_WNDPROC);
+		SetWindowLong(hwndHostnameEdit, GWL_WNDPROC, (LONG)HostnameEditProc);
 
 		CheckRadioButton(dlg, IDC_HOSTTELNET, IDC_HOSTOTHER,
 		                 pvar->settings.Enabled ? IDC_HOSTSSH : GetHNRec->
@@ -1478,7 +1485,7 @@ static INT_PTR CALLBACK TTXHostDlg(HWND dlg, UINT msg, WPARAM wParam,
 	case WM_COMMAND:
 		switch (LOWORD(wParam)) {
 		case IDOK:
-			GetHNRec = (PGetHNRec) GetWindowLongPtr(dlg, DWLP_USER);
+			GetHNRec = (PGetHNRec) GetWindowLong(dlg, DWL_USER);
 			if (GetHNRec != NULL) {
 				if (IsDlgButtonChecked(dlg, IDC_HOSTTCPIP)) {
 					char afstr[BUFSIZ];
@@ -1544,12 +1551,12 @@ static INT_PTR CALLBACK TTXHostDlg(HWND dlg, UINT msg, WPARAM wParam,
 					}
 				}
 			}
-			SetWindowLongPtr(hwndHostnameEdit, GWLP_WNDPROC, (LONG_PTR)OrigHostnameEditProc);
+			SetWindowLong(hwndHostnameEdit, GWL_WNDPROC, (LONG)OrigHostnameEditProc);
 			EndDialog(dlg, 1);
 			return TRUE;
 
 		case IDCANCEL:
-			SetWindowLongPtr(hwndHostnameEdit, GWLP_WNDPROC, (LONG_PTR)OrigHostnameEditProc);
+			SetWindowLong(hwndHostnameEdit, GWL_WNDPROC, (LONG)OrigHostnameEditProc);
 			EndDialog(dlg, 0);
 			return TRUE;
 
@@ -1594,7 +1601,7 @@ static INT_PTR CALLBACK TTXHostDlg(HWND dlg, UINT msg, WPARAM wParam,
 			enable_dlg_items(dlg, IDC_SSH_VERSION, IDC_SSH_VERSION, FALSE); // disabled
 hostssh_enabled:
 
-			GetHNRec = (PGetHNRec) GetWindowLongPtr(dlg, DWLP_USER);
+			GetHNRec = (PGetHNRec) GetWindowLong(dlg, DWL_USER);
 
 			if (IsDlgButtonChecked(dlg, IDC_HOSTTELNET)) {
 				if (GetHNRec != NULL)
@@ -2441,8 +2448,8 @@ static LRESULT CALLBACK AboutDlgEditWindowProc(HWND hWnd, UINT msg, WPARAM wp, L
     return CallWindowProc(g_defAboutDlgEditWndProc, hWnd, msg, wp, lp);
 }
 
-static INT_PTR CALLBACK TTXAboutDlg(HWND dlg, UINT msg, WPARAM wParam,
-									LPARAM lParam)
+static BOOL CALLBACK TTXAboutDlg(HWND dlg, UINT msg, WPARAM wParam,
+                                 LPARAM lParam)
 {
 	static HFONT DlgAboutTextFont;
 
@@ -3205,7 +3212,8 @@ static int get_keys_file_name(HWND parent, char *buf, int bufsize,
 		                  "Choose a read/write known-hosts file");
 	}
 	params.lpstrTitle = pvar->ts->UIMsg;
-	params.Flags = OFN_FILEMUSTEXIST | OFN_HIDEREADONLY;
+	params.Flags = (readonly ? OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST : 0)
+	             | OFN_HIDEREADONLY | (!readonly ? OFN_NOREADONLYRETURN : 0);
 	params.lpstrDefExt = NULL;
 
 	if (GetOpenFileName(&params) != 0) {
@@ -3252,12 +3260,12 @@ static void choose_read_only_file(HWND dlg)
 	}
 }
 
-static INT_PTR CALLBACK TTXSetupDlg(HWND dlg, UINT msg, WPARAM wParam,
-									LPARAM lParam)
+static BOOL CALLBACK TTXSetupDlg(HWND dlg, UINT msg, WPARAM wParam,
+                                 LPARAM lParam)
 {
 	switch (msg) {
 	case WM_INITDIALOG:
-		SetWindowLongPtr(dlg, DWLP_USER, lParam);
+		SetWindowLong(dlg, DWL_USER, lParam);
 		init_setup_dlg((PTInstVar) lParam, dlg);
 
 		CenterWindow(dlg, GetParent(dlg));
@@ -3266,7 +3274,7 @@ static INT_PTR CALLBACK TTXSetupDlg(HWND dlg, UINT msg, WPARAM wParam,
 	case WM_COMMAND:
 		switch (LOWORD(wParam)) {
 		case IDOK:
-			complete_setup_dlg((PTInstVar) GetWindowLongPtr(dlg, DWLP_USER), dlg);
+			complete_setup_dlg((PTInstVar) GetWindowLong(dlg, DWL_USER), dlg);
 			EndDialog(dlg, 1);
 			return TRUE;
 		case IDCANCEL:			/* there isn't a cancel button, but other Windows
@@ -3424,6 +3432,7 @@ static void free_ssh_key(void)
 
 static BOOL generate_ssh_key(ssh_keytype type, int bits, void (*cbfunc)(int, int, void *), void *cbarg)
 {
+
 	// if SSH key already is generated, should free the resource.
 	free_ssh_key();
 
@@ -3433,6 +3442,8 @@ static BOOL generate_ssh_key(ssh_keytype type, int bits, void (*cbfunc)(int, int
 	{
 		RSA *priv = NULL;
 		RSA *pub = NULL;
+		BIGNUM *e, *n;
+		BIGNUM *p_e, *p_n;
 
 		// private key
 		priv =  RSA_generate_key(bits, 35, cbfunc, cbarg);
@@ -3442,15 +3453,18 @@ static BOOL generate_ssh_key(ssh_keytype type, int bits, void (*cbfunc)(int, int
 
 		// public key
 		pub = RSA_new();
-		pub->n = BN_new();
-		pub->e = BN_new();
-		if (pub->n == NULL || pub->e == NULL) {
+		n = BN_new();
+		e = BN_new();
+		RSA_set0_key(pub, n, e, NULL);
+		if (n == NULL || e == NULL) {
 			RSA_free(pub);
 			goto error;
 		}
 
-		BN_copy(pub->n, priv->n);
-		BN_copy(pub->e, priv->e);
+		RSA_get0_key(priv, &p_n, &p_e, NULL);
+
+		BN_copy(n, p_n);
+		BN_copy(e, p_e);
 		public_key.rsa = pub;
 		break;
 	}
@@ -3459,6 +3473,8 @@ static BOOL generate_ssh_key(ssh_keytype type, int bits, void (*cbfunc)(int, int
 	{
 		DSA *priv = NULL;
 		DSA *pub = NULL;
+		BIGNUM *p, *q, *g, *pub_key;
+		BIGNUM *sp, *sq, *sg, *spub_key;
 
 		// private key
 		priv = DSA_generate_parameters(bits, NULL, 0, NULL, NULL, cbfunc, cbarg);
@@ -3474,19 +3490,24 @@ static BOOL generate_ssh_key(ssh_keytype type, int bits, void (*cbfunc)(int, int
 		pub = DSA_new();
 		if (pub == NULL)
 			goto error;
-		pub->p = BN_new();
-		pub->q = BN_new();
-		pub->g = BN_new();
-		pub->pub_key = BN_new();
-		if (pub->p == NULL || pub->q == NULL || pub->g == NULL || pub->pub_key == NULL) {
+		p = BN_new();
+		q = BN_new();
+		g = BN_new();
+		DSA_set0_pqg(pub, p, q, g);
+		pub_key = BN_new();
+		DSA_set0_key(pub, pub_key, NULL);
+		if (p == NULL || q == NULL || g == NULL || pub_key == NULL) {
 			DSA_free(pub);
 			goto error;
 		}
 
-		BN_copy(pub->p, priv->p);
-		BN_copy(pub->q, priv->q);
-		BN_copy(pub->g, priv->g);
-		BN_copy(pub->pub_key, priv->pub_key);
+		DSA_get0_pqg(priv, &sp, &sq, &sg);
+		DSA_get0_key(priv, &spub_key, NULL);
+
+		BN_copy(p, sp);
+		BN_copy(q, sq);
+		BN_copy(g, sg);
+		BN_copy(pub_key, spub_key);
 		public_key.dsa = pub;
 		break;
 	}
@@ -3578,7 +3599,7 @@ error:
  */
 struct ssh1_3des_ctx
 {
-	EVP_CIPHER_CTX  k1, k2, k3;
+	EVP_CIPHER_CTX  *k1, *k2, *k3;
 };
 
 static int ssh1_3des_init(EVP_CIPHER_CTX *ctx, const u_char *key, const u_char *iv, int enc)
@@ -3588,12 +3609,16 @@ static int ssh1_3des_init(EVP_CIPHER_CTX *ctx, const u_char *key, const u_char *
 
 	if ((c = EVP_CIPHER_CTX_get_app_data(ctx)) == NULL) {
 		c = malloc(sizeof(*c));
+		c->k1 = EVP_CIPHER_CTX_new();
+		c->k2 = EVP_CIPHER_CTX_new();
+		c->k3 = EVP_CIPHER_CTX_new();
+		/*** TODO: OPENSSL1.1.1 ERROR CHECK(ticket#39335で処置予定) ***/
 		EVP_CIPHER_CTX_set_app_data(ctx, c);
 	}
 	if (key == NULL)
 		return (1);
 	if (enc == -1)
-		enc = ctx->encrypt;
+		enc = EVP_CIPHER_CTX_encrypting(ctx); // ctx->encrypt
 	k1 = k2 = k3 = (u_char *) key;
 	k2 += 8;
 	if (EVP_CIPHER_CTX_key_length(ctx) >= 16+8) {
@@ -3602,12 +3627,15 @@ static int ssh1_3des_init(EVP_CIPHER_CTX *ctx, const u_char *key, const u_char *
 		else
 			k1 += 16;
 	}
-	EVP_CIPHER_CTX_init(&c->k1);
-	EVP_CIPHER_CTX_init(&c->k2);
-	EVP_CIPHER_CTX_init(&c->k3);
-	if (EVP_CipherInit(&c->k1, EVP_des_cbc(), k1, NULL, enc) == 0 ||
-		EVP_CipherInit(&c->k2, EVP_des_cbc(), k2, NULL, !enc) == 0 ||
-		EVP_CipherInit(&c->k3, EVP_des_cbc(), k3, NULL, enc) == 0) {
+	EVP_CIPHER_CTX_init(c->k1);
+	EVP_CIPHER_CTX_init(c->k2);
+	EVP_CIPHER_CTX_init(c->k3);
+	if (EVP_CipherInit(c->k1, EVP_des_cbc(), k1, NULL, enc) == 0 ||
+		EVP_CipherInit(c->k2, EVP_des_cbc(), k2, NULL, !enc) == 0 ||
+		EVP_CipherInit(c->k3, EVP_des_cbc(), k3, NULL, enc) == 0) {
+			EVP_CIPHER_CTX_free(c->k1);
+			EVP_CIPHER_CTX_free(c->k2);
+			EVP_CIPHER_CTX_free(c->k3);
 			SecureZeroMemory(c, sizeof(*c));
 			free(c);
 			EVP_CIPHER_CTX_set_app_data(ctx, NULL);
@@ -3624,9 +3652,9 @@ static int ssh1_3des_cbc(EVP_CIPHER_CTX *ctx, u_char *dest, const u_char *src, u
 		//error("ssh1_3des_cbc: no context");
 		return (0);
 	}
-	if (EVP_Cipher(&c->k1, dest, (u_char *)src, len) == 0 ||
-		EVP_Cipher(&c->k2, dest, dest, len) == 0 ||
-		EVP_Cipher(&c->k3, dest, dest, len) == 0)
+	if (EVP_Cipher(c->k1, dest, (u_char *)src, len) == 0 ||
+		EVP_Cipher(c->k2, dest, dest, len) == 0 ||
+		EVP_Cipher(c->k3, dest, dest, len) == 0)
 		return (0);
 	return (1);
 }
@@ -3636,9 +3664,9 @@ static int ssh1_3des_cleanup(EVP_CIPHER_CTX *ctx)
 	struct ssh1_3des_ctx *c;
 
 	if ((c = EVP_CIPHER_CTX_get_app_data(ctx)) != NULL) {
-		EVP_CIPHER_CTX_cleanup(&c->k1);
-		EVP_CIPHER_CTX_cleanup(&c->k2);
-		EVP_CIPHER_CTX_cleanup(&c->k3);
+		EVP_CIPHER_CTX_cleanup(c->k1);
+		EVP_CIPHER_CTX_cleanup(c->k2);
+		EVP_CIPHER_CTX_cleanup(c->k3);
 		SecureZeroMemory(c, sizeof(*c));
 		free(c);
 		EVP_CIPHER_CTX_set_app_data(ctx, NULL);
@@ -3646,6 +3674,7 @@ static int ssh1_3des_cleanup(EVP_CIPHER_CTX *ctx)
 	return (1);
 }
 
+// 下記関数は未使用。
 void ssh1_3des_iv(EVP_CIPHER_CTX *evp, int doset, u_char *iv, int len)
 {
 	struct ssh1_3des_ctx *c;
@@ -3660,31 +3689,33 @@ void ssh1_3des_iv(EVP_CIPHER_CTX *evp, int doset, u_char *iv, int len)
 
 	if (doset) {
 		//debug3("%s: Installed 3DES IV", __func__);
-		memcpy(c->k1.iv, iv, 8);
-		memcpy(c->k2.iv, iv + 8, 8);
-		memcpy(c->k3.iv, iv + 16, 8);
+		memcpy(EVP_CIPHER_CTX_iv_noconst(c->k1), iv, 8);
+		memcpy(EVP_CIPHER_CTX_iv_noconst(c->k2), iv + 8, 8);
+		memcpy(EVP_CIPHER_CTX_iv_noconst(c->k3), iv + 16, 8);
 	} else {
 		//debug3("%s: Copying 3DES IV", __func__);
-		memcpy(iv, c->k1.iv, 8);
-		memcpy(iv + 8, c->k2.iv, 8);
-		memcpy(iv + 16, c->k3.iv, 8);
+		memcpy(iv, EVP_CIPHER_CTX_iv(c->k1), 8);
+		memcpy(iv + 8, EVP_CIPHER_CTX_iv(c->k2), 8);
+		memcpy(iv + 16, EVP_CIPHER_CTX_iv(c->k3), 8);
 	}
 }
 
 const EVP_CIPHER *evp_ssh1_3des(void)
 {
-	static EVP_CIPHER ssh1_3des;
+	static EVP_CIPHER *p = NULL;
 
-	memset(&ssh1_3des, 0, sizeof(EVP_CIPHER));
-	ssh1_3des.nid = NID_undef;
-	ssh1_3des.block_size = 8;
-	ssh1_3des.iv_len = 0;
-	ssh1_3des.key_len = 16;
-	ssh1_3des.init = ssh1_3des_init;
-	ssh1_3des.cleanup = ssh1_3des_cleanup;
-	ssh1_3des.do_cipher = ssh1_3des_cbc;
-	ssh1_3des.flags = EVP_CIPH_CBC_MODE | EVP_CIPH_VARIABLE_LENGTH;
-	return (&ssh1_3des);
+	if (p == NULL) {
+		p = EVP_CIPHER_meth_new(NID_undef, /*block_size*/8, /*key_len*/16);
+		/*** TODO: OPENSSL1.1.1 ERROR CHECK(ticket#39335で処置予定) ***/
+	}
+	if (p) {
+		EVP_CIPHER_meth_set_iv_length(p, 0);
+		EVP_CIPHER_meth_set_init(p, ssh1_3des_init);
+		EVP_CIPHER_meth_set_cleanup(p, ssh1_3des_cleanup);
+		EVP_CIPHER_meth_set_do_cipher(p, ssh1_3des_cbc);
+		EVP_CIPHER_meth_set_flags(p, EVP_CIPH_CBC_MODE | EVP_CIPH_VARIABLE_LENGTH);
+	}
+	return (p);
 }
 
 static void ssh_make_comment(char *comment, int maxlen)
@@ -3783,7 +3814,7 @@ int uuencode(unsigned char *src, int srclen, unsigned char *target, int targsize
 //
 // SCP dialog
 //
-static INT_PTR CALLBACK TTXScpDialog(HWND dlg, UINT msg, WPARAM wParam,
+static BOOL CALLBACK TTXScpDialog(HWND dlg, UINT msg, WPARAM wParam,
                                      LPARAM lParam)
 {
 	static char sendfile[MAX_PATH] = "";
@@ -3855,8 +3886,12 @@ static INT_PTR CALLBACK TTXScpDialog(HWND dlg, UINT msg, WPARAM wParam,
 #endif
 			ofn.lpstrTitle = "Choose a sending file with SCP";
 
-			ofn.Flags = OFN_FILEMUSTEXIST | OFN_HIDEREADONLY;
-			ofn.Flags |= OFN_FORCESHOWHIDDEN;
+// WINVER がセットされないためにマクロが定義されないので、ここで定義する(2008.1.21 maya)
+#ifndef OFN_FORCESHOWHIDDEN
+/* from commdlg.h */
+#define OFN_FORCESHOWHIDDEN          0x10000000
+#endif
+			ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_FORCESHOWHIDDEN | OFN_HIDEREADONLY;
 			if (GetOpenFileName(&ofn) != 0) {
 				hWnd = GetDlgItem(dlg, IDC_SENDFILE_EDIT);
 				SendMessage(hWnd, WM_SETTEXT , 0, (LPARAM)sendfile);
@@ -4033,7 +4068,7 @@ static void save_bcrypt_private_key(char *passphrase, char *filename, char *comm
 	int blocksize, keylen, ivlen, authlen, i, n; 
 	unsigned char *key = NULL, salt[SALT_LEN];
 	char *kdfname = KDFNAME;
-	EVP_CIPHER_CTX cipher_ctx;
+	EVP_CIPHER_CTX *cipher_ctx = NULL;
 	Key keyblob;
 	unsigned char *cp = NULL;
 	unsigned int len, check;
@@ -4044,7 +4079,8 @@ static void save_bcrypt_private_key(char *passphrase, char *filename, char *comm
 	kdf = buffer_init();
 	encoded = buffer_init();
 	blob = buffer_init();
-	if (b == NULL || kdf == NULL || encoded == NULL || blob == NULL)
+	cipher_ctx = EVP_CIPHER_CTX_new();
+	if (b == NULL || kdf == NULL || encoded == NULL || blob == NULL || cipher_ctx == NULL)
 		goto ed25519_error;
 
 	if (passphrase == NULL || !strlen(passphrase)) {
@@ -4071,7 +4107,7 @@ static void save_bcrypt_private_key(char *passphrase, char *filename, char *comm
 	// 暗号化の準備
 	// TODO: OpenSSH 6.5では -Z オプションで、暗号化アルゴリズムを指定可能だが、
 	// ここでは"AES256-CBC"に固定とする。
-	cipher_init_SSH2(&cipher_ctx, key, keylen, key + keylen, ivlen, CIPHER_ENCRYPT, 
+	cipher_init_SSH2(cipher_ctx, key, keylen, key + keylen, ivlen, CIPHER_ENCRYPT, 
 		get_cipher_EVP_CIPHER(cipher), 0, 0, pvar);
 	SecureZeroMemory(key, keylen + ivlen);
 	free(key);
@@ -4115,12 +4151,12 @@ static void save_bcrypt_private_key(char *passphrase, char *filename, char *comm
 
 	/* encrypt */
 	cp = buffer_append_space(encoded, buffer_len(b) + authlen);
-	if (EVP_Cipher(&cipher_ctx, cp, buffer_ptr(b), buffer_len(b)) == 0) {
+	if (EVP_Cipher(cipher_ctx, cp, buffer_ptr(b), buffer_len(b)) == 0) {
 		//strncpy_s(errmsg, errmsg_len, "Key decrypt error", _TRUNCATE);
 		//free(decrypted);
 		//goto error;
 	}
-	cipher_cleanup_SSH2(&cipher_ctx);
+	cipher_cleanup_SSH2(cipher_ctx);
 
 	len = 2 * buffer_len(encoded);
 	cp = malloc(len);
@@ -4170,10 +4206,14 @@ ed25519_error:
 	buffer_free(kdf);
 	buffer_free(encoded);
 	buffer_free(blob);
+
+	if (cipher_ctx) {
+		EVP_CIPHER_CTX_free(cipher_ctx);
+	}
 }
 
-static INT_PTR CALLBACK TTXKeyGenerator(HWND dlg, UINT msg, WPARAM wParam,
-										LPARAM lParam)
+static BOOL CALLBACK TTXKeyGenerator(HWND dlg, UINT msg, WPARAM wParam,
+                                     LPARAM lParam)
 {
 	static ssh_keytype key_type;
 	static int saved_key_bits;
@@ -4369,6 +4409,13 @@ static INT_PTR CALLBACK TTXKeyGenerator(HWND dlg, UINT msg, WPARAM wParam,
 
 				// set focus to passphrase edit control (2007.1.27 maya)
 				SetFocus(GetDlgItem(dlg, IDC_KEY_EDIT));
+
+			} else {
+				// generate_ssh_key()が失敗した場合においても、ダイアログを
+				// クローズできるようにしておく。
+				EnableWindow(GetDlgItem(dlg, IDOK), TRUE);
+				EnableWindow(GetDlgItem(dlg, IDCANCEL), TRUE);
+
 			}
 			return TRUE;
 			}
@@ -4501,6 +4548,8 @@ static INT_PTR CALLBACK TTXKeyGenerator(HWND dlg, UINT msg, WPARAM wParam,
 			FILE *fp;
 			char comment[1024]; // comment string in private key
 
+			arc4random_stir();
+
 			// saving file dialog
 			ZeroMemory(&ofn, sizeof(ofn));
 			ofn.lStructSize = get_OPENFILENAME_SIZE();
@@ -4546,7 +4595,6 @@ static INT_PTR CALLBACK TTXKeyGenerator(HWND dlg, UINT msg, WPARAM wParam,
 			default:
 				break;
 			}
-			ofn.Flags = OFN_PATHMUSTEXIST | OFN_OVERWRITEPROMPT;
 			ofn.lpstrFile = filename;
 			ofn.nMaxFile = sizeof(filename);
 			UTIL_get_lang_msg("FILEDLG_SAVE_PUBLICKEY_TITLE", pvar,
@@ -4574,15 +4622,18 @@ static INT_PTR CALLBACK TTXKeyGenerator(HWND dlg, UINT msg, WPARAM wParam,
 				RSA *rsa = public_key.rsa;
 				int bits;
 				char *buf;
+				BIGNUM *e, *n;
 
-				bits = BN_num_bits(rsa->n);
+				RSA_get0_key(rsa, &n, &e, NULL);
+
+				bits = BN_num_bits(n);
 				fprintf(fp, "%u", bits);
 
-				buf = BN_bn2dec(rsa->e);
+				buf = BN_bn2dec(e);
 				fprintf(fp, " %s", buf);
 				OPENSSL_free(buf);
 
-				buf = BN_bn2dec(rsa->n);
+				buf = BN_bn2dec(n);
 				fprintf(fp, " %s", buf);
 				OPENSSL_free(buf);
 
@@ -4596,6 +4647,8 @@ static INT_PTR CALLBACK TTXKeyGenerator(HWND dlg, UINT msg, WPARAM wParam,
 				char *blob;
 				char *uuenc; // uuencode data
 				int uulen;
+				BIGNUM *e, *n;
+				BIGNUM *p, *q, *g, *pub_key;
 
 				b = buffer_init();
 				if (b == NULL)
@@ -4603,19 +4656,23 @@ static INT_PTR CALLBACK TTXKeyGenerator(HWND dlg, UINT msg, WPARAM wParam,
 
 				switch (public_key.type) {
 				case KEY_DSA: // DSA
+					DSA_get0_pqg(dsa, &p, &q, &g);
+					DSA_get0_key(dsa, &pub_key, NULL);
+
 					keyname = "ssh-dss";
 					buffer_put_string(b, keyname, strlen(keyname));
-					buffer_put_bignum2(b, dsa->p);
-					buffer_put_bignum2(b, dsa->q);
-					buffer_put_bignum2(b, dsa->g);
-					buffer_put_bignum2(b, dsa->pub_key);
+					buffer_put_bignum2(b, p);
+					buffer_put_bignum2(b, q);
+					buffer_put_bignum2(b, g);
+					buffer_put_bignum2(b, pub_key);
 					break;
 
 				case KEY_RSA: // RSA
+					RSA_get0_key(rsa, &n, &e, NULL);
 					keyname = "ssh-rsa";
 					buffer_put_string(b, keyname, strlen(keyname));
-					buffer_put_bignum2(b, rsa->e);
-					buffer_put_bignum2(b, rsa->n);
+					buffer_put_bignum2(b, e);
+					buffer_put_bignum2(b, n);
 					break;
 
 				case KEY_ECDSA256: // ECDSA
@@ -4763,7 +4820,6 @@ public_error:
 			default:
 				break;
 			}
-			ofn.Flags = OFN_PATHMUSTEXIST | OFN_OVERWRITEPROMPT;
 			ofn.lpstrFile = filename;
 			ofn.nMaxFile = sizeof(filename);
 			UTIL_get_lang_msg("FILEDLG_SAVE_PRIVATEKEY_TITLE", pvar,
@@ -4786,9 +4842,10 @@ public_error:
 				MD5_CTX md;
 				unsigned char digest[16];
 				char *passphrase = buf;
-				EVP_CIPHER_CTX cipher_ctx;
+				EVP_CIPHER_CTX *cipher_ctx = NULL;
 				FILE *fp;
 				char wrapped[4096];
+				BIGNUM *e, *n, *d, *dmp1, *dmq1, *iqmp, *p, *q;
 
 				if (passphrase[0] == '\0') { // passphrase is empty
 					cipher_num = SSH_CIPHER_NONE;
@@ -4805,6 +4862,9 @@ public_error:
 					break;
 				}
 
+				cipher_ctx = EVP_CIPHER_CTX_new();
+				/*** TODO: OPENSSL1.1.1 ERROR CHECK(ticket#39335で処置予定) ***/
+
 				// set random value
 				rnd = arc4random();
 				tmp[0] = rnd & 0xff;
@@ -4815,10 +4875,13 @@ public_error:
 
 				// set private key
 				rsa = private_key.rsa;
-				buffer_put_bignum(b, rsa->d);
-				buffer_put_bignum(b, rsa->iqmp);
-				buffer_put_bignum(b, rsa->q);
-				buffer_put_bignum(b, rsa->p);
+				RSA_get0_key(rsa, &n, &e, &d);
+				RSA_get0_factors(rsa, &p, &q);
+				RSA_get0_crt_params(rsa, &dmp1, &dmq1, &iqmp);
+				buffer_put_bignum(b, d);
+				buffer_put_bignum(b, iqmp);
+				buffer_put_bignum(b, q);
+				buffer_put_bignum(b, p);
 
 				// padding with 8byte align
 				while (buffer_len(b) % 8) {
@@ -4841,9 +4904,9 @@ public_error:
 				buffer_put_int(enc, 0);  // type is 'int'!! (For future extension)
 
 				/* Store public key.  This will be in plain text. */
-				buffer_put_int(enc, BN_num_bits(rsa->n));
-				buffer_put_bignum(enc, rsa->n);
-				buffer_put_bignum(enc, rsa->e);
+				buffer_put_int(enc, BN_num_bits(n));
+				buffer_put_bignum(enc, n);
+				buffer_put_bignum(enc, e);
 				buffer_put_string(enc, comment, strlen(comment));
 
 				// setup the MD5ed passphrase to cipher encryption key
@@ -4851,9 +4914,9 @@ public_error:
 				MD5_Update(&md, (const unsigned char *)passphrase, strlen(passphrase));
 				MD5_Final(digest, &md);
 				if (cipher_num == SSH_CIPHER_NONE) {
-					cipher_init_SSH2(&cipher_ctx, digest, 16, NULL, 0, CIPHER_ENCRYPT, EVP_enc_null(), 0, 0, pvar);
+					cipher_init_SSH2(cipher_ctx, digest, 16, NULL, 0, CIPHER_ENCRYPT, EVP_enc_null(), 0, 0, pvar);
 				} else {
-					cipher_init_SSH2(&cipher_ctx, digest, 16, NULL, 0, CIPHER_ENCRYPT, evp_ssh1_3des(), 0, 0, pvar);
+					cipher_init_SSH2(cipher_ctx, digest, 16, NULL, 0, CIPHER_ENCRYPT, evp_ssh1_3des(), 0, 0, pvar);
 				}
 				len = buffer_len(b);
 				if (len % 8) { // fatal error
@@ -4865,10 +4928,10 @@ public_error:
 					goto error;
 				}
 
-				if (EVP_Cipher(&cipher_ctx, wrapped, buffer_ptr(b), len) == 0) {
+				if (EVP_Cipher(cipher_ctx, wrapped, buffer_ptr(b), len) == 0) {
 					goto error;
 				}
-				if (EVP_CIPHER_CTX_cleanup(&cipher_ctx) == 0) {
+				if (EVP_CIPHER_CTX_cleanup(cipher_ctx) == 0) {
 					goto error;
 				}
 
@@ -4891,6 +4954,9 @@ public_error:
 error:;
 				buffer_free(b);
 				buffer_free(enc);
+				if (cipher_ctx) {
+					EVP_CIPHER_CTX_free(cipher_ctx);
+				}
 
 			} else if (private_key.type == KEY_ED25519) { // SSH2 ED25519 
 				save_bcrypt_private_key(buf, filename, comment, dlg, pvar, rounds);
@@ -5344,7 +5410,7 @@ BOOL WINAPI DllMain(HANDLE hInstance,
 		hInst = hInstance;
 		pvar = &InstVar;
 		__mem_mapping =
-			CreateFileMapping(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, 0,
+			CreateFileMapping((HANDLE) 0xFFFFFFFF, NULL, PAGE_READWRITE, 0,
 			                  sizeof(TS_SSH), TTSSH_FILEMAPNAME);
 		if (__mem_mapping == NULL) {
 			/* fake it. The settings won't be shared, but what the heck. */

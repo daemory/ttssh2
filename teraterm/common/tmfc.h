@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2018-2019 TeraTerm Project
+ * Copyright (C) 2018 TeraTerm Project
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -178,10 +178,8 @@ public:
 	virtual void OnOK();
 	virtual BOOL OnCommand(WPARAM wp, LPARAM lp);
 	virtual HBRUSH OnCtlColor(HDC hDC, HWND hWnd);
-	HPROPSHEETPAGE CreatePropertySheetPage();
-protected:
-	PROPSHEETPAGE_V1 m_psp;
-private:
+
+	PROPSHEETPAGE m_psp;
 	static INT_PTR CALLBACK Proc(HWND hDlgWnd, UINT msg, WPARAM wp, LPARAM lp);
 	static UINT CALLBACK PropSheetPageProc(HWND hwnd, UINT uMsg, LPPROPSHEETPAGE ppsp);
 	TTCPropertySheet *m_pSheet;

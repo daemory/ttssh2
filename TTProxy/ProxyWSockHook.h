@@ -72,8 +72,8 @@ private:
                     event = 0;
                 }
             }
-            operator HWND() const {
-                return window == NULL && message == 0 && event == 0 ? 0 : window;
+            operator int()const {
+                return window == NULL && message == 0 && event == 0 ? 0 : (int) window;
             }
         };
         Hashtable<SOCKET, AsyncSelectInfo> table;
@@ -618,14 +618,12 @@ private:
         HANDLE getTask(ConnectionInfo* info) {
             if (info == NULL)
                 return NULL;
-			// s_b4のマイナスの値をハンドルとして使用する
-            return (HANDLE)(intptr_t)-info->addr.S_un.S_un_b.s_b4;
+            return (HANDLE) -info->addr.S_un.S_un_b.s_b4;
         }
         ConnectionInfo* get(HANDLE task) {
-			// ハンドルは数値としてマイナスの値のはず
-            if ((intptr_t) task >= 0)
+            if ((DWORD) task >= 0)
                 return NULL;
-            return get((int) -((intptr_t) task) - 1);
+            return get((int) -((long) task) - 1);
         }
         ConnectionInfo* get(in_addr addr) {
             if (addr.S_un.S_un_b.s_b1 != 0 || addr.S_un.S_un_b.s_b2 != 0 || addr.S_un.S_un_b.s_b3 != 0)
@@ -717,8 +715,9 @@ private:
         Window conn;
         Window erro;
         Window log;
+//      HFONT DlgFont;
     protected:
-        virtual bool dispatch(UINT message, WPARAM wParam, LPARAM lParam) {
+        virtual bool dispatch(int message, int wParam, long lParam) {
             if (message == WM_COMMAND && wParam == MAKEWPARAM(IDC_REFER, BN_CLICKED)) {
                 char buffer[1024];
                 char uimsg[MAX_UIMSG];
@@ -891,7 +890,7 @@ private:
         EditBoxCtrl  pass;
         bool lock;
     protected:
-        virtual bool dispatch(UINT message, WPARAM wParam, LPARAM lParam) {
+        virtual bool dispatch(int message, int wParam, long lParam) {
             if (message == WM_COMMAND) {
                 switch (wParam) {
                 case MAKEWPARAM(IDC_OPTIONS, BN_CLICKED):

@@ -47,18 +47,31 @@
 #include "dlglib.h"
 #include <tchar.h>
 
+#define CWnd	TTCWnd
+#define CFrameWnd	TTCFrameWnd
+
 #define TEKClassName _T("TEKWin32")
+
+#ifdef _DEBUG
+#define new DEBUG_NEW
+#undef THIS_FILE
+static char THIS_FILE[] = __FILE__;
+#endif
+
+static HINSTANCE AfxGetInstanceHandle()
+{
+	return hInst;
+}
 
 /////////////////////////////////////////////////////////////////////////////
 // CTEKWindow
 
-CTEKWindow::CTEKWindow(HINSTANCE hInstance)
+CTEKWindow::CTEKWindow()
 {
 	WNDCLASS wc;
 	RECT rect;
 	DWORD Style;
 	int fuLoad = LR_DEFAULTCOLOR;
-	m_hInst = hInstance;
 
 	if (! LoadTTTEK()) {
 		return;
@@ -77,7 +90,7 @@ CTEKWindow::CTEKWindow(HINSTANCE hInstance)
 	wc.lpfnWndProc = (WNDPROC)ProcStub;
 	wc.cbClsExtra = 0;
 	wc.cbWndExtra = 0;
-	wc.hInstance = hInstance;
+	wc.hInstance = AfxGetInstanceHandle();
 	wc.hIcon = NULL;
 	wc.hCursor = LoadCursor(NULL,IDC_ARROW);
 	wc.hbrBackground = NULL;
@@ -95,7 +108,7 @@ CTEKWindow::CTEKWindow(HINSTANCE hInstance)
 		rect.right = rect.left + 640; //temporary width
 		rect.bottom = rect.top + 400; //temporary height
 	}
-	Create(hInstance, TEKClassName, _T("Tera Term"), Style, rect, ::GetDesktopWindow(), NULL);
+	Create(hInst, TEKClassName, _T("Tera Term"), Style, rect, ::GetDesktopWindow(), NULL);
 //--------------------------------------------------------
 	HTEKWin = GetSafeHwnd();
 	if (HTEKWin == NULL) {
@@ -109,11 +122,11 @@ CTEKWindow::CTEKWindow(HINSTANCE hInstance)
 		fuLoad = LR_VGACOLOR;
 	}
 	::PostMessage(HTEKWin,WM_SETICON,ICON_SMALL,
-	              (LPARAM)LoadImage(hInstance,
+	              (LPARAM)LoadImage(AfxGetInstanceHandle(),
 	                                MAKEINTRESOURCE((ts.TEKIcon!=IdIconDefault)?ts.TEKIcon:IDI_TEK),
 	                                IMAGE_ICON,16,16,fuLoad));
 	::PostMessage(HTEKWin,WM_SETICON,ICON_BIG,
-	              (LPARAM)LoadImage(hInstance,
+	              (LPARAM)LoadImage(AfxGetInstanceHandle(),
 	                                MAKEINTRESOURCE((ts.TEKIcon!=IdIconDefault)?ts.TEKIcon:IDI_TEK),
 	                                IMAGE_ICON, 0, 0, fuLoad));
 
@@ -176,7 +189,7 @@ void CTEKWindow::InitMenu(HMENU *Menu)
 		{ ID_TEKHELP_ABOUT, "TEKMENU_HELP_ABOUT" },
 	};
 
-	*Menu = ::LoadMenu(m_hInst,
+	*Menu = ::LoadMenu(AfxGetInstanceHandle(),
 	                   MAKEINTRESOURCE(IDR_TEKMENU));
 	FileMenu = GetSubMenu(*Menu,0);
 	EditMenu = GetSubMenu(*Menu,1);
@@ -224,8 +237,76 @@ void CTEKWindow::InitMenuPopup(HMENU SubMenu)
 	}
 }
 
+#if 0
+BEGIN_MESSAGE_MAP(CTEKWindow, CFrameWnd)
+	//{{AFX_MSG_MAP(CTEKWindow)
+	ON_WM_ACTIVATE()
+	ON_WM_CHAR()
+	ON_WM_DESTROY()
+	ON_WM_GETMINMAXINFO()
+	ON_WM_INITMENUPOPUP()
+	ON_WM_KEYDOWN()
+	ON_WM_KEYUP()
+	ON_WM_KILLFOCUS()
+	ON_WM_LBUTTONDOWN()
+	ON_WM_LBUTTONUP()
+	ON_WM_MBUTTONUP()
+	ON_WM_MOUSEACTIVATE()
+	ON_WM_MOUSEMOVE()
+	ON_WM_MOVE()
+	ON_WM_PAINT()
+	ON_WM_RBUTTONUP()
+	ON_WM_SETFOCUS()
+	ON_WM_SIZE()
+	ON_WM_SYSCOMMAND()
+	ON_WM_SYSKEYDOWN()
+	ON_WM_SYSKEYUP()
+	ON_WM_TIMER()
+	ON_MESSAGE(WM_USER_ACCELCOMMAND, OnAccelCommand)
+	ON_MESSAGE(WM_USER_CHANGEMENU,OnChangeMenu)
+	ON_MESSAGE(WM_USER_CHANGETBAR,OnChangeTBar)
+	ON_MESSAGE(WM_USER_DLGHELP2,OnDlgHelp)
+	ON_MESSAGE(WM_USER_GETSERIALNO,OnGetSerialNo)
+	ON_COMMAND(ID_TEKFILE_PRINT, OnFilePrint)
+	ON_COMMAND(ID_TEKFILE_EXIT, OnFileExit)
+	ON_COMMAND(ID_TEKEDIT_COPY, OnEditCopy)
+	ON_COMMAND(ID_TEKEDIT_COPYSCREEN, OnEditCopyScreen)
+	ON_COMMAND(ID_TEKEDIT_PASTE, OnEditPaste)
+	ON_COMMAND(ID_TEKEDIT_PASTECR, OnEditPasteCR)
+	ON_COMMAND(ID_TEKEDIT_CLEARSCREEN, OnEditClearScreen)
+	ON_COMMAND(ID_TEKSETUP_WINDOW, OnSetupWindow)
+	ON_COMMAND(ID_TEKSETUP_FONT, OnSetupFont)
+	ON_COMMAND(ID_TEKVTWIN, OnVTWin)
+	ON_COMMAND(ID_TEKWINDOW_WINDOW, OnWindowWindow)
+	ON_COMMAND(ID_TEKHELP_INDEX, OnHelpIndex)
+	ON_COMMAND(ID_TEKHELP_ABOUT, OnHelpAbout)
+	ON_WM_TIMER()
+	//}}AFX_MSG_MAP
+END_MESSAGE_MAP()
+#endif
+
 /////////////////////////////////////////////////////////////////////////////
 // CTEKWindow message handler
+
+LRESULT CTEKWindow::DefWindowProc(UINT message, WPARAM wParam, LPARAM lParam)
+{
+	LRESULT Result;
+
+	if (message == MsgDlgHelp) {
+		OnDlgHelp(wParam,lParam);
+		return 0;
+	}
+	else if ((ts.HideTitle>0) &&
+	         (message == WM_NCHITTEST)) {
+		Result = CFrameWnd::DefWindowProc(message,wParam,lParam);
+		if ((Result==HTCLIENT) && AltKey()) {
+			Result = HTCAPTION;
+		}
+		return Result;
+	}
+
+	return (CFrameWnd::DefWindowProc(message,wParam,lParam));
+}
 
 BOOL CTEKWindow::OnCommand(WPARAM wParam, LPARAM lParam)
 {
@@ -234,7 +315,7 @@ BOOL CTEKWindow::OnCommand(WPARAM wParam, LPARAM lParam)
 		return TRUE;
 	}
 	else {
-		return TTCFrameWnd::OnCommand(wParam, lParam);
+		return CFrameWnd::OnCommand(wParam, lParam);
 	}
 }
 
@@ -277,7 +358,7 @@ void CTEKWindow::OnDestroy()
 	// remove this window from the window list
 	UnregWin(HTEKWin);
 
-	TTCFrameWnd::OnDestroy();
+	CFrameWnd::OnDestroy();
 
 	TEKEnd(&tk);
 	FreeTTTEK();
@@ -312,7 +393,7 @@ void CTEKWindow::OnKeyUp(UINT nChar, UINT nRepCnt, UINT nFlags)
 void CTEKWindow::OnKillFocus(HWND hNewWnd)
 {
 	TEKDestroyCaret(&tk,&ts);
-	TTCFrameWnd::OnKillFocus(hNewWnd);
+	CFrameWnd::OnKillFocus(hNewWnd);
 }
 
 void CTEKWindow::OnLButtonDown(UINT nFlags, POINTS point)
@@ -348,7 +429,7 @@ void CTEKWindow::OnLButtonDown(UINT nFlags, POINTS point)
 
 				AppendMenu(PopupBase,
 				           submenu != NULL ? LOBYTE(state) | MF_POPUP : state,
-				           submenu != NULL ? (UINT_PTR)submenu : GetMenuItemID(PopupMenu, i),
+				           submenu != NULL ? (UINT)submenu : GetMenuItemID(PopupMenu, i),
 				           itemText);
 			}
 		}
@@ -428,7 +509,7 @@ void CTEKWindow::OnRButtonUp(UINT nFlags, POINTS point)
 void CTEKWindow::OnSetFocus(HWND hOldWnd)
 {
 	TEKChangeCaret(&tk,&ts);
-	TTCFrameWnd::OnSetFocus(hOldWnd);
+	CFrameWnd::OnSetFocus(hOldWnd);
 }
 
 void CTEKWindow::OnSize(UINT nType, int cx, int cy)
@@ -459,7 +540,7 @@ void CTEKWindow::OnSysCommand(UINT nID, LPARAM lParam)
 		SwitchMenu();
 	}
 	else {
-		TTCFrameWnd::OnSysCommand(nID,lParam);
+		CFrameWnd::OnSysCommand(nID,lParam);
 	}
 }
 
@@ -469,7 +550,7 @@ void CTEKWindow::OnSysKeyDown(UINT nChar, UINT nRepCnt, UINT nFlags)
 		OnKeyDown(nChar,nRepCnt,nFlags);
 	}
 	else {
-		TTCFrameWnd::OnSysKeyDown(nChar,nRepCnt,nFlags);
+		CFrameWnd::OnSysKeyDown(nChar,nRepCnt,nFlags);
 	}
 }
 
@@ -479,7 +560,7 @@ void CTEKWindow::OnSysKeyUp(UINT nChar, UINT nRepCnt, UINT nFlags)
 		OnKeyUp(nChar,nRepCnt,nFlags);
 	}
 	else {
-		TTCFrameWnd::OnSysKeyUp(nChar,nRepCnt,nFlags);
+		CFrameWnd::OnSysKeyUp(nChar,nRepCnt,nFlags);
 	}
 }
 
@@ -778,10 +859,6 @@ void CTEKWindow::OnHelpAbout()
 LRESULT CTEKWindow::Proc(UINT msg, WPARAM wp, LPARAM lp)
 {
 	LRESULT retval = 0;
-	if (msg == MsgDlgHelp) {
-		OnDlgHelp(wp, lp);
-		return 0;
-	}
 	switch(msg)
 	{
 	case WM_ACTIVATE:
@@ -819,7 +896,7 @@ LRESULT CTEKWindow::Proc(UINT msg, WPARAM wp, LPARAM lp)
 		OnMButtonUp(wp, MAKEPOINTS(lp));
 		break;
 	case WM_MOUSEACTIVATE:
-		retval = OnMouseActivate((HWND)wp, LOWORD(lp), HIWORD(lp));
+		OnMouseActivate((HWND)wp, LOWORD(lp), HIWORD(lp));
 		break;
 	case WM_MOUSEMOVE:
 		OnMouseMove(wp, MAKEPOINTS(lp));
@@ -888,15 +965,6 @@ LRESULT CTEKWindow::Proc(UINT msg, WPARAM wp, LPARAM lp)
 		default:
 			OnCommand(wp, lp);
 			break;
-		}
-		break;
-	}
-	case WM_NCHITTEST: {
-		retval = TTCFrameWnd::DefWindowProc(msg, wp, lp);
-		if (ts.HideTitle>0) {
-			if ((retval ==HTCLIENT) && AltKey()) {
-				retval = HTCAPTION;
-			}
 		}
 		break;
 	}

@@ -319,7 +319,8 @@ static char *parse_bignum(char *data)
 	int ch;
 	int leftover_digits = 1;
 
-	BN_CTX_init(ctx);
+	// BN_CTX_init関数は OpenSSL 1.1.0 で削除された。
+	// OpenSSL 1.0.2の時点ですでに deprecated 扱いだった。
 	BN_set_word(num, 0);
 	BN_set_word(billion, 1000000000L);
 
@@ -869,6 +870,10 @@ int HOSTS_compare_public_key(Key *src, Key *key)
 	const EC_GROUP *group;
 	const EC_POINT *pa, *pb;
 	Key *a, *b;
+	BIGNUM *e = NULL, *n = NULL;
+	BIGNUM *se = NULL, *sn = NULL;
+	BIGNUM *p, *q, *g, *pub_key;
+	BIGNUM *sp, *sq, *sg, *spub_key;
 
 	if (src->type != key->type) {
 		return -1;
@@ -889,16 +894,22 @@ int HOSTS_compare_public_key(Key *src, Key *key)
 		*/
 
 	case KEY_RSA: // SSH2 RSA host public key
+		RSA_get0_key(key->rsa, &n, &e, NULL);
+		RSA_get0_key(src->rsa, &sn, &se, NULL);
 		return key->rsa != NULL && src->rsa != NULL &&
-			BN_cmp(key->rsa->e, src->rsa->e) == 0 &&
-			BN_cmp(key->rsa->n, src->rsa->n) == 0;
+			BN_cmp(e, se) == 0 &&
+			BN_cmp(n, sn) == 0;
 
 	case KEY_DSA: // SSH2 DSA host public key
+		DSA_get0_pqg(key->dsa, &p, &q, &g);
+		DSA_get0_pqg(src->dsa, &sp, &sq, &sg);
+		DSA_get0_key(key->dsa, &pub_key, NULL);
+		DSA_get0_key(src->dsa, &spub_key, NULL);
 		return key->dsa != NULL && src->dsa &&
-			BN_cmp(key->dsa->p, src->dsa->p) == 0 &&
-			BN_cmp(key->dsa->q, src->dsa->q) == 0 &&
-			BN_cmp(key->dsa->g, src->dsa->g) == 0 &&
-			BN_cmp(key->dsa->pub_key, src->dsa->pub_key) == 0;
+			BN_cmp(p, sp) == 0 &&
+			BN_cmp(q, sq) == 0 &&
+			BN_cmp(g, sg) == 0 &&
+			BN_cmp(pub_key, spub_key) == 0;
 
 	case KEY_ECDSA256:
 	case KEY_ECDSA384:
@@ -1714,8 +1725,8 @@ void HOSTS_delete_all_hostkeys(PTInstVar pvar)
 // TODO: finger printの表示も行う。
 // (2006.3.25 yutaka)
 //
-static INT_PTR CALLBACK hosts_add_dlg_proc(HWND dlg, UINT msg, WPARAM wParam,
-										   LPARAM lParam)
+static BOOL CALLBACK hosts_add_dlg_proc(HWND dlg, UINT msg, WPARAM wParam,
+                                        LPARAM lParam)
 {
 	PTInstVar pvar;
 	char uimsg[MAX_UIMSG];
@@ -1724,7 +1735,7 @@ static INT_PTR CALLBACK hosts_add_dlg_proc(HWND dlg, UINT msg, WPARAM wParam,
 	case WM_INITDIALOG:
 		pvar = (PTInstVar) lParam;
 		pvar->hosts_state.hosts_dialog = dlg;
-		SetWindowLongPtr(dlg, DWLP_USER, lParam);
+		SetWindowLong(dlg, DWL_USER, lParam);
 
 		// 追加・置き換えとも init_hosts_dlg を呼んでいるので、その前にセットする必要がある
 		GetWindowText(dlg, uimsg, sizeof(uimsg));
@@ -1798,7 +1809,7 @@ static INT_PTR CALLBACK hosts_add_dlg_proc(HWND dlg, UINT msg, WPARAM wParam,
 		return TRUE;			/* because we do not set the focus */
 
 	case WM_COMMAND:
-		pvar = (PTInstVar) GetWindowLongPtr(dlg, DWLP_USER);
+		pvar = (PTInstVar) GetWindowLong(dlg, DWL_USER);
 
 		switch (LOWORD(wParam)) {
 		case IDC_CONTINUE:
@@ -1869,8 +1880,8 @@ canceled:
 //
 // 置き換え時の確認ダイアログを分離
 //
-static INT_PTR CALLBACK hosts_replace_dlg_proc(HWND dlg, UINT msg, WPARAM wParam,
-											   LPARAM lParam)
+static BOOL CALLBACK hosts_replace_dlg_proc(HWND dlg, UINT msg, WPARAM wParam,
+                                            LPARAM lParam)
 {
 	PTInstVar pvar;
 	char uimsg[MAX_UIMSG];
@@ -1879,7 +1890,7 @@ static INT_PTR CALLBACK hosts_replace_dlg_proc(HWND dlg, UINT msg, WPARAM wParam
 	case WM_INITDIALOG:
 		pvar = (PTInstVar) lParam;
 		pvar->hosts_state.hosts_dialog = dlg;
-		SetWindowLongPtr(dlg, DWLP_USER, lParam);
+		SetWindowLong(dlg, DWL_USER, lParam);
 
 		// 追加・置き換えとも init_hosts_dlg を呼んでいるので、その前にセットする必要がある
 		GetWindowText(dlg, uimsg, sizeof(uimsg));
@@ -1950,7 +1961,7 @@ static INT_PTR CALLBACK hosts_replace_dlg_proc(HWND dlg, UINT msg, WPARAM wParam
 		return TRUE;			/* because we do not set the focus */
 
 	case WM_COMMAND:
-		pvar = (PTInstVar) GetWindowLongPtr(dlg, DWLP_USER);
+		pvar = (PTInstVar) GetWindowLong(dlg, DWL_USER);
 
 		switch (LOWORD(wParam)) {
 		case IDC_CONTINUE:
@@ -2022,8 +2033,8 @@ canceled:
 //
 // 同じホストで鍵形式が違う時の追加確認ダイアログを分離
 //
-static INT_PTR CALLBACK hosts_add2_dlg_proc(HWND dlg, UINT msg, WPARAM wParam,
-											LPARAM lParam)
+static BOOL CALLBACK hosts_add2_dlg_proc(HWND dlg, UINT msg, WPARAM wParam,
+                                         LPARAM lParam)
 {
 	PTInstVar pvar;
 	char uimsg[MAX_UIMSG];
@@ -2032,7 +2043,7 @@ static INT_PTR CALLBACK hosts_add2_dlg_proc(HWND dlg, UINT msg, WPARAM wParam,
 	case WM_INITDIALOG:
 		pvar = (PTInstVar) lParam;
 		pvar->hosts_state.hosts_dialog = dlg;
-		SetWindowLongPtr(dlg, DWLP_USER, lParam);
+		SetWindowLong(dlg, DWL_USER, lParam);
 
 		// 追加・置き換えとも init_hosts_dlg を呼んでいるので、その前にセットする必要がある
 		GetWindowText(dlg, uimsg, sizeof(uimsg));
@@ -2105,7 +2116,7 @@ static INT_PTR CALLBACK hosts_add2_dlg_proc(HWND dlg, UINT msg, WPARAM wParam,
 		return TRUE;			/* because we do not set the focus */
 
 	case WM_COMMAND:
-		pvar = (PTInstVar) GetWindowLongPtr(dlg, DWLP_USER);
+		pvar = (PTInstVar) GetWindowLong(dlg, DWL_USER);
 
 		switch (LOWORD(wParam)) {
 		case IDC_CONTINUE:

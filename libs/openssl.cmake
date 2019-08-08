@@ -1,5 +1,4 @@
-﻿# cmake -DCMAKE_GENERATOR="Visual Studio 16 2019" -DARCHITECTURE=Win32 -P openssl.cmake
-# cmake -DCMAKE_GENERATOR="Visual Studio 15 2017" -P openssl.cmake
+﻿# cmake -DCMAKE_GENERATOR="Visual Studio 15 2017" -P openssl.cmake
 # cmake -DCMAKE_GENERATOR="Visual Studio 15 2017" -DCMAKE_CONFIGURATION_TYPE=Release -P openssl.cmake
 
 ####
@@ -11,7 +10,6 @@ if(("${CMAKE_BUILD_TYPE}" STREQUAL "") AND ("${CMAKE_CONFIGURATION_TYPE}" STREQU
       -DCMAKE_GENERATOR=${CMAKE_GENERATOR}
       -DCMAKE_CONFIGURATION_TYPE=Release
       -DCMAKE_TOOLCHAIN_FILE=${CMAKE_SOURCE_DIR}/VSToolchain.cmake
-      -DARCHITECTURE=${ARCHITECTURE}
       -P openssl.cmake
       )
     execute_process(
@@ -19,7 +17,6 @@ if(("${CMAKE_BUILD_TYPE}" STREQUAL "") AND ("${CMAKE_CONFIGURATION_TYPE}" STREQU
       -DCMAKE_GENERATOR=${CMAKE_GENERATOR}
       -DCMAKE_CONFIGURATION_TYPE=Debug
       -DCMAKE_TOOLCHAIN_FILE=${CMAKE_SOURCE_DIR}/VSToolchain.cmake
-      -DARCHITECTURE=${ARCHITECTURE}
       -P openssl.cmake
       )
     return()
@@ -66,7 +63,7 @@ set(DOWN_DIR "${CMAKE_SOURCE_DIR}/download/openssl")
 
 set(EXTRACT_DIR "${CMAKE_SOURCE_DIR}/build/openssl/src_${TOOLSET}")
 set(INSTALL_DIR "${CMAKE_SOURCE_DIR}/openssl_${TOOLSET}")
-if(("${CMAKE_GENERATOR}" MATCHES "Win64") OR ("$ENV{MSYSTEM_CHOST}" STREQUAL "x86_64-w64-mingw32") OR ("${ARCHITECTURE}" MATCHES "x64"))
+if(("${CMAKE_GENERATOR}" MATCHES "Win64") OR ("$ENV{MSYSTEM_CHOST}" STREQUAL "x86_64-w64-mingw32"))
   set(EXTRACT_DIR "${EXTRACT_DIR}_x64")
   set(INSTALL_DIR "${INSTALL_DIR}_x64")
 endif()
@@ -174,11 +171,11 @@ if((${CMAKE_GENERATOR} MATCHES "Visual Studio") OR
   else()
     message(FATAL_ERROR "CMAKE_GENERATOR ${CMAKE_GENERATOR} not supported")
   endif()
-  if(VCVARS32-NOTFOUND OR (${VCVARS32} STREQUAL "VCVARS32-NOTFOUND"))
+  if(VCVARS32-NOTFOUND)
     message(FATAL_ERROR "vcvars32.bat not found")
   endif()
 
-  if((${CMAKE_GENERATOR} MATCHES "Win64") OR ("${ARCHITECTURE}" MATCHES "x64"))
+  if(${CMAKE_GENERATOR} MATCHES "Win64")
     set(CONFIG_TARGET "VC-WIN64A")
     set(DO_MS "ms\\do_win64a.bat")
   else()
@@ -215,15 +212,9 @@ if((${CMAKE_GENERATOR} MATCHES "Visual Studio") OR
       )
   endif()
   if(${CMAKE_GENERATOR} MATCHES "Visual Studio 16 2019")
-    if("${ARCHITECTURE}" MATCHES "x64")
-      file(APPEND "${SRC_DIR}/build_cmake.bat"
-        "call \"${VCVARS32_N}\" amd64\n"
-        )
-    else()
-      file(APPEND "${SRC_DIR}/build_cmake.bat"
-        "call \"${VCVARS32_N}\" x86\n"
-        )
-    endif()
+    file(APPEND "${SRC_DIR}/build_cmake.bat"
+      "call \"${VCVARS32_N}\" x86\n"
+      )
   elseif(${CMAKE_GENERATOR} MATCHES "Visual Studio 15 2017 Win64")
     file(APPEND "${SRC_DIR}/build_cmake.bat"
       "call \"${VCVARS32_N}\" amd64\n"
@@ -237,18 +228,11 @@ if((${CMAKE_GENERATOR} MATCHES "Visual Studio") OR
       "call \"${VCVARS32_N}\"\n"
       )
   endif()
-  # jomでビルドの高速化を試したが次のエラーが出てしまう
-  # 複数の CL.EXE が同じ .PDB ファイルに書き込む場合、/FS を使用してください。
-  # if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/jom/nmake.exe")
-  #   file(TO_NATIVE_PATH ${CMAKE_CURRENT_SOURCE_DIR} CMAKE_CURRENT_SOURCE_DIR_N)
-  #   file(APPEND "${SRC_DIR}/build_cmake.bat"
-  #     "set PATH=${CMAKE_CURRENT_SOURCE_DIR_N}\\jom;%PATH%\n"
-  #     )
-  # endif()
   file(APPEND "${SRC_DIR}/build_cmake.bat"
     "set PATH=%PATH%;${PERL_N_PATH}\n"
     "nmake -f ms\\nt.mak install\n"
     )
+
   set(BUILD_CMAKE_BAT "${SRC_DIR}/build_cmake.bat")
   file(TO_NATIVE_PATH ${BUILD_CMAKE_BAT} BUILD_CMAKE_BAT_N)
   execute_process(

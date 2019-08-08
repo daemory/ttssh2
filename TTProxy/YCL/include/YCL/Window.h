@@ -30,11 +30,11 @@ public:
 		return window;
 	}
 
-	LONG_PTR GetWindowLongPtr(int index)const {
-		return ::GetWindowLongPtr(window, index);
+	long GetWindowLong(int index)const {
+		return ::GetWindowLong(window, index);
 	}
-	LONG_PTR SetWindowLongPtr(int index, LONG_PTR data) {
-		return ::SetWindowLongPtr(window, index, data);
+	long SetWindowLong(int index, long data) {
+		return ::SetWindowLong(window, index, data);
 	}
 	int GetWindowTextLength()const {
 		return ::GetWindowTextLength(window);
@@ -51,10 +51,10 @@ public:
 	bool SetWindowText(const char* text) {
 		return ::SetWindowText(window, text) != FALSE;
 	}
-	LRESULT SendMessage(UINT message, WPARAM wparam = 0, LPARAM lparam = 0)const {
+	long SendMessage(int message, int wparam = 0, long lparam = 0)const {
 		return ::SendMessage(window, message, wparam, lparam);
 	}
-	LRESULT PostMessage(UINT message, WPARAM wparam = 0, LPARAM lparam = 0)const {
+	long PostMessage(int message, int wparam = 0, long lparam = 0)const {
 		return ::PostMessage(window, message, wparam, lparam);
 	}
 	HWND GetParent()const {
@@ -63,10 +63,10 @@ public:
 	bool EnableWindow(bool enabled) {
 		return ::EnableWindow(window, enabled) != FALSE;
 	}
-	LRESULT DefWindowProc(int message, int wparam, long lparam) {
+	long DefWindowProc(int message, int wparam, long lparam) {
 		return ::DefWindowProc(window, message, wparam, lparam);
 	}
-	LRESULT CallWindowProc(WNDPROC proc, int message, int wParam, long lParam) {
+	long CallWindowProc(WNDPROC proc, int message, int wParam, long lParam) {
 		return ::CallWindowProc(proc, window, message, wParam, lParam);
 	}
 	bool ShowWindow(int command) {
@@ -90,7 +90,7 @@ public:
 	bool IsZoomed()const {
 		return ::IsZoomed(window) != FALSE;
 	}
-	UINT_PTR SetTimer(int id, int elapse, TIMERPROC timerProc = NULL) {
+	int SetTimer(int id, int elapse, TIMERPROC timerProc = NULL) {
 		return ::SetTimer(window, id, elapse, timerProc);
 	}
 	bool KillTimer(int id) {
@@ -236,11 +236,11 @@ public:
 		}
 		return MessageBox(message, top.GetWindowText(), type);
 	}
-	ULONG_PTR GetClassLongPtr(int index)const {
-		return ::GetClassLongPtr(window, index);
+	long GetClassLong(int index)const {
+		return ::GetClassLong(window, index);
 	}
-	ULONG_PTR SetClassLongPtr(int index, LONG_PTR data) {
-		return ::SetClassLongPtr(window, index, data);
+	long SetClassLong(int index, long data) {
+		return ::SetClassLong(window, index, data);
 	}
 
 	bool create(long exStyle, const char* classname, const char* title, long style, const RECT& rect, HWND parent, HMENU menu, void* param = NULL) {
@@ -266,29 +266,29 @@ public:
 	HICON setIcon(HICON icon, bool large) {
 		return (HICON) SendMessage(WM_SETICON, large, (LPARAM) icon);
 	}
-	LONG_PTR getStyle()const {
-		return GetWindowLongPtr(GWL_STYLE);
+	long getStyle()const {
+		return GetWindowLong(GWL_STYLE);
 	}
-	LONG_PTR getExStyle()const {
-		return GetWindowLongPtr(GWL_EXSTYLE);
+	long getExStyle()const {
+		return GetWindowLong(GWL_EXSTYLE);
 	}
-	LONG_PTR setStyle(LONG_PTR style) {
-		return SetWindowLongPtr(GWL_STYLE, style);
+	long setStyle(long style) {
+		return SetWindowLong(GWL_STYLE, style);
 	}
-	LONG_PTR setExStyle(LONG_PTR exStyle) {
-		return SetWindowLongPtr(GWL_EXSTYLE, exStyle);
+	long setExStyle(long exStyle) {
+		return SetWindowLong(GWL_EXSTYLE, exStyle);
 	}
 	WNDPROC getWndProc()const {
-		return (WNDPROC) GetWindowLongPtr(GWLP_WNDPROC);
+		return (WNDPROC) GetWindowLong(GWL_WNDPROC);
 	}
 	WNDPROC setWndProc(WNDPROC proc) {
-		return (WNDPROC) SetWindowLongPtr(GWLP_WNDPROC, (LONG_PTR) proc);
+		return (WNDPROC) SetWindowLong(GWL_WNDPROC, (long) proc);
 	}
 	HWND getOwner()const {
-		return (HWND) GetWindowLongPtr(GWLP_HWNDPARENT);
+		return (HWND) GetWindowLong(GWL_HWNDPARENT);
 	}
 	HWND setOwner(HWND owner) {
-		return (HWND) SetWindowLongPtr(GWLP_HWNDPARENT, (LONG_PTR) owner);
+		return (HWND) SetWindowLong(GWL_HWNDPARENT, (long) owner);
 	}
 	HWND getChildWindow()const {
 		return GetWindow(GW_CHILD);
@@ -312,7 +312,7 @@ public:
 #define WS_EX_LAYERED 0x80000
 #endif
 	void setAlpha(BYTE alpha) {
-		LONG_PTR exStyle = getExStyle();
+		long exStyle = getExStyle();
 		if ((exStyle & WS_EX_LAYERED) == 0)
 			setExStyle(exStyle | WS_EX_LAYERED);
 		SetLayeredWindowAttributes(alpha, 2);
@@ -322,43 +322,41 @@ public:
 		return rect;
 	}
 	ATOM getClassAtom()const {
-		return (ATOM) GetClassLongPtr(GCW_ATOM);
+		return (ATOM) GetClassLong(GCW_ATOM);
 	}
-	LONG_PTR getClassExtra()const {
-		return GetClassLongPtr(GCL_CBCLSEXTRA);
+	long getClassExtra()const {
+		return GetClassLong(GCL_CBCLSEXTRA);
 	}
-	LONG_PTR getWindowExtra()const {
-		return GetClassLongPtr(GCL_CBWNDEXTRA);
+	long getWindowExtra()const {
+		return GetClassLong(GCL_CBWNDEXTRA);
 	}
 	HBRUSH getBackgroundBrush()const {
-		return (HBRUSH) GetClassLongPtr(GCLP_HBRBACKGROUND);
+		return (HBRUSH) GetClassLong(GCL_HBRBACKGROUND);
 	}
 	HCURSOR getClassCursor()const {
-		return (HCURSOR) GetClassLongPtr(GCLP_HCURSOR);
+		return (HCURSOR) GetClassLong(GCL_HCURSOR);
 	}
 	HICON getClassIcon()const {
-		return (HICON) GetClassLongPtr(GCLP_HICON);
+		return (HICON) GetClassLong(GCL_HICON);
 	}
 	HICON getClassSmallIcon()const {
-		return (HICON) GetClassLongPtr(GCLP_HICONSM);
+		return (HICON) GetClassLong(GCL_HICONSM);
 	}
 	HINSTANCE getClassInstance()const {
-		return (HINSTANCE) GetClassLongPtr(GCLP_HMODULE);
+		return (HINSTANCE) GetClassLong(GCL_HMODULE);
 	}
-	LONG_PTR getMenuResourceId()const {
-		return GetClassLongPtr(GCLP_MENUNAME);
+	int getMenuResourceId()const {
+		return GetClassLong(GCL_MENUNAME);
 	}
-	LONG_PTR getClassStyle()const {
-		return GetClassLongPtr(GCL_STYLE);
+	int getClassStyle()const {
+		return GetClassLong(GCL_STYLE);
 	}
 	WNDPROC getClassWindowProc()const {
-		return (WNDPROC) GetClassLongPtr(GCLP_WNDPROC);
+		return (WNDPROC) GetClassLong(GCL_WNDPROC);
 	}
 };
 
-#if defined(_MSC_VER)
 #pragma comment(lib, "user32.lib")
-#endif
 }
 
 #endif//_YCL_WINDOWS_H_

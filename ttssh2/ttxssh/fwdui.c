@@ -975,7 +975,7 @@ static BOOL end_fwd_edit_dlg(PTInstVar pvar, FWDRequestSpec *spec, HWND dlg)
 	return TRUE;
 }
 
-static UINT_PTR CALLBACK fwd_edit_dlg_proc(HWND dlg, UINT msg, WPARAM wParam,
+static BOOL CALLBACK fwd_edit_dlg_proc(HWND dlg, UINT msg, WPARAM wParam,
                                        LPARAM lParam)
 {
 	FWDEditClosure *closure;
@@ -985,7 +985,7 @@ static UINT_PTR CALLBACK fwd_edit_dlg_proc(HWND dlg, UINT msg, WPARAM wParam,
 	switch (msg) {
 	case WM_INITDIALOG:
 		closure = (FWDEditClosure *) lParam;
-		SetWindowLongPtr(dlg, DWLP_USER, lParam);
+		SetWindowLong(dlg, DWL_USER, lParam);
 
 		pvar = closure->pvar;
 		init_fwd_edit_dlg(pvar, closure->spec, dlg);
@@ -993,7 +993,7 @@ static UINT_PTR CALLBACK fwd_edit_dlg_proc(HWND dlg, UINT msg, WPARAM wParam,
 		return FALSE;			/* because we set the focus */
 
 	case WM_COMMAND:
-		closure = (FWDEditClosure *) GetWindowLongPtr(dlg, DWLP_USER);
+		closure = (FWDEditClosure *) GetWindowLong(dlg, DWL_USER);
 
 		switch (LOWORD(wParam)) {
 		case IDOK:
@@ -1101,7 +1101,7 @@ static void remove_forwarding_entry(HWND dlg)
 	}
 }
 
-static UINT_PTR CALLBACK fwd_dlg_proc(HWND dlg, UINT msg, WPARAM wParam,
+static BOOL CALLBACK fwd_dlg_proc(HWND dlg, UINT msg, WPARAM wParam,
                                   LPARAM lParam)
 {
 	PTInstVar pvar;
@@ -1110,14 +1110,14 @@ static UINT_PTR CALLBACK fwd_dlg_proc(HWND dlg, UINT msg, WPARAM wParam,
 	switch (msg) {
 	case WM_INITDIALOG:
 		pvar = (PTInstVar) lParam;
-		SetWindowLongPtr(dlg, DWLP_USER, lParam);
+		SetWindowLong(dlg, DWL_USER, lParam);
 
 		init_fwd_dlg(pvar, dlg);
 		CenterWindow(dlg, GetParent(dlg));
 		return TRUE;			/* because we do not set the focus */
 
 	case WM_COMMAND:
-		pvar = (PTInstVar) GetWindowLongPtr(dlg, DWLP_USER);
+		pvar = (PTInstVar) GetWindowLong(dlg, DWL_USER);
 
 		switch (LOWORD(wParam)) {
 		case IDOK:

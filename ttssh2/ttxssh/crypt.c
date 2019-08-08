@@ -206,7 +206,7 @@ BOOL CRYPT_encrypt_aead(PTInstVar pvar, unsigned char *data, unsigned int bytes,
 	unsigned int block_size = pvar->ssh2_keys[MODE_OUT].enc.block_size;
 	unsigned char lastiv[1];
 	char tmp[80];
-	EVP_CIPHER_CTX *evp = &pvar->evpcip[MODE_OUT];
+	EVP_CIPHER_CTX *evp = pvar->evpcip[MODE_OUT];
 
 	if (bytes == 0)
 		return TRUE;
@@ -260,7 +260,7 @@ BOOL CRYPT_decrypt_aead(PTInstVar pvar, unsigned char *data, unsigned int bytes,
 	unsigned int block_size = pvar->ssh2_keys[MODE_IN].enc.block_size;
 	unsigned char lastiv[1];
 	char tmp[80];
-	EVP_CIPHER_CTX *evp = &pvar->evpcip[MODE_IN];
+	EVP_CIPHER_CTX *evp = pvar->evpcip[MODE_IN];
 
 	if (bytes == 0)
 		return TRUE;
@@ -308,11 +308,11 @@ err:
 	return FALSE;
 }
 
-static void no_encrypt(PTInstVar pvar, unsigned char *buf, unsigned int bytes)
+static void no_encrypt(PTInstVar pvar, unsigned char *buf, int bytes)
 {
 }
 
-static void crypt_SSH2_encrypt(PTInstVar pvar, unsigned char *buf, unsigned int bytes)
+static void crypt_SSH2_encrypt(PTInstVar pvar, unsigned char *buf, int bytes)
 {
 	unsigned char *newbuff;
 	int block_size = pvar->ssh2_keys[MODE_OUT].enc.block_size;
@@ -338,7 +338,7 @@ static void crypt_SSH2_encrypt(PTInstVar pvar, unsigned char *buf, unsigned int 
 		encbufflen = bytes;
 	}
 
-	if (EVP_Cipher(&pvar->evpcip[MODE_OUT], encbuff, buf, bytes) == 0) {
+	if (EVP_Cipher(pvar->evpcip[MODE_OUT], encbuff, buf, bytes) == 0) {
 		UTIL_get_lang_msg("MSG_ENCRYPT_ERROR2", pvar, "%s encrypt error(2)");
 		_snprintf_s(tmp, sizeof(tmp), _TRUNCATE, pvar->ts->UIMsg,
 		            get_cipher_name(pvar->crypt_state.sender_cipher));
@@ -348,7 +348,7 @@ static void crypt_SSH2_encrypt(PTInstVar pvar, unsigned char *buf, unsigned int 
 	}
 }
 
-static void crypt_SSH2_decrypt(PTInstVar pvar, unsigned char *buf, unsigned int bytes)
+static void crypt_SSH2_decrypt(PTInstVar pvar, unsigned char *buf, int bytes)
 {
 	unsigned char *newbuff;
 	int block_size = pvar->ssh2_keys[MODE_IN].enc.block_size;
@@ -374,7 +374,7 @@ static void crypt_SSH2_decrypt(PTInstVar pvar, unsigned char *buf, unsigned int 
 		encbufflen = bytes;
 	}
 
-	if (EVP_Cipher(&pvar->evpcip[MODE_IN], encbuff, buf, bytes) == 0) {
+	if (EVP_Cipher(pvar->evpcip[MODE_IN], encbuff, buf, bytes) == 0) {
 		UTIL_get_lang_msg("MSG_DECRYPT_ERROR2", pvar, "%s decrypt error(2)");
 		_snprintf_s(tmp, sizeof(tmp), _TRUNCATE, pvar->ts->UIMsg,
 		            get_cipher_name(pvar->crypt_state.receiver_cipher));
@@ -384,7 +384,7 @@ static void crypt_SSH2_decrypt(PTInstVar pvar, unsigned char *buf, unsigned int 
 	}
 }
 
-static void c3DES_encrypt(PTInstVar pvar, unsigned char *buf, unsigned int bytes)
+static void c3DES_encrypt(PTInstVar pvar, unsigned char *buf, int bytes)
 {
 	Cipher3DESState *encryptstate = &pvar->crypt_state.enc.c3DES;
 
@@ -396,7 +396,7 @@ static void c3DES_encrypt(PTInstVar pvar, unsigned char *buf, unsigned int bytes
 	                 &encryptstate->k3, &encryptstate->ivec3, DES_ENCRYPT);
 }
 
-static void c3DES_decrypt(PTInstVar pvar, unsigned char *buf, unsigned int bytes)
+static void c3DES_decrypt(PTInstVar pvar, unsigned char *buf, int bytes)
 {
 	Cipher3DESState *decryptstate = &pvar->crypt_state.dec.c3DES;
 
@@ -408,7 +408,7 @@ static void c3DES_decrypt(PTInstVar pvar, unsigned char *buf, unsigned int bytes
 	                 &decryptstate->k1, &decryptstate->ivec1, DES_DECRYPT);
 }
 
-static void cDES_encrypt(PTInstVar pvar, unsigned char *buf, unsigned int bytes)
+static void cDES_encrypt(PTInstVar pvar, unsigned char *buf, int bytes)
 {
 	CipherDESState *encryptstate = &pvar->crypt_state.enc.cDES;
 
@@ -416,7 +416,7 @@ static void cDES_encrypt(PTInstVar pvar, unsigned char *buf, unsigned int bytes)
 	                 &encryptstate->k, &encryptstate->ivec, DES_ENCRYPT);
 }
 
-static void cDES_decrypt(PTInstVar pvar, unsigned char *buf, unsigned int bytes)
+static void cDES_decrypt(PTInstVar pvar, unsigned char *buf, int bytes)
 {
 	CipherDESState *decryptstate = &pvar->crypt_state.dec.cDES;
 
@@ -424,7 +424,7 @@ static void cDES_decrypt(PTInstVar pvar, unsigned char *buf, unsigned int bytes)
 	                 &decryptstate->k, &decryptstate->ivec, DES_DECRYPT);
 }
 
-static void flip_endianness(unsigned char *cbuf, unsigned int bytes)
+static void flip_endianness(unsigned char *cbuf, int bytes)
 {
 	uint32 *buf = (uint32 *) cbuf;
 	int count = bytes / 4;
@@ -439,7 +439,7 @@ static void flip_endianness(unsigned char *cbuf, unsigned int bytes)
 	}
 }
 
-static void cBlowfish_encrypt(PTInstVar pvar, unsigned char *buf, unsigned int bytes)
+static void cBlowfish_encrypt(PTInstVar pvar, unsigned char *buf, int bytes)
 {
 	CipherBlowfishState *encryptstate =
 		&pvar->crypt_state.enc.cBlowfish;
@@ -450,7 +450,7 @@ static void cBlowfish_encrypt(PTInstVar pvar, unsigned char *buf, unsigned int b
 	flip_endianness(buf, bytes);
 }
 
-static void cBlowfish_decrypt(PTInstVar pvar, unsigned char *buf, unsigned int bytes)
+static void cBlowfish_decrypt(PTInstVar pvar, unsigned char *buf, int bytes)
 {
 	CipherBlowfishState *decryptstate =
 		&pvar->crypt_state.dec.cBlowfish;
@@ -461,7 +461,7 @@ static void cBlowfish_decrypt(PTInstVar pvar, unsigned char *buf, unsigned int b
 	flip_endianness(buf, bytes);
 }
 
-void CRYPT_set_random_data(PTInstVar pvar, unsigned char *buf, unsigned int bytes)
+void CRYPT_set_random_data(PTInstVar pvar, unsigned char *buf, int bytes)
 {
 	RAND_bytes(buf, bytes);
 }
@@ -486,23 +486,27 @@ RSA *make_key(PTInstVar pvar,
                   unsigned char *mod)
 {
 	RSA *key = RSA_new();
+	BIGNUM *e = NULL, *n = NULL;
 
 	if (key != NULL) {
-		key->e = get_bignum(exp);
-		key->n = get_bignum(mod);
+		// OpenSSL 1.1.0ではRSA構造体のメンバーに直接アクセスできないため、
+		// RSA_set0_key関数で設定する必要がある。
+		e = get_bignum(exp);
+		n = get_bignum(mod);
+		RSA_set0_key(key, n, e, NULL);
 	}
 
-	if (key == NULL || key->e == NULL || key->n == NULL) {
+	if (key == NULL || e == NULL || n == NULL) {
 		UTIL_get_lang_msg("MSG_RSAKEY_SETUP_ERROR", pvar,
 		                  "Error setting up RSA keys");
 		notify_fatal_error(pvar, pvar->ts->UIMsg, TRUE);
 
 		if (key != NULL) {
-			if (key->e != NULL) {
-				BN_free(key->e);
+			if (e != NULL) {
+				BN_free(e);
 			}
-			if (key->n != NULL) {
-				BN_free(key->n);
+			if (n != NULL) {
+				BN_free(n);
 			}
 			RSA_free(key);
 		}
@@ -656,7 +660,7 @@ unsigned int CRYPT_get_receiver_MAC_size(PTInstVar pvar)
 BOOL CRYPT_verify_receiver_MAC(PTInstVar pvar, uint32 sequence_number,
 	char *data, int len, char *MAC)
 {
-	HMAC_CTX c;
+	HMAC_CTX *c = NULL;
 	unsigned char m[EVP_MAX_MD_SIZE];
 	unsigned char b[4];
 	struct Mac *mac;
@@ -678,12 +682,16 @@ BOOL CRYPT_verify_receiver_MAC(PTInstVar pvar, uint32 sequence_number,
 		goto error;
 	}
 
-	HMAC_Init(&c, mac->key, mac->key_len, mac->md);
+	c = HMAC_CTX_new();
+	if (c == NULL)
+		goto error;
+
+	HMAC_Init(c, mac->key, mac->key_len, mac->md);
 	set_uint32_MSBfirst(b, sequence_number);
-	HMAC_Update(&c, b, sizeof(b));
-	HMAC_Update(&c, data, len);
-	HMAC_Final(&c, m, NULL);
-	HMAC_cleanup(&c);
+	HMAC_Update(c, b, sizeof(b));
+	HMAC_Update(c, data, len);
+	HMAC_Final(c, m, NULL);
+	// HMAC_cleanup()はOpenSSL 1.1.0で削除され、HMAC_CTX_free()に集約された。
 
 	if (memcmp(m, MAC, mac->mac_len)) {
 		logprintf(LOG_LEVEL_VERBOSE, "HMAC key is not matched(seq %lu len %d)", sequence_number, len);
@@ -692,9 +700,14 @@ BOOL CRYPT_verify_receiver_MAC(PTInstVar pvar, uint32 sequence_number,
 		goto error;
 	}
 
+	HMAC_CTX_free(c);
+
 	return TRUE;
 
 error:
+	if (c) 
+		HMAC_CTX_free(c);
+
 	return FALSE;
 }
 
@@ -717,7 +730,7 @@ unsigned int CRYPT_get_sender_MAC_size(PTInstVar pvar)
 BOOL CRYPT_build_sender_MAC(PTInstVar pvar, uint32 sequence_number,
                             char *data, int len, char *MAC)
 {
-	HMAC_CTX c;
+	HMAC_CTX *c = NULL;
 	static u_char m[EVP_MAX_MD_SIZE];
 	u_char b[4];
 	struct Mac *mac;
@@ -727,16 +740,22 @@ BOOL CRYPT_build_sender_MAC(PTInstVar pvar, uint32 sequence_number,
 		if (mac == NULL || mac->enabled == 0) 
 			return FALSE;
 
-		HMAC_Init(&c, mac->key, mac->key_len, mac->md);
+		c = HMAC_CTX_new();
+		if (c == NULL)
+			return FALSE;
+
+		HMAC_Init(c, mac->key, mac->key_len, mac->md);
 		set_uint32_MSBfirst(b, sequence_number);
-		HMAC_Update(&c, b, sizeof(b));
-		HMAC_Update(&c, data, len);
-		HMAC_Final(&c, m, NULL);
-		HMAC_cleanup(&c);
+		HMAC_Update(c, b, sizeof(b));
+		HMAC_Update(c, data, len);
+		HMAC_Final(c, m, NULL);
+		// HMAC_cleanup()はOpenSSL 1.1.0で削除され、HMAC_CTX_free()に集約された。
 
 		// 20バイト分だけコピー
 		memcpy(MAC, m, pvar->ssh2_keys[MODE_OUT].mac.mac_len);
 	//	memcpy(MAC, m, sizeof(m));
+
+		HMAC_CTX_free(c);
 
 		return TRUE;
 	}
@@ -802,11 +821,22 @@ BOOL CRYPT_choose_ciphers(PTInstVar pvar)
 
 unsigned int CRYPT_get_encrypted_session_key_len(PTInstVar pvar)
 {
-	int server_key_bits =
-		BN_num_bits(pvar->crypt_state.server_key.RSA_key->n);
-	int host_key_bits = BN_num_bits(pvar->crypt_state.host_key.RSA_key->n);
-	int server_key_bytes = (server_key_bits + 7) / 8;
-	int host_key_bytes = (host_key_bits + 7) / 8;
+	int server_key_bits;
+	int host_key_bits;
+	int server_key_bytes;
+	int host_key_bytes;
+	BIGNUM *n;
+
+	// OpenSSL 1.1.0ではRSA構造体のメンバーに直接アクセスできないため、
+	// RSA_get0_key関数で取得する必要がある。
+	RSA_get0_key(pvar->crypt_state.server_key.RSA_key, &n, NULL, NULL);
+	server_key_bits = BN_num_bits(n);
+
+	RSA_get0_key(pvar->crypt_state.host_key.RSA_key, &n, NULL, NULL);
+	host_key_bits = BN_num_bits(n);
+
+	server_key_bytes = (server_key_bits + 7) / 8;
+	host_key_bytes = (host_key_bits + 7) / 8;
 
 	if (server_key_bits < host_key_bits) {
 		return host_key_bytes;
@@ -818,13 +848,24 @@ unsigned int CRYPT_get_encrypted_session_key_len(PTInstVar pvar)
 int CRYPT_choose_session_key(PTInstVar pvar,
                              unsigned char *encrypted_key_buf)
 {
-	int server_key_bits =
-		BN_num_bits(pvar->crypt_state.server_key.RSA_key->n);
-	int host_key_bits = BN_num_bits(pvar->crypt_state.host_key.RSA_key->n);
-	int server_key_bytes = (server_key_bits + 7) / 8;
-	int host_key_bytes = (host_key_bits + 7) / 8;
+	int server_key_bits;
+	int host_key_bits;
+	int server_key_bytes;
+	int host_key_bytes;
 	int encrypted_key_bytes;
 	int bit_delta;
+	BIGNUM *server_n, *host_n;
+
+	// OpenSSL 1.1.0ではRSA構造体のメンバーに直接アクセスできないため、
+	// RSA_get0_key関数で取得する必要がある。
+	RSA_get0_key(pvar->crypt_state.server_key.RSA_key, &server_n, NULL, NULL);
+	server_key_bits = BN_num_bits(server_n);
+
+	RSA_get0_key(pvar->crypt_state.host_key.RSA_key, &host_n, NULL, NULL);
+	host_key_bits = BN_num_bits(host_n);
+
+	server_key_bytes = (server_key_bits + 7) / 8;
+	host_key_bytes = (host_key_bits + 7) / 8;
 
 	if (server_key_bits < host_key_bits) {
 		encrypted_key_bytes = host_key_bytes;
@@ -847,8 +888,8 @@ int CRYPT_choose_session_key(PTInstVar pvar,
 		char session_id[16];
 		int i;
 
-		BN_bn2bin(pvar->crypt_state.host_key.RSA_key->n, session_buf);
-		BN_bn2bin(pvar->crypt_state.server_key.RSA_key->n,
+		BN_bn2bin(host_n, session_buf);
+		BN_bn2bin(server_n,
 		          session_buf + host_key_bytes);
 		memcpy(session_buf + server_key_bytes + host_key_bytes,
 		       pvar->crypt_state.server_cookie, 8);
@@ -918,15 +959,28 @@ int CRYPT_generate_RSA_challenge_response(PTInstVar pvar,
                                           int challenge_len,
                                           unsigned char *response)
 {
-	int server_key_bits =
-		BN_num_bits(pvar->crypt_state.server_key.RSA_key->n);
-	int host_key_bits = BN_num_bits(pvar->crypt_state.host_key.RSA_key->n);
-	int server_key_bytes = (server_key_bits + 7) / 8;
-	int host_key_bytes = (host_key_bits + 7) / 8;
-	int session_buf_len = server_key_bytes + host_key_bytes + 8;
-	char *session_buf = (char *) malloc(session_buf_len);
+	int server_key_bits;
+	int host_key_bits;
+	int server_key_bytes;
+	int host_key_bytes;
+	int session_buf_len;
+	char *session_buf;
 	char decrypted_challenge[48];
 	int decrypted_challenge_len;
+	BIGNUM *server_n, *host_n;
+
+	// OpenSSL 1.1.0ではRSA構造体のメンバーに直接アクセスできないため、
+	// RSA_get0_key関数で取得する必要がある。
+	RSA_get0_key(pvar->crypt_state.server_key.RSA_key, &server_n, NULL, NULL);
+	server_key_bits = BN_num_bits(server_n);
+
+	RSA_get0_key(pvar->crypt_state.host_key.RSA_key, &host_n, NULL, NULL);
+	host_key_bits = BN_num_bits(host_n);
+
+	server_key_bytes = (server_key_bits + 7) / 8;
+	host_key_bytes = (host_key_bits + 7) / 8;
+	session_buf_len = server_key_bytes + host_key_bytes + 8;
+	session_buf = (char FAR *) malloc(session_buf_len);
 
 	decrypted_challenge_len =
 		RSA_private_decrypt(challenge_len, challenge, challenge,
@@ -948,8 +1002,8 @@ int CRYPT_generate_RSA_challenge_response(PTInstVar pvar,
 		       decrypted_challenge_len);
 	}
 
-	BN_bn2bin(pvar->crypt_state.host_key.RSA_key->n, session_buf);
-	BN_bn2bin(pvar->crypt_state.server_key.RSA_key->n,
+	BN_bn2bin(host_n, session_buf);
+	BN_bn2bin(server_n,
 	          session_buf + host_key_bytes);
 	memcpy(session_buf + server_key_bytes + host_key_bytes,
 	       pvar->crypt_state.server_cookie, 8);
@@ -1110,7 +1164,7 @@ BOOL CRYPT_start_encryption(PTInstVar pvar, int sender_flag, int receiver_flag)
 			cipher = pvar->ciphers[MODE_OUT];
 			if (cipher) {
 				enc = &pvar->ssh2_keys[MODE_OUT].enc;
-				cipher_init_SSH2(&pvar->evpcip[MODE_OUT],
+				cipher_init_SSH2(pvar->evpcip[MODE_OUT],
 				                 enc->key, get_cipher_key_len(cipher),
 				                 enc->iv, get_cipher_iv_len(cipher),
 				                 CIPHER_ENCRYPT,
@@ -1158,7 +1212,7 @@ BOOL CRYPT_start_encryption(PTInstVar pvar, int sender_flag, int receiver_flag)
 			cipher = pvar->ciphers[MODE_IN];
 			if (cipher) {
 				enc = &pvar->ssh2_keys[MODE_IN].enc;
-				cipher_init_SSH2(&pvar->evpcip[MODE_IN],
+				cipher_init_SSH2(pvar->evpcip[MODE_IN],
 				                 enc->key, get_cipher_key_len(cipher),
 				                 enc->iv, get_cipher_iv_len(cipher),
 				                 CIPHER_DECRYPT,
@@ -1277,17 +1331,25 @@ void CRYPT_get_cipher_info(PTInstVar pvar, char *dest, int len)
 
 void CRYPT_get_server_key_info(PTInstVar pvar, char *dest, int len)
 {
+	BIGNUM *server_n, *host_n;
+
+	// OpenSSL 1.1.0ではRSA構造体のメンバーに直接アクセスできないため、
+	// RSA_get0_key関数で取得する必要がある。
+
 	if (SSHv1(pvar)) {
 		if (pvar->crypt_state.server_key.RSA_key == NULL
 		 || pvar->crypt_state.host_key.RSA_key == NULL) {
 			UTIL_get_lang_msg("DLG_ABOUT_KEY_NONE", pvar, "None");
 			strncpy_s(dest, len, pvar->ts->UIMsg, _TRUNCATE);
 		} else {
+			RSA_get0_key(pvar->crypt_state.server_key.RSA_key, &server_n, NULL, NULL);
+			RSA_get0_key(pvar->crypt_state.host_key.RSA_key, &host_n, NULL, NULL);
+
 			UTIL_get_lang_msg("DLG_ABOUT_KEY_INFO", pvar,
 			                  "%d-bit server key, %d-bit host key");
 			_snprintf_s(dest, len, _TRUNCATE, pvar->ts->UIMsg,
-			            BN_num_bits(pvar->crypt_state.server_key.RSA_key->n),
-			            BN_num_bits(pvar->crypt_state.host_key.RSA_key->n));
+			            BN_num_bits(server_n),
+			            BN_num_bits(host_n));
 		}
 	} else { // SSH2
 			UTIL_get_lang_msg("DLG_ABOUT_KEY_INFO2", pvar,

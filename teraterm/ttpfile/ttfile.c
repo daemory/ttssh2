@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 1994-1998 T. Teranishi
- * (C) 2005-2019 TeraTerm Project
+ * (C) 2005-2017 TeraTerm Project
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -127,9 +127,9 @@ BOOL PASCAL GetSetupFname(HWND HWin, WORD FuncId, PTTSet ts)
 
 	_chdir(Dir);
 
+	ofn.Flags = OFN_SHOWHELP | OFN_HIDEREADONLY;
 	switch (FuncId) {
 	case GSF_SAVE:
-		ofn.Flags = OFN_PATHMUSTEXIST | OFN_OVERWRITEPROMPT;
 		// 初期ファイルディレクトリをプログラム本体がある箇所に固定する (2005.1.6 yutaka)
 		// 読み込まれたteraterm.iniがあるディレクトリに固定する。
 		// これにより、/F= で指定された位置に保存されるようになる。(2005.1.26 yutaka)
@@ -145,7 +145,7 @@ BOOL PASCAL GetSetupFname(HWND HWin, WORD FuncId, PTTSet ts)
 			strncpy_s(ts->SetupFName, sizeof(ts->SetupFName),Name, _TRUNCATE);
 		break;
 	case GSF_RESTORE:
-		ofn.Flags = OFN_FILEMUSTEXIST | OFN_HIDEREADONLY;
+		ofn.Flags = ofn.Flags | OFN_FILEMUSTEXIST;
 		get_lang_msg("FILEDLG_RESTORE_SETUP_TITLE", uimsg, sizeof(uimsg), "Tera Term: Restore setup", UILanguageFile);
 		ofn.lpstrTitle = uimsg;
 		Ok = GetOpenFileName(&ofn);
@@ -153,7 +153,7 @@ BOOL PASCAL GetSetupFname(HWND HWin, WORD FuncId, PTTSet ts)
 			strncpy_s(ts->SetupFName, sizeof(ts->SetupFName),Name, _TRUNCATE);
 		break;
 	case GSF_LOADKEY:
-		ofn.Flags = OFN_FILEMUSTEXIST | OFN_HIDEREADONLY;
+		ofn.Flags = ofn.Flags | OFN_FILEMUSTEXIST;
 		get_lang_msg("FILEDLG_LOAD_KEYMAP_TITLE", uimsg, sizeof(uimsg), "Tera Term: Load key map", UILanguageFile);
 		ofn.lpstrTitle = uimsg;
 		Ok = GetOpenFileName(&ofn);
@@ -161,8 +161,6 @@ BOOL PASCAL GetSetupFname(HWND HWin, WORD FuncId, PTTSet ts)
 			strncpy_s(ts->KeyCnfFN, sizeof(ts->KeyCnfFN),Name, _TRUNCATE);
 		break;
 	}
-
-	ofn.Flags |= OFN_SHOWHELP;
 
 #if defined(_DEBUG)
 	if (!Ok) {
@@ -184,7 +182,7 @@ static void SetLogFlags(HWND Dialog)
 	WORD BinFlag, val;
 	long opt = 0;
 
-	pl = (LPLONG)GetWindowLongPtr(Dialog, DWLP_USER);
+	pl = (LPLONG)GetWindowLong(Dialog, DWL_USER);
 	if (pl) {
 		GetRB(Dialog, &BinFlag, IDC_FOPTBIN, IDC_FOPTBIN);
 		if (BinFlag) {
@@ -266,7 +264,7 @@ static BOOL CALLBACK LogFnHook(HWND Dialog, UINT Message, WPARAM wParam, LPARAM 
 		ofn = (LPOPENFILENAME)lParam;
 		pl = (LPLONG)(ofn->lCustData);
 		opt = *pl;
-		SetWindowLongPtr(Dialog, DWLP_USER, (LONG_PTR)pl);
+		SetWindowLong(Dialog, DWL_USER, (LONG)pl);
 
 		font = (HFONT)SendMessage(Dialog, WM_GETFONT, 0, 0);
 		GetObject(font, sizeof(LOGFONT), &logfont);
@@ -518,33 +516,33 @@ BOOL WINAPI GetTransFname(PFileVar fv, PCHAR CurDir, WORD FuncId, LPLONG Option)
 		ofn.lpstrInitialDir = CurDir;
 	}
 
+	ofn.Flags = OFN_SHOWHELP | OFN_HIDEREADONLY;
+
 	switch (FuncId) {
 	case GTF_LOG:
-		ofn.Flags = OFN_PATHMUSTEXIST | OFN_OVERWRITEPROMPT;
-		ofn.Flags |= OFN_ENABLETEMPLATE | OFN_ENABLEHOOK | OFN_EXPLORER | OFN_ENABLESIZING;
+		ofn.Flags |= OFN_ENABLETEMPLATE | OFN_ENABLEHOOK | OFN_EXPLORER;
 		ofn.lpTemplateName = MAKEINTRESOURCE(IDD_FOPT);
 
 		ofn.lpfnHook = (LPOFNHOOKPROC)(&LogFnHook);
 		optl = *Option;
-		ofn.lCustData = (LPARAM)&optl;
+		ofn.lCustData = (DWORD)&optl;
 		break;
 	case GTF_SEND:
-		ofn.Flags = OFN_FILEMUSTEXIST | OFN_HIDEREADONLY;
-		ofn.Flags |= OFN_ENABLETEMPLATE | OFN_ENABLEHOOK | OFN_EXPLORER | OFN_ENABLESIZING;
+		ofn.Flags |= OFN_ENABLETEMPLATE | OFN_ENABLEHOOK | OFN_EXPLORER;
 		ofn.lpTemplateName = MAKEINTRESOURCE(IDD_FOPT);
 
 		ofn.lpfnHook = (LPOFNHOOKPROC)(&TransFnHook);
 		optw = (WORD)*Option;
-		ofn.lCustData = (LPARAM)&optw;
+		ofn.lCustData = (DWORD)&optw;
 		break;
 	case GTF_BP:
-		ofn.Flags = OFN_FILEMUSTEXIST | OFN_HIDEREADONLY;
+		// nothing to do
 		break;
 	}
 
-	ofn.Flags |= OFN_SHOWHELP;
-
 	if (FuncId != GTF_LOG) {
+		ofn.Flags |= OFN_FILEMUSTEXIST;
+
 		// フィルタがワイルドカードではなく、そのファイルが存在する場合
 		// あらかじめデフォルトのファイル名を入れておく (2008.5.18 maya)
 		if (strlen(FileSendFilter) > 0 &&
@@ -600,7 +598,7 @@ static BOOL CALLBACK TransFnHook(HWND Dialog, UINT Message, WPARAM wParam, LPARA
 	case WM_INITDIALOG:
 		ofn = (LPOPENFILENAME)lParam;
 		pw = (LPWORD)ofn->lCustData;
-		SetWindowLongPtr(Dialog, DWLP_USER, (LONG_PTR)pw);
+		SetWindowLong(Dialog, DWL_USER, (LONG)pw);
 
 		font = (HFONT)SendMessage(Dialog, WM_GETFONT, 0, 0);
 		GetObject(font, sizeof(LOGFONT), &logfont);
@@ -630,7 +628,7 @@ static BOOL CALLBACK TransFnHook(HWND Dialog, UINT Message, WPARAM wParam, LPARA
 	case WM_COMMAND: // for old style dialog
 		switch (LOWORD(wParam)) {
 		case IDOK:
-			pw = (LPWORD)GetWindowLongPtr(Dialog,DWLP_USER);
+			pw = (LPWORD)GetWindowLong(Dialog,DWL_USER);
 			if (pw!=NULL)
 				GetRB(Dialog,pw,IDC_FOPTBIN,IDC_FOPTBIN);
 			if (DlgFoptFont != NULL) {
@@ -648,7 +646,7 @@ static BOOL CALLBACK TransFnHook(HWND Dialog, UINT Message, WPARAM wParam, LPARA
 		notify = (LPOFNOTIFY)lParam;
 		switch (notify->hdr.code) {
 		case CDN_FILEOK:
-			pw = (LPWORD)GetWindowLongPtr(Dialog,DWLP_USER);
+			pw = (LPWORD)GetWindowLong(Dialog,DWL_USER);
 			if (pw!=NULL)
 				GetRB(Dialog,pw,IDC_FOPTBIN,IDC_FOPTBIN);
 			if (DlgFoptFont != NULL) {
@@ -737,13 +735,11 @@ BOOL WINAPI GetMultiFname(PFileVar fv, PCHAR CurDir, WORD FuncId, LPWORD Option)
 	ofn.nMaxFile = FnStrMemSize;
 	ofn.lpstrTitle= fv->DlgCaption;
 	ofn.lpstrInitialDir = CurDir;
-	ofn.Flags = OFN_FILEMUSTEXIST | OFN_HIDEREADONLY;
-	ofn.Flags |= OFN_ALLOWMULTISELECT | OFN_EXPLORER;
-	ofn.Flags |= OFN_SHOWHELP;
+	ofn.Flags = OFN_SHOWHELP | OFN_ALLOWMULTISELECT | OFN_FILEMUSTEXIST | OFN_HIDEREADONLY | OFN_EXPLORER;
 	ofn.lCustData = 0;
 	if (FuncId==GMF_Z) {
-		ofn.Flags |= OFN_ENABLETEMPLATE | OFN_ENABLEHOOK | OFN_EXPLORER | OFN_ENABLESIZING;
-		ofn.lCustData = (LPARAM)Option;
+		ofn.Flags |= OFN_ENABLETEMPLATE | OFN_ENABLEHOOK;
+		ofn.lCustData = (DWORD)Option;
 		ofn.lpfnHook = (LPOFNHOOKPROC)(&TransFnHook);
 		ofn.lpTemplateName = MAKEINTRESOURCE(IDD_FOPT);
 	} else if (FuncId==GMF_Y) {
@@ -813,7 +809,7 @@ BOOL WINAPI GetMultiFname(PFileVar fv, PCHAR CurDir, WORD FuncId, LPWORD Option)
 	return Ok;
 }
 
-static INT_PTR CALLBACK GetFnDlg(HWND Dialog, UINT Message, WPARAM wParam, LPARAM lParam)
+static BOOL CALLBACK GetFnDlg(HWND Dialog, UINT Message, WPARAM wParam, LPARAM lParam)
 {
 	PFileVar fv;
 	char TempFull[MAX_PATH];
@@ -825,7 +821,7 @@ static INT_PTR CALLBACK GetFnDlg(HWND Dialog, UINT Message, WPARAM wParam, LPARA
 	switch (Message) {
 	case WM_INITDIALOG:
 		fv = (PFileVar)lParam;
-		SetWindowLongPtr(Dialog, DWLP_USER, lParam);
+		SetWindowLong(Dialog, DWL_USER, lParam);
 		SendDlgItemMessage(Dialog, IDC_GETFN, EM_LIMITTEXT, sizeof(TempFull)-1,0);
 
 		font = (HFONT)SendMessage(Dialog, WM_GETFONT, 0, 0);
@@ -860,7 +856,7 @@ static INT_PTR CALLBACK GetFnDlg(HWND Dialog, UINT Message, WPARAM wParam, LPARA
 		return TRUE;
 
 	case WM_COMMAND:
-		fv = (PFileVar)GetWindowLongPtr(Dialog,DWLP_USER);
+		fv = (PFileVar)GetWindowLong(Dialog,DWL_USER);
 		switch (LOWORD(wParam)) {
 		case IDOK:
 			if (fv!=NULL) {
@@ -894,7 +890,7 @@ BOOL WINAPI GetGetFname(HWND HWin, PFileVar fv)
 {
 	return (BOOL)DialogBoxParam(hInst,
 	                            MAKEINTRESOURCE(IDD_GETFNDLG),
-	                            HWin, GetFnDlg, (LPARAM)fv);
+	                            HWin, GetFnDlg, (LONG)fv);
 }
 
 void WINAPI SetFileVar(PFileVar fv)
@@ -990,7 +986,7 @@ static BOOL CALLBACK XFnHook(HWND Dialog, UINT Message, WPARAM wParam, LPARAM lP
 	case WM_INITDIALOG:
 		ofn = (LPOPENFILENAME)lParam;
 		pl = (LPLONG)ofn->lCustData;
-		SetWindowLongPtr(Dialog, DWLP_USER, (LONG_PTR)pl);
+		SetWindowLong(Dialog, DWL_USER, (LONG)pl);
 
 		font = (HFONT)SendMessage(Dialog, WM_GETFONT, 0, 0);
 		GetObject(font, sizeof(LOGFONT), &logfont);
@@ -1048,7 +1044,7 @@ static BOOL CALLBACK XFnHook(HWND Dialog, UINT Message, WPARAM wParam, LPARAM lP
 	case WM_COMMAND: // for old style dialog
 		switch (LOWORD(wParam)) {
 		case IDOK:
-			pl = (LPLONG)GetWindowLongPtr(Dialog,DWLP_USER);
+			pl = (LPLONG)GetWindowLong(Dialog,DWL_USER);
 			if (pl!=NULL)
 			{
 				if (LOWORD(*pl)==0xFFFF) { // Send
@@ -1083,7 +1079,7 @@ static BOOL CALLBACK XFnHook(HWND Dialog, UINT Message, WPARAM wParam, LPARAM lP
 		notify = (LPOFNOTIFY)lParam;
 		switch (notify->hdr.code) {
 		case CDN_FILEOK:
-			pl = (LPLONG)GetWindowLongPtr(Dialog,DWLP_USER);
+			pl = (LPLONG)GetWindowLong(Dialog,DWL_USER);
 			if (pl!=NULL) {
 				if (LOWORD(*pl) == 0xFFFF) { // Send
 					Lo = 0xFFFF;
@@ -1171,30 +1167,23 @@ BOOL WINAPI GetXFname(HWND HWin, BOOL Receive, LPLONG Option, PFileVar fv, PCHAR
 	ofn.lpstrFile = fv->FullName;
 	ofn.nMaxFile = sizeof(fv->FullName);
 	ofn.lpstrInitialDir = CurDir;
+	ofn.Flags = OFN_SHOWHELP | OFN_HIDEREADONLY |
+	            OFN_ENABLETEMPLATE | OFN_ENABLEHOOK;
 	opt = *Option;
 	if (! Receive)
 	{
-		ofn.Flags = OFN_FILEMUSTEXIST | OFN_HIDEREADONLY;
+		ofn.Flags = ofn.Flags | OFN_FILEMUSTEXIST;
 		opt = opt | 0xFFFF;
 	}
-	else {
-		ofn.Flags = OFN_PATHMUSTEXIST | OFN_OVERWRITEPROMPT;
-	}
-	ofn.Flags |= OFN_ENABLETEMPLATE | OFN_ENABLEHOOK | OFN_EXPLORER | OFN_ENABLESIZING;
-	ofn.Flags |= OFN_SHOWHELP;
-	ofn.lCustData = (LPARAM)&opt;
+	ofn.lCustData = (DWORD)&opt;
+
 	ofn.lpstrTitle = fv->DlgCaption;
 	ofn.lpfnHook = (LPOFNHOOKPROC)(&XFnHook);
+	ofn.Flags = ofn.Flags | OFN_EXPLORER;
 	ofn.lpTemplateName = MAKEINTRESOURCE(IDD_XOPT);
 	ofn.hInstance = hInst;
 
-	if (!Receive)
-	{
-		Ok = GetOpenFileName(&ofn);
-	}
-	else {
-		Ok = GetSaveFileName(&ofn);
-	}
+	Ok = GetOpenFileName(&ofn);
 
 	if (Ok) {
 		fv->DirLen = ofn.nFileOffset;

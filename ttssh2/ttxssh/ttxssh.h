@@ -90,8 +90,8 @@ typedef struct _TInstVar *PTInstVar;
 #include "tttypes.h"
 #include "ttplugin.h"
 
-#if defined(_MSC_VER) && !defined(_Printf_format_string_)
-// ’è‹`‚³‚ê‚Ä‚¢‚È‚¢‚Æ‚«‚Í‰½‚à‚µ‚È‚¢‚æ‚¤‚É’è‹`‚µ‚Ä‚¨‚­
+#if defined(_MSC_VER) && _MSC_VER < 1910
+// 2017–¢–ž‚Ì‚Æ‚«‚Í–³Œø‚Æ‚·‚é
 #define _Printf_format_string_
 #endif
 
@@ -277,7 +277,7 @@ typedef struct _TInstVar {
 	char *session_id;
 	int session_id_len;
 	SSHKeys ssh2_keys[MODE_MAX];
-	EVP_CIPHER_CTX evpcip[MODE_MAX];
+	EVP_CIPHER_CTX *evpcip[MODE_MAX];
 	int userauth_success;
 	int shell_id;
 	/*int remote_id;*/
