@@ -1,5 +1,5 @@
 #define AppName "Tera Term"
-#define AppVer "5.0"
+#define AppVer "4.105"
 #define snapshot GetDateTimeString('yyyymmdd_hhnnss', '', '');
 
 [InnoIDE_PreCompile]
@@ -27,7 +27,7 @@ Name: build.bat
 ;Name: makearchive.bat; Parameters: release
 
 [Setup]
-AppCopyright=(C) 2004-2020 TeraTerm Project
+AppCopyright=(C) 2004-2019 TeraTerm Project
 AppPublisher=TeraTerm Project
 AppPublisherURL=https://ttssh2.osdn.jp/
 AppSupportURL=https://ttssh2.osdn.jp/
@@ -69,6 +69,7 @@ Name: {app}\lang; Components: TeraTerm
 [Files]
 Source: ..\teraterm\release\ttermpro.exe; DestDir: {app}; Components: TeraTerm; Flags: ignoreversion
 Source: ..\teraterm\release\ttpcmn.dll; DestDir: {app}; Components: TeraTerm; Flags: ignoreversion
+Source: ..\teraterm\release\ttpfile.dll; DestDir: {app}; Components: TeraTerm; Flags: ignoreversion
 Source: ..\teraterm\release\ttpset.dll; DestDir: {app}; Components: TeraTerm; Flags: ignoreversion
 Source: ..\teraterm\release\ttptek.dll; DestDir: {app}; Components: TeraTerm; Flags: ignoreversion
 Source: release\TERATERM.INI; DestDir: {app}; Components: TeraTerm; Flags: onlyifdoesntexist uninsneveruninstall; Permissions: authusers-modify
@@ -101,14 +102,6 @@ Source: release\lang\Russian.lng; DestDir: {app}\lang; Components: TeraTerm; Att
 Source: release\lang\Korean.lng; DestDir: {app}\lang; Components: TeraTerm; Attribs: readonly; Flags: uninsremovereadonly overwritereadonly
 Source: release\lang\Simplified Chinese.lng; DestDir: {app}\lang; Components: TeraTerm; Attribs: readonly; Flags: uninsremovereadonly overwritereadonly
 Source: release\lang\Traditional Chinese.lng; DestDir: {app}\lang; Components: TeraTerm; Attribs: readonly; Flags: uninsremovereadonly overwritereadonly
-Source: release\lang_utf16le\Default.lng; DestDir: {app}\lang; Components: TeraTerm; Flags: onlyifdoesntexist uninsneveruninstall; Permissions: authusers-modify
-Source: release\lang_utf16le\Japanese.lng; DestDir: {app}\lang; Components: TeraTerm; Attribs: readonly; Flags: uninsremovereadonly overwritereadonly
-Source: release\lang_utf16le\German.lng; DestDir: {app}\lang; Components: TeraTerm; Attribs: readonly; Flags: uninsremovereadonly overwritereadonly
-Source: release\lang_utf16le\French.lng; DestDir: {app}\lang; Components: TeraTerm; Attribs: readonly; Flags: uninsremovereadonly overwritereadonly
-Source: release\lang_utf16le\Russian.lng; DestDir: {app}\lang; Components: TeraTerm; Attribs: readonly; Flags: uninsremovereadonly overwritereadonly
-Source: release\lang_utf16le\Korean.lng; DestDir: {app}\lang; Components: TeraTerm; Attribs: readonly; Flags: uninsremovereadonly overwritereadonly
-Source: release\lang_utf16le\Simplified Chinese.lng; DestDir: {app}\lang; Components: TeraTerm; Attribs: readonly; Flags: uninsremovereadonly overwritereadonly
-Source: release\lang_utf16le\Traditional Chinese.lng; DestDir: {app}\lang; Components: TeraTerm; Attribs: readonly; Flags: uninsremovereadonly overwritereadonly
 Source: ..\ttssh2\ttxssh\Release\ttxssh.dll; DestDir: {app}; Components: TTSSH; Flags: ignoreversion
 Source: release\ssh_known_hosts; DestDir: {app}; Components: TTSSH; Flags: onlyifdoesntexist uninsneveruninstall; Permissions: authusers-modify
 Source: ..\cygterm\cygterm.exe; DestDir: {app}\cygterm+-i686; Components: cygterm

@@ -33,14 +33,12 @@
 #if !defined(_CRTDBG_MAP_ALLOC)
 #define _CRTDBG_MAP_ALLOC
 #endif
-#include <stdio.h> // for snprintf, snwprintf
 #include <stdlib.h>
 #include <crtdbg.h>
 #include <string.h>
 #include <imm.h>
 #include <assert.h>
-#include "asprintf.h"
-#include "layer_for_unicode.h"
+
 #include "ttime.h"
 
 // #define ENABLE_DUMP	1
@@ -369,33 +367,31 @@ void SetIMEOpenStatus(HWND hWnd, BOOL stat)
 static void DumpReconvStringSt(RECONVERTSTRING *pReconv, BOOL unicode)
 {
 	if (unicode) {
-		wchar_t *buf;
-		aswprintf(&buf,
-				  L"Str %d,%d CompStr %d,%d TargeteStr %d,%d '%s'\n",
+		wchar_t tmp[1024];
+		_snwprintf(tmp, _countof(tmp),
+				   L"Str %d,%d CompStr %d,%d TargeteStr %d,%d '%s'\n",
+				   pReconv->dwStrLen,
+				   pReconv->dwStrOffset,
+				   pReconv->dwCompStrLen,
+				   pReconv->dwCompStrOffset,
+				   pReconv->dwTargetStrLen,
+				   pReconv->dwTargetStrOffset,
+				   (wchar_t *)(((char *)pReconv) + pReconv->dwStrOffset)
+			);
+		OutputDebugStringW(tmp);
+	} else {
+		char tmp[1024];
+		_snprintf(tmp, sizeof(tmp),
+				  "Str %d,%d CompStr %d,%d TargeteStr %d,%d '%s'\n",
 				  pReconv->dwStrLen,
 				  pReconv->dwStrOffset,
 				  pReconv->dwCompStrLen,
 				  pReconv->dwCompStrOffset,
 				  pReconv->dwTargetStrLen,
 				  pReconv->dwTargetStrOffset,
-				  (wchar_t *)(((char *)pReconv) + pReconv->dwStrOffset)
+				  (((char *)pReconv) + pReconv->dwStrOffset)
 			);
-		_OutputDebugStringW(buf);
-		free(buf);
-	} else {
-		char *buf;
-		asprintf(&buf,
-				 "Str %d,%d CompStr %d,%d TargeteStr %d,%d '%s'\n",
-				 pReconv->dwStrLen,
-				 pReconv->dwStrOffset,
-				 pReconv->dwCompStrLen,
-				 pReconv->dwCompStrOffset,
-				 pReconv->dwTargetStrLen,
-				 pReconv->dwTargetStrOffset,
-				 (((char *)pReconv) + pReconv->dwStrOffset)
-			);
-		OutputDebugStringA(buf);
-		free(buf);
+		OutputDebugStringA(tmp);
 	}
 }
 #endif
@@ -485,8 +481,8 @@ static void *CreateReconvStringSt(HWND hWnd, BOOL unicode,
 	pReconv->dwStrOffset		= sizeof(RECONVERTSTRING);
 	pReconv->dwCompStrLen		= complen_count;
 	pReconv->dwCompStrOffset	= cx_bytes;
-	pReconv->dwTargetStrLen		= complen_count;		// = dwCompStrLen
-	pReconv->dwTargetStrOffset	= cx_bytes;				// = dwCompStrOffset
+	pReconv->dwTargetStrLen		= complen_count;		// = dwCompStrOffset
+	pReconv->dwTargetStrOffset	= cx_bytes;				// = dwTargetStrLen
 
 	// RECONVERTSTRINGの後ろに
 	// 参照文字列をコピー+カーソル位置に変文字列を挿入
@@ -526,7 +522,7 @@ void *CreateReconvStringStA(
 	size_t cx, size_t *st_size_)
 {
 	if (HIMEDLL == NULL) return NULL;
-	//assert(IsWindowUnicode(hWnd) == FALSE);
+	assert(IsWindowUnicode(hWnd) == FALSE);
 	return CreateReconvStringSt(hWnd, FALSE, str_ptr, str_count, cx, st_size_);
 }
 
@@ -546,6 +542,6 @@ void *CreateReconvStringStW(
 	size_t cx, size_t *st_size_)
 {
 	if (HIMEDLL == NULL) return NULL;
-	//assert(IsWindowUnicode(hWnd) == TRUE);
+	assert(IsWindowUnicode(hWnd) == TRUE);
 	return CreateReconvStringSt(hWnd, TRUE, str_ptr, str_count, cx, st_size_);
 }

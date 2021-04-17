@@ -54,9 +54,6 @@ See LICENSE.TXT for the license.
 #include <direct.h>
 #include <memory.h>
 
-#include "codeconv.h"
-#include "layer_for_unicode.h"
-#include "asprintf.h"
 
 #undef DialogBoxParam
 #define DialogBoxParam(p1,p2,p3,p4,p5) \
@@ -989,17 +986,24 @@ static void hosts_dlg_set_fingerprint(PTInstVar pvar, HWND dlg, digest_algorithm
 
 static void init_hosts_dlg(PTInstVar pvar, HWND dlg)
 {
-	wchar_t buf[MAX_UIMSG];
-	wchar_t *buf2;
-	wchar_t *hostW;
+	char buf[1024];
+	char buf2[2048];
+	int i, j;
+	int ch;
 
-	// ホスト名に置換する
-	_GetDlgItemTextW(dlg, IDC_HOSTWARNING, buf, _countof(buf));
-	hostW = ToWcharA(pvar->hosts_state.prefetched_hostname);
-	aswprintf(&buf2, buf, hostW);
-	free(hostW);
-	_SetDlgItemTextW(dlg, IDC_HOSTWARNING, buf2);
-	free(buf2);
+	// static textの # 部分をホスト名に置換する
+	GetDlgItemText(dlg, IDC_HOSTWARNING, buf, sizeof(buf));
+	for (i = 0; (ch = buf[i]) != 0 && ch != '#'; i++) {
+		buf2[i] = ch;
+	}
+	strncpy_s(buf2 + i, sizeof(buf2) - i,
+	          pvar->hosts_state.prefetched_hostname, _TRUNCATE);
+	j = i + strlen(buf2 + i);
+	for (; buf[i] == '#'; i++) {
+	}
+	strncpy_s(buf2 + j, sizeof(buf2) - j, buf + i, _TRUNCATE);
+
+	SetDlgItemText(dlg, IDC_HOSTWARNING, buf2);
 
 	pvar->hFontFixed = UTIL_get_lang_fixedfont(dlg, pvar->ts->UILanguageFile);
 	if (pvar->hFontFixed != NULL) {
@@ -1367,41 +1371,30 @@ static void delete_different_key(PTInstVar pvar)
 		Key key; // known_hostsに登録されている鍵
 		int length;
 		char filename[MAX_PATH];
-#if _MSC_VER < 1900 // less than VSC2015(VC14.0)
-		char tmp[L_tmpnam];
-#endif
 		int fd;
 		int amount_written = 0;
 		int close_result;
 		int data_index = 0;
-		char buf[FILENAME_MAX];
+		char *newfiledata = NULL;
+		int ret;
+		struct _stat fileStat;
+		long newFilePos = 0, totalSize;
 
-		// 書き込み一時ファイルを開く
-#if _MSC_VER < 1900 // less than VSC2015(VC14.0)
-		_getcwd(filename, sizeof(filename));
-		tmpnam_s(tmp, sizeof(tmp));
-		strcat_s(filename, sizeof(filename), tmp);
-#else // VSC2015(VC14.0) or later
-		tmpnam_s(filename, sizeof(filename));
-#endif
-		fd = _open(filename,
-		          _O_CREAT | _O_WRONLY | _O_SEQUENTIAL | _O_BINARY | _O_TRUNC,
-		          _S_IREAD | _S_IWRITE);
-
-		if (fd == -1) {
-			if (errno == EACCES) {
-				UTIL_get_lang_msg("MSG_HOSTS_WRITE_EACCES_ERROR", pvar,
-				                  "An error occurred while trying to write the host key.\n"
-				                  "You do not have permission to write to the known-hosts file.");
-				notify_nonfatal_error(pvar, pvar->ts->UIMsg);
-			} else {
-				UTIL_get_lang_msg("MSG_HOSTS_WRITE_ERROR", pvar,
-				                  "An error occurred while trying to write the host key.\n"
-				                  "The host key could not be written.");
-				notify_nonfatal_error(pvar, pvar->ts->UIMsg);
-			}
-			return;
+		// known_hostsファイルサイズを取得する。
+		get_teraterm_dir_relative_name(filename, sizeof(filename), name);
+		ret = _stat(filename, &fileStat);
+		if (ret != 0) {
+			// error
+			goto error;
 		}
+		// ファイルデータのメモリを確保する。
+		totalSize = fileStat.st_size;
+		newfiledata = malloc(totalSize);
+		if (newfiledata == NULL) {
+			// error
+			goto error;
+		}
+
 
 		// ファイルから読み込む
 		memset(&key, 0, sizeof(key));
@@ -1506,39 +1499,65 @@ static void delete_different_key(PTInstVar pvar)
 			// 書き込み処理
 			if (do_write) {
 				length = pvar->hosts_state.file_data_index - data_index;
-				amount_written =
-					_write(fd, pvar->hosts_state.file_data + data_index,
-					       length);
 
-				if (amount_written != length) {
-					goto error1;
-				}
+				if ((newFilePos + length) >= totalSize) {
+					UTIL_get_lang_msg("MSG_HOSTS_WRITE_ERROR", pvar,
+						"An error occurred while trying to write the host key.\n"
+						"The host key could not be written.");
+					notify_nonfatal_error(pvar, pvar->ts->UIMsg);
+					goto error;
+				}		
+
+				memcpy(newfiledata + newFilePos, 
+					pvar->hosts_state.file_data + data_index,
+					length);
+				newFilePos += length;
+
 			}
 			data_index = pvar->hosts_state.file_data_index;
 		} while (1); // 最後まで読む
-
-error1:
-		close_result = _close(fd);
-		if (amount_written != length || close_result == -1) {
-			UTIL_get_lang_msg("MSG_HOSTS_WRITE_ERROR", pvar,
-			                  "An error occurred while trying to write the host key.\n"
-			                  "The host key could not be written.");
-			notify_nonfatal_error(pvar, pvar->ts->UIMsg);
-			goto error2;
-		}
-
-		// 書き込み一時ファイルからリネーム
-		get_teraterm_dir_relative_name(buf, sizeof(buf), name);
-		_unlink(buf);
-		rename(filename, buf);
-
-error2:
-		_unlink(filename);
 
 		finish_read_host_files(pvar, 0);
 
 		// 最後にメモリを解放しておく。
 		key_init(&key);
+
+		// known_hostsファイルに新しいファイルデータで上書きする。
+		fd = _open(filename,
+			_O_CREAT | _O_WRONLY | _O_SEQUENTIAL | _O_BINARY | _O_TRUNC,
+			_S_IREAD | _S_IWRITE);
+
+		if (fd == -1) {
+			if (errno == EACCES) {
+				UTIL_get_lang_msg("MSG_HOSTS_WRITE_EACCES_ERROR", pvar,
+					"An error occurred while trying to write the host key.\n"
+					"You do not have permission to write to the known-hosts file.");
+				notify_nonfatal_error(pvar, pvar->ts->UIMsg);
+			}
+			else {
+				UTIL_get_lang_msg("MSG_HOSTS_WRITE_ERROR", pvar,
+					"An error occurred while trying to write the host key.\n"
+					"The host key could not be written.");
+				notify_nonfatal_error(pvar, pvar->ts->UIMsg);
+			}
+			goto error;
+		}
+
+		amount_written = _write(fd, newfiledata, newFilePos);
+		close_result = _close(fd);
+		if (amount_written != newFilePos || close_result == -1) {
+			UTIL_get_lang_msg("MSG_HOSTS_WRITE_ERROR", pvar,
+				"An error occurred while trying to write the host key.\n"
+				"The host key could not be written.");
+			notify_nonfatal_error(pvar, pvar->ts->UIMsg);
+			goto error;
+		}		
+
+error:
+		if (newfiledata) {
+			free(newfiledata);
+		}
+
 	}
 }
 
@@ -1562,41 +1581,28 @@ void HOSTS_delete_all_hostkeys(PTInstVar pvar)
 		Key key; // known_hostsに登録されている鍵
 		int length;
 		char filename[MAX_PATH];
-#if _MSC_VER < 1900 // less than VSC2015(VC14.0)
-		char tmp[L_tmpnam];
-#endif
 		int fd;
 		int amount_written = 0;
 		int close_result;
 		int data_index = 0;
-		char buf[FILENAME_MAX];
+		char *newfiledata = NULL;
+		int ret;
+		struct _stat fileStat;
+		long newFilePos = 0, totalSize;
 
-		// 書き込み一時ファイルを開く
-#if _MSC_VER < 1900 // less than VSC2015(VC14.0)
-		_getcwd(filename, sizeof(filename));
-		tmpnam_s(tmp, sizeof(tmp));
-		strcat_s(filename, sizeof(filename), tmp);
-#else // VSC2015(VC14.0) or later
-		tmpnam_s(filename, sizeof(filename));
-#endif
-		fd = _open(filename,
-			_O_CREAT | _O_WRONLY | _O_SEQUENTIAL | _O_BINARY | _O_TRUNC,
-			_S_IREAD | _S_IWRITE);
-
-		if (fd == -1) {
-			if (errno == EACCES) {
-				UTIL_get_lang_msg("MSG_HOSTS_WRITE_EACCES_ERROR", pvar,
-					"An error occurred while trying to write the host key.\n"
-					"You do not have permission to write to the known-hosts file.");
-				notify_nonfatal_error(pvar, pvar->ts->UIMsg);
-			}
-			else {
-				UTIL_get_lang_msg("MSG_HOSTS_WRITE_ERROR", pvar,
-					"An error occurred while trying to write the host key.\n"
-					"The host key could not be written.");
-				notify_nonfatal_error(pvar, pvar->ts->UIMsg);
-			}
-			return;
+		// known_hostsファイルサイズを取得する。
+		get_teraterm_dir_relative_name(filename, sizeof(filename), name);
+		ret = _stat(filename, &fileStat);
+		if (ret != 0) {
+			// error
+			goto error;
+		}
+		// ファイルデータのメモリを確保する。
+		totalSize = fileStat.st_size;
+		newfiledata = malloc(totalSize);
+		if (newfiledata == NULL) {
+			// error
+			goto error;
 		}
 
 		// ファイルから読み込む
@@ -1699,39 +1705,65 @@ void HOSTS_delete_all_hostkeys(PTInstVar pvar)
 			// 書き込み処理
 			if (do_write) {
 				length = pvar->hosts_state.file_data_index - data_index;
-				amount_written =
-					_write(fd, pvar->hosts_state.file_data + data_index,
-					length);
 
-				if (amount_written != length) {
-					goto error1;
-				}
+				if ((newFilePos + length) >= totalSize) {
+					UTIL_get_lang_msg("MSG_HOSTS_WRITE_ERROR", pvar,
+						"An error occurred while trying to write the host key.\n"
+						"The host key could not be written.");
+					notify_nonfatal_error(pvar, pvar->ts->UIMsg);
+					goto error;
+				}		
+
+				memcpy(newfiledata + newFilePos, 
+					pvar->hosts_state.file_data + data_index,
+					length);
+				newFilePos += length;
+
 			}
 			data_index = pvar->hosts_state.file_data_index;
 		} while (1); // 最後まで読む
-
-	error1:
-		close_result = _close(fd);
-		if (amount_written != length || close_result == -1) {
-			UTIL_get_lang_msg("MSG_HOSTS_WRITE_ERROR", pvar,
-				"An error occurred while trying to write the host key.\n"
-				"The host key could not be written.");
-			notify_nonfatal_error(pvar, pvar->ts->UIMsg);
-			goto error2;
-		}
-
-		// 書き込み一時ファイルからリネーム
-		get_teraterm_dir_relative_name(buf, sizeof(buf), name);
-		_unlink(buf);
-		rename(filename, buf);
-
-	error2:
-		_unlink(filename);
 
 		finish_read_host_files(pvar, 0);
 
 		// 最後にメモリを解放しておく。
 		key_init(&key);
+
+		// known_hostsファイルに新しいファイルデータで上書きする。
+		fd = _open(filename,
+			_O_CREAT | _O_WRONLY | _O_SEQUENTIAL | _O_BINARY | _O_TRUNC,
+			_S_IREAD | _S_IWRITE);
+
+		if (fd == -1) {
+			if (errno == EACCES) {
+				UTIL_get_lang_msg("MSG_HOSTS_WRITE_EACCES_ERROR", pvar,
+					"An error occurred while trying to write the host key.\n"
+					"You do not have permission to write to the known-hosts file.");
+				notify_nonfatal_error(pvar, pvar->ts->UIMsg);
+			}
+			else {
+				UTIL_get_lang_msg("MSG_HOSTS_WRITE_ERROR", pvar,
+					"An error occurred while trying to write the host key.\n"
+					"The host key could not be written.");
+				notify_nonfatal_error(pvar, pvar->ts->UIMsg);
+			}
+			goto error;
+		}
+
+		amount_written = _write(fd, newfiledata, newFilePos);
+		close_result = _close(fd);
+		if (amount_written != newFilePos || close_result == -1) {
+			UTIL_get_lang_msg("MSG_HOSTS_WRITE_ERROR", pvar,
+				"An error occurred while trying to write the host key.\n"
+				"The host key could not be written.");
+			notify_nonfatal_error(pvar, pvar->ts->UIMsg);
+			goto error;
+		}		
+
+error:
+		if (newfiledata) {
+			free(newfiledata);
+		}
+
 	}
 }
 
@@ -1745,7 +1777,7 @@ void HOSTS_delete_all_hostkeys(PTInstVar pvar)
 static INT_PTR CALLBACK hosts_add_dlg_proc(HWND dlg, UINT msg, WPARAM wParam,
 										   LPARAM lParam)
 {
-	static const DlgTextInfo text_info[] = {
+	const static DlgTextInfo text_info[] = {
 		{ 0, "DLG_UNKNOWNHOST_TITLE" },
 		{ IDC_HOSTWARNING, "DLG_UNKNOWNHOST_WARNING" },
 		{ IDC_HOSTWARNING2, "DLG_UNKNOWNHOST_WARNING2" },
@@ -1764,7 +1796,7 @@ static INT_PTR CALLBACK hosts_add_dlg_proc(HWND dlg, UINT msg, WPARAM wParam,
 		SetWindowLongPtr(dlg, DWLP_USER, lParam);
 
 		// 追加・置き換えとも init_hosts_dlg を呼んでいるので、その前にセットする必要がある
-		SetI18nDlgStrs("TTSSH", dlg, text_info, _countof(text_info), pvar->ts->UILanguageFile);
+		SetI18DlgStrs("TTSSH", dlg, text_info, _countof(text_info), pvar->ts->UILanguageFile);
 
 		switch (pvar->dns_key_check) {
 		case DNS_VERIFY_NOTFOUND:
@@ -1902,7 +1934,7 @@ canceled:
 static INT_PTR CALLBACK hosts_replace_dlg_proc(HWND dlg, UINT msg, WPARAM wParam,
 											   LPARAM lParam)
 {
-	static const DlgTextInfo text_info[] = {
+	const static DlgTextInfo text_info[] = {
 		{ 0, "DLG_UNKNOWNHOST_TITLE" },
 		{ IDC_HOSTWARNING, "DLG_DIFFERENTKEY_WARNING" },
 		{ IDC_HOSTWARNING2, "DLG_DIFFERENTKEY_WARNING2" },
@@ -1921,7 +1953,7 @@ static INT_PTR CALLBACK hosts_replace_dlg_proc(HWND dlg, UINT msg, WPARAM wParam
 		SetWindowLongPtr(dlg, DWLP_USER, lParam);
 
 		// 追加・置き換えとも init_hosts_dlg を呼んでいるので、その前にセットする必要がある
-		SetI18nDlgStrs("TTSSH", dlg, text_info, _countof(text_info), pvar->ts->UILanguageFile);
+		SetI18DlgStrs("TTSSH", dlg, text_info, _countof(text_info), pvar->ts->UILanguageFile);
 
 		switch (pvar->dns_key_check) {
 		case DNS_VERIFY_NOTFOUND:
@@ -2057,7 +2089,7 @@ canceled:
 static INT_PTR CALLBACK hosts_add2_dlg_proc(HWND dlg, UINT msg, WPARAM wParam,
 											LPARAM lParam)
 {
-	static const DlgTextInfo text_info[] = {
+	const static DlgTextInfo text_info[] = {
 		{ 0, "DLG_DIFFERENTTYPEKEY_TITLE" },
 		{ IDC_HOSTWARNING, "DLG_DIFFERENTTYPEKEY_WARNING" },
 		{ IDC_HOSTWARNING2, "DLG_DIFFERENTTYPEKEY_WARNING2" },
@@ -2076,7 +2108,7 @@ static INT_PTR CALLBACK hosts_add2_dlg_proc(HWND dlg, UINT msg, WPARAM wParam,
 		SetWindowLongPtr(dlg, DWLP_USER, lParam);
 
 		// 追加・置き換えとも init_hosts_dlg を呼んでいるので、その前にセットする必要がある
-		SetI18nDlgStrs("TTSSH", dlg, text_info, _countof(text_info), pvar->ts->UILanguageFile);
+		SetI18DlgStrs("TTSSH", dlg, text_info, _countof(text_info), pvar->ts->UILanguageFile);
 
 		switch (pvar->dns_key_check) {
 		case DNS_VERIFY_NOTFOUND:
@@ -2454,5 +2486,3 @@ void HOSTS_end(PTInstVar pvar)
 		free(pvar->hosts_state.file_names);
 	}
 }
-
-/* vim: set ts=4 sw=4 ff=dos : */

@@ -1,73 +1,42 @@
-﻿set(PACKAGE_NAME "TTXProxy")
+﻿project(ttproxy)
 
-project(${PACKAGE_NAME})
+if(USE_UNICODE_API)
+  add_definitions(-DUNICODE -D_UNICODE)
+endif()
+
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/")
 
 include(${CMAKE_CURRENT_SOURCE_DIR}/../libs/lib_openssl.cmake)
 
-add_library(
-  ${PACKAGE_NAME} SHARED
-  Hooker.h
-  Logger.h
-  ProxyWSockHook.h
-  resource.h
-  SSLLIB.h
-  SSLSocket.h
-  StdAfx.cpp
-  StdAfx.h
-  TTProxy.cpp
-  TTProxy.h
-  TTProxy.rc
-  TTX.def
-  )
+if (MSVC)
+  set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} /DELAYLOAD:user32.dll")
+endif()
 
-if(SUPPORT_OLD_WINDOWS)
-  if(MSVC)
-    target_sources(
-      ${PACKAGE_NAME}
-      PRIVATE
-      ../../teraterm/common/compat_w95_vs2005.c
-      )
-  endif()
-  if(MINGW)
-    target_sources(
-      ${PACKAGE_NAME}
-      PRIVATE
-      ../../teraterm/libmingw/tlssup.c
-      )
-    target_link_libraries(
-      ${PACKAGE_NAME}
-      PRIVATE
-      -Wl,--whole-archive
-      mingw_msvcrt
-      -Wl,--no-whole-archive
-      )
-  endif()
-endif(SUPPORT_OLD_WINDOWS)
-
-target_sources(
-  ${PACKAGE_NAME}
-  PRIVATE
+set(COMMON_SRC
   ../teraterm/common/ttlib.h
+  ../teraterm/common/ttlib.c
   ../teraterm/common/i18n.h
   ../teraterm/common/ttplugin.h
   ../teraterm/common/tttypes.h
   ../teraterm/common/tt-version.h
   ../teraterm/common/codeconv.h
+  ../teraterm/common/codeconv.cpp
   ../teraterm/common/dlglib.h
+  ../teraterm/common/dlglib.c
+  ../teraterm/common/dlglib_cpp.cpp
+  ../teraterm/common/dlglib_tmpl.cpp
   ../teraterm/teraterm/ttdialog.h
   ../teraterm/teraterm/ttfileio.h
   ../teraterm/teraterm/ttsetup.h
   ../teraterm/teraterm/ttwsk.h
   )
-
 source_group(
   "common"
-  REGULAR_EXPRESSION
-  "teraterm\/common\/")
+  FILES
+  ${COMMON_SRC}
+  )
 
-target_sources(
-  ${PACKAGE_NAME}
-  PRIVATE
+set(YCL_SRC
   YCL/include/YCL/Array.h
   YCL/include/YCL/ComboBoxCtrl.h
   YCL/include/YCL/common.h
@@ -90,22 +59,28 @@ target_sources(
   YCL/include/YCL/Vector.h
   YCL/include/YCL/Window.h
   )
-
 source_group(
   "YCL"
-  REGULAR_EXPRESSION
-  "YCL\/include\/")
-
-set_target_properties(
-  ${PACKAGE_NAME}
-  PROPERTIES
-  PREFIX ""
-  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/"
+  FILES
+  ${YCL_SRC}
   )
 
-target_include_directories(
-  ${PACKAGE_NAME}
-  PRIVATE
+set(SRC
+  Hooker.h
+  Logger.h
+  ProxyWSockHook.h
+  resource.h
+  SSLLIB.h
+  SSLSocket.h
+  StdAfx.cpp
+  StdAfx.h
+  TTProxy.cpp
+  TTProxy.h
+  TTProxy.rc
+  TTX.def
+  )
+
+include_directories(
   ../teraterm/teraterm
   ../teraterm/common
   YCL/include
@@ -113,10 +88,24 @@ target_include_directories(
   .
   )
 
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-uTTXBind@8")
+
+add_library(
+  ttproxy SHARED
+  ${SRC}
+  ${COMMON_SRC}
+  ${YCL_SRC}
+  )
+
+set_target_properties(
+  ttproxy
+  PROPERTIES
+  PREFIX ""
+  OUTPUT_NAME "TTXProxy"
+  )
+
 target_link_libraries(
-  ${PACKAGE_NAME}
-  PRIVATE
-  common_static
+  ttproxy
   ttpcmn
   #
   ws2_32
@@ -126,7 +115,7 @@ target_link_libraries(
   )
 
 install(
-  TARGETS ${PACKAGE_NAME}
+  TARGETS ttproxy
   RUNTIME
   DESTINATION .
   )

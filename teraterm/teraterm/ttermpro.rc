@@ -16,8 +16,10 @@
 // âpåÍ (ïƒçë) resources
 
 #if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ENU)
+#ifdef _WIN32
 LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_US
 #pragma code_page(1252)
+#endif //_WIN32
 
 /////////////////////////////////////////////////////////////////////////////
 //
@@ -51,6 +53,15 @@ BEGIN
     DEFPUSHBUTTON   "OK",IDOK,133,236,50,14
     PUSHBUTTON      "Cancel",IDCANCEL,193,236,50,14
     LTEXT           "Drop with CTRL, this dialog is displayed",IDC_DAD_NOTE,7,221,236,8
+END
+
+IDD_COMMENT_DIALOG DIALOGEX 0, 0, 239, 19
+STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Comment to Log"
+FONT 14, "System", 0, 0, 0x0
+BEGIN
+    DEFPUSHBUTTON   "OK",IDOK,201,3,32,12
+    EDITTEXT        IDC_EDIT_COMMENT,6,3,189,12,ES_AUTOHSCROLL
 END
 
 IDD_TABSHEET_GENERAL DIALOGEX 0, 0, 258, 188
@@ -108,7 +119,7 @@ BEGIN
                     "Button",BS_AUTOCHECKBOX | WS_TABSTOP,10,145,220,10
 END
 
-IDD_TABSHEET_COPYPASTE DIALOGEX 0, 0, 258, 177
+IDD_TABSHEET_COPYPASTE DIALOGEX 0, 0, 258, 194
 STYLE DS_SETFONT | DS_CONTROL | WS_CHILD | WS_SYSMENU
 FONT 8, "Tahoma", 0, 0, 0x0
 BEGIN
@@ -122,17 +133,19 @@ BEGIN
     CONTROL         "Select &only by L button",IDC_SELECT_LBUTTON,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,10,70,200,10
     CONTROL         "&Trim trailing new line character when pasting",IDC_TRIMNLCHAR,
                     "Button",BS_AUTOCHECKBOX | WS_TABSTOP,10,85,200,10
-    CONTROL         "Confirm change &paste",IDC_CONFIRM_CHANGE_PASTE,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,10,100,200,10
-    LTEXT           "&String file",IDC_CONFIRM_STRING_FILE_LABEL,22,115,68,8
-    EDITTEXT        IDC_CONFIRM_STRING_FILE,95,113,106,12,ES_AUTOHSCROLL
-    PUSHBUTTON      "...",IDC_CONFIRM_STRING_FILE_PATH,206,113,13,12
-    LTEXT           "Del&imiter characters",IDC_DELIMITER,11,128,65,10
-    EDITTEXT        IDC_DELIM_LIST,95,126,130,12,ES_AUTOHSCROLL
-    LTEXT           "P&aste delay per line",IDC_PASTEDELAY_LABEL,11,143,70,10
-    EDITTEXT        IDC_PASTEDELAY_EDIT,95,141,24,12,ES_AUTOHSCROLL | ES_NUMBER
-    LTEXT           "ms",IDC_PASTEDELAY_LABEL2,123,143,23,10
+    CONTROL         "&Normalize line break when pasting",IDC_NORMALIZE_LINEBREAK,
+                    "Button",BS_AUTOCHECKBOX | WS_TABSTOP,10,100,200,10
+    CONTROL         "Confirm change &paste",IDC_CONFIRM_CHANGE_PASTE,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,10,115,200,10
+    LTEXT           "&String file",IDC_CONFIRM_STRING_FILE_LABEL,22,130,68,8
+    EDITTEXT        IDC_CONFIRM_STRING_FILE,95,128,106,12,ES_AUTOHSCROLL
+    PUSHBUTTON      "...",IDC_CONFIRM_STRING_FILE_PATH,206,128,13,12
+    LTEXT           "Del&imiter characters",IDC_DELIMITER,11,145,65,10
+    EDITTEXT        IDC_DELIM_LIST,95,143,130,12,ES_AUTOHSCROLL
+    LTEXT           "P&aste delay per line",IDC_PASTEDELAY_LABEL,11,160,70,10
+    EDITTEXT        IDC_PASTEDELAY_EDIT,95,158,24,12,ES_AUTOHSCROLL | ES_NUMBER
+    LTEXT           "ms",IDC_PASTEDELAY_LABEL2,123,160,23,10
     CONTROL         "Ena&bling text selection when the window is activated by mouse",IDC_SELECT_ON_ACTIVATE,
-                    "Button",BS_AUTOCHECKBOX | WS_TABSTOP,10,160,229,10
+                    "Button",BS_AUTOCHECKBOX | WS_TABSTOP,10,173,229,10
 END
 
 IDD_TABSHEET_VISUAL DIALOGEX 0, 0, 258, 188
@@ -142,10 +155,10 @@ BEGIN
     LTEXT           "Window Opacity",IDC_ALPHABLEND,5,5,78,8
     LTEXT           "&Active",IDC_ALPHA_BLEND_ACTIVE_LABEL,7,17,60,12
     EDITTEXT        IDC_ALPHA_BLEND_ACTIVE,69,16,19,12,ES_AUTOHSCROLL | ES_NUMBER
-    CONTROL         "",IDC_ALPHA_BLEND_ACTIVE_TRACKBAR,"msctls_trackbar32",TBS_BOTH | TBS_NOTICKS | WS_TABSTOP,4,30,89,12
+    CONTROL         "", IDC_ALPHA_BLEND_ACTIVE_TRACKBAR, "msctls_trackbar32", WS_TABSTOP | TBS_BOTH | TBS_NOTICKS, 4, 30, 89, 12
     LTEXT           "Ina&ctive",IDC_ALPHA_BLEND_INACTIVE_LABEL,7,45,60,12
     EDITTEXT        IDC_ALPHA_BLEND_INACTIVE,69,44,19,12,ES_AUTOHSCROLL | ES_NUMBER
-    CONTROL         "",IDC_ALPHA_BLEND_INACTIVE_TRACKBAR,"msctls_trackbar32",TBS_BOTH | TBS_NOTICKS | WS_TABSTOP,4,58,89,12
+    CONTROL         "", IDC_ALPHA_BLEND_INACTIVE_TRACKBAR, "msctls_trackbar32", WS_TABSTOP | TBS_BOTH | TBS_NOTICKS, 4, 58, 89, 12
     GROUPBOX        "",IDC_STATIC,97,2,155,70
     CONTROL         "&Eterm lookfeel(*)",IDC_ETERM_LOOKFEEL,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,99,8,66,12
     CONTROL         "Mixed &ThemeFile to Background",IDC_MIXED_THEME_FILE,
@@ -299,7 +312,7 @@ BEGIN
     LTEXT           "Elapsed time:",IDC_PROT_ELAPSED,12,48,46,8
     RTEXT           "",IDC_PROTOELAPSEDTIME,60,48,70,8
     RTEXT           "",IDC_PROTOPERCENT,104,61,26,8,0,WS_EX_TRANSPARENT
-    CONTROL         "",IDC_PROTOPROGRESS,"msctls_progress32",PBS_SMOOTH | NOT WS_VISIBLE | WS_BORDER,12,58,92,14,WS_EX_TRANSPARENT
+    CONTROL         "",IDC_PROTOPROGRESS,"msctls_progress32",NOT WS_VISIBLE | WS_BORDER | 0x1,12,58,92,14,WS_EX_TRANSPARENT
     DEFPUSHBUTTON   "Cancel",IDCANCEL,51,77,40,14
 END
 
@@ -344,28 +357,6 @@ BEGIN
     EDITTEXT        IDC_SSH_SETUPDIR_EDIT_VSTORE,68,179,251,14,ES_AUTOHSCROLL | ES_READONLY
 END
 
-IDD_SENDFILEDLG DIALOGEX 0, 0, 271, 188
-STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
-CAPTION "Send file"
-FONT 8, "MS Shell Dlg", 400, 0, 0x1
-BEGIN
-    LTEXT           "&Filename (drop file in this dialog)",IDC_SENDFILE_FILENAME_TITLE,9,7,172,8
-    EDITTEXT        IDC_SENDFILE_FILENAME_EDIT,18,21,224,14,ES_AUTOHSCROLL
-    PUSHBUTTON      "...",IDC_SENDFILE_FILENAME_BUTTON,245,21,14,14
-    CONTROL         "Send in same way as Tera Term 4",IDC_SENDFILE_CHECK_4,
-                    "Button",BS_AUTOCHECKBOX | WS_TABSTOP,9,42,124,10
-    CONTROL         "&Binary",IDC_SENDFILE_CHECK_BINARY,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,9,59,72,10
-    LTEXT           "delay type",IDC_SENDFILE_DELAYTYPE_LABEL,9,76,74,11
-    COMBOBOX        IDC_SENDFILE_DELAYTYPE_DROPDOWN,18,90,64,53,CBS_DROPDOWNLIST | CBS_SORT | WS_VSCROLL | WS_TABSTOP
-    LTEXT           "send size(bytes)",IDC_SENDFILE_SEND_SIZE_LABEL,9,107,75,8
-    COMBOBOX        IDC_SENDFILE_SEND_SIZE_DROPDOWN,18,121,65,47,CBS_DROPDOWN | CBS_SORT | WS_VSCROLL | WS_TABSTOP
-    LTEXT           "delay time(ms)",IDC_SENDFILE_DELAYTIME_LABEL,9,139,75,8
-    EDITTEXT        IDC_SENDFILE_DELAYTIME_EDIT,18,154,40,14,ES_AUTOHSCROLL
-    PUSHBUTTON      "Help",IDHELP,104,166,50,14
-    DEFPUSHBUTTON   "OK",IDOK,160,166,50,14
-    PUSHBUTTON      "Cancel",IDCANCEL,215,166,50,14
-END
-
 
 /////////////////////////////////////////////////////////////////////////////
 //
@@ -373,7 +364,7 @@ END
 //
 
 #ifdef APSTUDIO_INVOKED
-GUIDELINES DESIGNINFO
+GUIDELINES DESIGNINFO 
 BEGIN
     IDD_DAD_DIALOG, DIALOG
     BEGIN
@@ -381,6 +372,13 @@ BEGIN
         RIGHTMARGIN, 243
         TOPMARGIN, 6
         BOTTOMMARGIN, 250
+    END
+
+    IDD_COMMENT_DIALOG, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 17
     END
 
     IDD_TABSHEET_GENERAL, DIALOG
@@ -404,7 +402,7 @@ BEGIN
         LEFTMARGIN, 5
         RIGHTMARGIN, 252
         TOPMARGIN, 5
-        BOTTOMMARGIN, 172
+        BOTTOMMARGIN, 191
     END
 
     IDD_TABSHEET_VISUAL, DIALOG
@@ -444,10 +442,6 @@ BEGIN
         BOTTOMMARGIN, 80
     END
 
-    IDD_PROTDLG, DIALOG
-    BEGIN
-    END
-
     IDD_CLIPBOARD_DIALOG, DIALOG
     BEGIN
         LEFTMARGIN, 5
@@ -462,13 +456,6 @@ BEGIN
         RIGHTMARGIN, 362
         TOPMARGIN, 7
         BOTTOMMARGIN, 204
-    END
-
-    IDD_SENDFILEDLG, DIALOG
-    BEGIN
-        VERTGUIDE, 9
-        VERTGUIDE, 18
-        BOTTOMMARGIN, 180
     END
 END
 #endif    // APSTUDIO_INVOKED
@@ -508,28 +495,20 @@ END
 // Icon with lowest ID value placed first to ensure application icon
 // remains consistent on all systems.
 IDI_TTERM               ICON                    "../common/teraterm.ico"
-
 IDI_VT                  ICON                    "../common/vt.ico"
-
 IDI_TEK                 ICON                    "../common/tek.ico"
-
 IDI_TTERM_CLASSIC       ICON                    "../common/teraterm_classic.ico"
-
 IDI_VT_CLASSIC          ICON                    "../common/vt_classic.ico"
-
 IDI_TTERM_3D            ICON                    "../common/teraterm_3d.ico"
-
 IDI_VT_3D               ICON                    "../common/vt_3d.ico"
-
 IDI_CYGTERM             ICON                    "../../cygterm/cygterm.ico"
-
 
 /////////////////////////////////////////////////////////////////////////////
 //
 // Menu
 //
 
-IDR_MENU MENU
+IDR_MENU MENU 
 BEGIN
     POPUP "&File"
     BEGIN
@@ -649,7 +628,7 @@ BEGIN
     END
 END
 
-IDR_TEKMENU MENU
+IDR_TEKMENU MENU 
 BEGIN
     POPUP "&File"
     BEGIN
@@ -680,7 +659,7 @@ BEGIN
     END
 END
 
-IDR_PASTEMENU MENU
+IDR_PASTEMENU MENU 
 BEGIN
     MENUITEM "&Paste",                      ID_EDIT_PASTE2
     MENUITEM "Paste<C&R>",                  ID_EDIT_PASTECR
@@ -692,7 +671,7 @@ END
 // Accelerator
 //
 
-IDR_ACC ACCELERATORS
+IDR_ACC ACCELERATORS 
 BEGIN
     "T",            ID_ACC_AREYOUTHERE,     VIRTKEY, ALT, NOINVERT
     "C",            ID_ACC_COPY,            VIRTKEY, ALT, NOINVERT

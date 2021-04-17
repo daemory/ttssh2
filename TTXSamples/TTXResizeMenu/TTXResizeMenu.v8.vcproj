@@ -61,7 +61,7 @@
 			/>
 			<Tool
 				Name="VCLinkerTool"
-				AdditionalDependencies="&quot;$(SolutionDir)..\teraterm\$(ConfigurationName)\common_static.lib&quot; &quot;$(SolutionDir)..\teraterm\$(ConfigurationName)\ttpcmn.lib&quot; user32.lib"
+				AdditionalDependencies="&quot;$(SolutionDir)..\teraterm\$(ConfigurationName)\ttpcmn.lib&quot; user32.lib"
 				LinkIncremental="2"
 				DelayLoadDLLs="user32.dll"
 				GenerateDebugInformation="true"
@@ -137,7 +137,7 @@
 			/>
 			<Tool
 				Name="VCLinkerTool"
-				AdditionalDependencies="&quot;$(SolutionDir)..\teraterm\$(ConfigurationName)\common_static.lib&quot; &quot;$(SolutionDir)..\teraterm\$(ConfigurationName)\ttpcmn.lib&quot; user32.lib"
+				AdditionalDependencies="&quot;$(SolutionDir)..\teraterm\$(ConfigurationName)\ttpcmn.lib&quot; user32.lib"
 				LinkIncremental="1"
 				DelayLoadDLLs="user32.dll"
 				GenerateDebugInformation="true"
@@ -180,10 +180,6 @@
 			Filter="cpp;c;cc;cxx;def;odl;idl;hpj;bat;asm;asmx"
 			UniqueIdentifier="{4FC737F1-C7A5-4376-A066-2A32D752A2FF}"
 			>
-			<File
-				RelativePath="..\..\teraterm\common\compat_w95_vs2005.c"
-				>
-			</File>
 			<File
 				RelativePath="TTXResizeMenu.c"
 				>

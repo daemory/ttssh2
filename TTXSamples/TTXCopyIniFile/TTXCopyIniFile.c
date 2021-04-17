@@ -6,6 +6,8 @@
 #include <string.h>
 #include <windows.h>
 
+#include "compat_w95.h"
+
 #define ORDER 9999
 
 static HANDLE hInst; /* Instance handle of TTX*.DLL */
@@ -84,6 +86,7 @@ BOOL WINAPI DllMain(HANDLE hInstance,
 			break;
 		case DLL_PROCESS_ATTACH:
 			/* do process initialization */
+			DoCover_IsDebuggerPresent();
 			hInst = hInstance;
 			pvar = &InstVar;
 			break;

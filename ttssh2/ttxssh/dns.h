@@ -29,6 +29,8 @@
 #ifndef __TTSSH_DNS_H
 #define __TTSSH_DNS_H
 
+#include <windns.h>
+
 #define DNS_TYPE_SSHFP	44
 
 enum sshfp_types {

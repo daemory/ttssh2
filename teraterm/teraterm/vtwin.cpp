@@ -45,6 +45,7 @@
 #include "ttime.h"
 #include "commlib.h"
 #include "clipboar.h"
+#include "ttftypes.h"
 #include "filesys.h"
 #include "telnet.h"
 #include "tektypes.h"
@@ -57,24 +58,23 @@
 #include <ws2tcpip.h>
 #include "ttplug.h"  /* TTPLUG */
 #include "teraterml.h"
-#include "buffer.h"
 
 #include <stdio.h>
-#define _CRTDBG_MAP_ALLOC
 #include <stdlib.h>
-#include <crtdbg.h>
 #include <string.h>
 #include <locale.h>
+#include <tchar.h>
 
 #include <shlobj.h>
 #include <io.h>
 #include <errno.h>
+#include <imagehlp.h>
+#include <crtdbg.h>
 
 #include <windowsx.h>
 #include <imm.h>
 #include <dbt.h>
 #include <assert.h>
-#include <wchar.h>
 
 #include "tt_res.h"
 #include "vtwin.h"
@@ -85,28 +85,52 @@
 #include "tekwin.h"
 #include <htmlhelp.h>
 #include "compat_win.h"
-#include "unicode_test.h"
-#if UNICODE_DEBUG
 #include "tipwin.h"
-#endif
-#include "codeconv.h"
-#include "layer_for_unicode.h"
-#include "sendmem.h"
-#include "sendfiledlg.h"
-#include "setting.h"
-#include "broadcast.h"
-#include "asprintf.h"
-#include "teraprn.h"
 
 #include "initguid.h"
 //#include "Usbiodef.h"
 DEFINE_GUID(GUID_DEVINTERFACE_USB_DEVICE, 0xA5DCBF10L, 0x6530, 0x11D2, 0x90, 0x1F, 0x00, \
              0xC0, 0x4F, 0xB9, 0x51, 0xED);
 
-#define VTClassName L"VTWin32"
+#define VTClassName _T("VTWin32")
+
+#undef SetDlgItemText
+#define SetDlgItemText SetDlgItemTextA
+#undef CreateProcess
+#define CreateProcess CreateProcessA
+#undef STARTUPINFO
+#define STARTUPINFO STARTUPINFOA
+#undef GetStartupInfo
+#define GetStartupInfo GetStartupInfoA
+
+#if defined(UNICODE)
+#define CreateProcessT CreateProcessW
+#define GetStartupInfoT GetStartupInfoW
+#define STARTUPINFOT STARTUPINFOW
+#define SetDlgItemTextT SetDlgItemTextW
+#else
+#define CreateProcessT CreateProcessA
+#define GetStartupInfoT GetStartupInfoA
+#define STARTUPINFOT STARTUPINFOA
+#define SetDlgItemTextT SetDlgItemTextA
+#endif
+
+#ifdef _DEBUG
+#define malloc(l)	_malloc_dbg((l), _NORMAL_BLOCK, __FILE__, __LINE__)
+#define free(p)		_free_dbg((p), _NORMAL_BLOCK)
+#if defined(_MSC_VER)
+#define new  		::new(_NORMAL_BLOCK, __FILE__, __LINE__)
+#endif
+#endif
 
 // ウィンドウ最大化ボタンを有効にする (2005.1.15 yutaka)
 #define WINDOW_MAXMIMUM_ENABLED 1
+
+// WM_COPYDATAによるプロセス間通信の種別 (2005.1.22 yutaka)
+#define IPC_BROADCAST_COMMAND 1      // 全端末へ送信
+#define IPC_MULTICAST_COMMAND 2      // 任意の端末群へ送信
+
+#define BROADCAST_LOGFILE "broadcast.log"
 
 static BOOL TCPLocalEchoUsed = FALSE;
 static BOOL TCPCRSendUsed = FALSE;
@@ -121,8 +145,10 @@ static int AutoDisconnectedPort = -1;
 #define WM_IME_COMPOSITION              0x010F
 #endif
 
-UnicodeDebugParam_t UnicodeDebugParam;
-extern "C" PrintFile *PrintFile_;
+static BOOL SendScpDoing;
+static TCHAR **DropListsSendScp;
+static int DropListCountSendScp;
+static int DropListsSendScpIndex;
 
 /////////////////////////////////////////////////////////////////////////////
 // CVTWindow
@@ -222,6 +248,206 @@ void SetAutoConnectPort(int port)
 	AutoDisconnectedPort = port;
 }
 
+//
+// 例外ハンドラのフック（スタックトレースのダンプ）
+//
+// cf. http://svn.collab.net/repos/svn/trunk/subversion/libsvn_subr/win32_crashrpt.c
+// (2007.9.30 yutaka)
+//
+// 例外コードを文字列へ変換する
+#if !defined(_M_X64)
+static const char *GetExceptionString(DWORD exception)
+{
+#define EXCEPTION(x) case EXCEPTION_##x: return (#x);
+	static char buf[16];
+
+	switch (exception)
+	{
+		EXCEPTION(ACCESS_VIOLATION)
+		EXCEPTION(DATATYPE_MISALIGNMENT)
+		EXCEPTION(BREAKPOINT)
+		EXCEPTION(SINGLE_STEP)
+		EXCEPTION(ARRAY_BOUNDS_EXCEEDED)
+		EXCEPTION(FLT_DENORMAL_OPERAND)
+		EXCEPTION(FLT_DIVIDE_BY_ZERO)
+		EXCEPTION(FLT_INEXACT_RESULT)
+		EXCEPTION(FLT_INVALID_OPERATION)
+		EXCEPTION(FLT_OVERFLOW)
+		EXCEPTION(FLT_STACK_CHECK)
+		EXCEPTION(FLT_UNDERFLOW)
+		EXCEPTION(INT_DIVIDE_BY_ZERO)
+		EXCEPTION(INT_OVERFLOW)
+		EXCEPTION(PRIV_INSTRUCTION)
+		EXCEPTION(IN_PAGE_ERROR)
+		EXCEPTION(ILLEGAL_INSTRUCTION)
+		EXCEPTION(NONCONTINUABLE_EXCEPTION)
+		EXCEPTION(STACK_OVERFLOW)
+		EXCEPTION(INVALID_DISPOSITION)
+		EXCEPTION(GUARD_PAGE)
+		EXCEPTION(INVALID_HANDLE)
+
+	default:
+		_snprintf_s(buf, sizeof(buf), _TRUNCATE, "0x%x", exception);
+		return buf;
+		//return "UNKNOWN_ERROR";
+	}
+#undef EXCEPTION
+}
+
+/* 例外発生時に関数の呼び出し履歴を表示する、例外フィルタ関数 */
+static LONG CALLBACK ApplicationFaultHandler(EXCEPTION_POINTERS *ExInfo)
+{
+	HGLOBAL gptr;
+	STACKFRAME sf;
+	BOOL bResult;
+	PIMAGEHLP_SYMBOL pSym;
+	DWORD Disp;
+	HANDLE hProcess = GetCurrentProcess();
+	HANDLE hThread = GetCurrentThread();
+	IMAGEHLP_MODULE	ih_module;
+	IMAGEHLP_LINE	ih_line;
+	int frame;
+	char msg[3072], buf[256];
+	HMODULE h, h2;
+	char imagehlp_dll[MAX_PATH];
+
+	// Windows98/Me/NT4では動かないためスキップする。(2007.10.9 yutaka)
+	GetSystemDirectory(imagehlp_dll, sizeof(imagehlp_dll));
+	strncat_s(imagehlp_dll, sizeof(imagehlp_dll), "\\imagehlp.dll", _TRUNCATE);
+	h2 = LoadLibrary(imagehlp_dll);
+	if (((h = GetModuleHandle(imagehlp_dll)) == NULL) ||
+		(GetProcAddress(h, "SymGetLineFromAddr") == NULL)) {
+			FreeLibrary(h2);
+			goto error;
+	}
+	FreeLibrary(h2);
+
+	/* シンボル情報格納用バッファの初期化 */
+	gptr = GlobalAlloc(GMEM_FIXED, 10000);
+	if (gptr == NULL) {
+		goto error;
+	}
+	pSym = (PIMAGEHLP_SYMBOL)GlobalLock(gptr);
+	ZeroMemory(pSym, sizeof(IMAGEHLP_SYMBOL));
+	pSym->SizeOfStruct = 10000;
+	pSym->MaxNameLength = 10000 - sizeof(IMAGEHLP_SYMBOL);
+
+	/* スタックフレームの初期化 */
+	ZeroMemory(&sf, sizeof(sf));
+	sf.AddrPC.Offset = ExInfo->ContextRecord->Eip;
+	sf.AddrStack.Offset = ExInfo->ContextRecord->Esp;
+	sf.AddrFrame.Offset = ExInfo->ContextRecord->Ebp;
+	sf.AddrPC.Mode = AddrModeFlat;
+	sf.AddrStack.Mode = AddrModeFlat;
+	sf.AddrFrame.Mode = AddrModeFlat;
+
+	/* シンボルハンドラの初期化 */
+	SymInitialize(hProcess, NULL, TRUE);
+
+	// レジスタダンプ
+	msg[0] = '\0';
+	_snprintf_s(buf, sizeof(buf), _TRUNCATE, "eax=%08X ebx=%08X ecx=%08X edx=%08X esi=%08X edi=%08X\r\n"
+		   "ebp=%08X esp=%08X eip=%08X efl=%08X\r\n"
+		   "cs=%04X ss=%04X ds=%04X es=%04X fs=%04X gs=%04X\r\n",
+		   ExInfo->ContextRecord->Eax,
+		   ExInfo->ContextRecord->Ebx,
+		   ExInfo->ContextRecord->Ecx,
+		   ExInfo->ContextRecord->Edx,
+		   ExInfo->ContextRecord->Esi,
+		   ExInfo->ContextRecord->Edi,
+		   ExInfo->ContextRecord->Ebp,
+		   ExInfo->ContextRecord->Esp,
+		   ExInfo->ContextRecord->Eip,
+		   ExInfo->ContextRecord->EFlags,
+		   ExInfo->ContextRecord->SegCs,
+		   ExInfo->ContextRecord->SegSs,
+		   ExInfo->ContextRecord->SegDs,
+		   ExInfo->ContextRecord->SegEs,
+		   ExInfo->ContextRecord->SegFs,
+		   ExInfo->ContextRecord->SegGs
+	);
+	strncat_s(msg, sizeof(msg), buf, _TRUNCATE);
+
+	if (ExInfo->ExceptionRecord != NULL) {
+		_snprintf_s(buf, sizeof(buf), _TRUNCATE, "Exception: %s\r\n", GetExceptionString(ExInfo->ExceptionRecord->ExceptionCode));
+		strncat_s(msg, sizeof(msg), buf, _TRUNCATE);
+	}
+
+	/* スタックフレームを順に表示していく */
+	frame = 0;
+	for (;;) {
+		/* 次のスタックフレームの取得 */
+		bResult = StackWalk(
+			IMAGE_FILE_MACHINE_I386,
+			hProcess,
+			hThread,
+			&sf,
+			NULL,
+			NULL,
+			SymFunctionTableAccess,
+			SymGetModuleBase,
+			NULL);
+
+		/* 失敗ならば、ループを抜ける */
+		if (!bResult || sf.AddrFrame.Offset == 0)
+			break;
+
+		frame++;
+
+		/* プログラムカウンタ（仮想アドレス）から関数名とオフセットを取得 */
+		bResult = SymGetSymFromAddr(hProcess, sf.AddrPC.Offset, &Disp, pSym);
+
+		/* 取得結果を表示 */
+		_snprintf_s(buf, sizeof(buf), _TRUNCATE, "#%d  0x%08x in ", frame, sf.AddrPC.Offset);
+		strncat_s(msg, sizeof(msg), buf, _TRUNCATE);
+		if (bResult) {
+			_snprintf_s(buf, sizeof(buf), _TRUNCATE, "%s() + 0x%x ", pSym->Name, Disp);
+			strncat_s(msg, sizeof(msg), buf, _TRUNCATE);
+		} else {
+			_snprintf_s(buf, sizeof(buf), _TRUNCATE, " --- ");
+			strncat_s(msg, sizeof(msg), buf, _TRUNCATE);
+		}
+
+		// 実行ファイル名の取得
+		ZeroMemory( &(ih_module), sizeof(ih_module) );
+		ih_module.SizeOfStruct = sizeof(ih_module);
+		bResult = SymGetModuleInfo( hProcess, sf.AddrPC.Offset, &(ih_module) );
+		strncat_s(msg, sizeof(msg), "at ", _TRUNCATE);
+		if (bResult) {
+			_snprintf_s(buf, sizeof(buf), _TRUNCATE, "%s ", ih_module.ImageName );
+			strncat_s(msg, sizeof(msg), buf, _TRUNCATE);
+		} else {
+			_snprintf_s(buf, sizeof(buf), _TRUNCATE, "%s ", "<Unknown Module>" );
+			strncat_s(msg, sizeof(msg), buf, _TRUNCATE);
+		}
+
+		// ファイル名と行番号の取得
+		ZeroMemory( &(ih_line), sizeof(ih_line) );
+		ih_line.SizeOfStruct = sizeof(ih_line);
+		bResult = SymGetLineFromAddr( hProcess, sf.AddrPC.Offset, &Disp, &ih_line );
+		if (bResult)
+		{
+			_snprintf_s(buf, sizeof(buf), _TRUNCATE, "%s:%lu", ih_line.FileName, ih_line.LineNumber );
+			strncat_s(msg, sizeof(msg), buf, _TRUNCATE);
+		}
+
+		strncat_s(msg, sizeof(msg), "\n", _TRUNCATE);
+	}
+
+	/* 後処理 */
+	SymCleanup(hProcess);
+	GlobalUnlock(pSym);
+	GlobalFree(pSym);
+
+	MessageBox(NULL, msg, "Tera Term: Application fault", MB_OK | MB_ICONEXCLAMATION);
+
+error:
+//	return (EXCEPTION_EXECUTE_HANDLER);  /* そのままプロセスを終了させる */
+	return (EXCEPTION_CONTINUE_SEARCH);  /* 引き続き［アプリケーションエラー］ポップアップメッセージボックスを呼び出す */
+}
+#endif // !defined(_M_X64 )
+
+
 // Virtual Storeが有効であるかどうかを判別する。
 //
 // [Windows 95-XP]
@@ -246,7 +472,7 @@ BOOL GetVirtualStoreEnvironment(void)
 	TOKEN_ELEVATION tokenElevation;
 	LONG lRet;
 	HKEY hKey;
-	char lpData[256];
+	TCHAR lpData[256];
 	DWORD dwDataSize;
 	DWORD dwType;
 	BYTE bValue;
@@ -309,9 +535,12 @@ error:
 
 CVTWindow::CVTWindow(HINSTANCE hInstance)
 {
-	WNDCLASSW wc;
+	WNDCLASS wc;
 	RECT rect;
 	DWORD Style;
+#ifdef ALPHABLEND_TYPE2
+	DWORD ExStyle;
+#endif
 	char *Param;
 	int CmdShow;
 #ifdef SHARED_KEYMAP
@@ -321,6 +550,11 @@ CVTWindow::CVTWindow(HINSTANCE hInstance)
 	int fuLoad = LR_DEFAULTCOLOR;
 	BOOL isFirstInstance;
 	m_hInst = hInstance;
+
+	// 例外ハンドラのフック (2007.9.30 yutaka)
+#if !defined(_M_X64)
+	SetUnhandledExceptionFilter(ApplicationFaultHandler);
+#endif
 
 	CommInit(&cv);
 	isFirstInstance = StartTeraTerm(&ts);
@@ -429,27 +663,9 @@ CVTWindow::CVTWindow(HINSTANCE hInstance)
 	ScrollLock = FALSE;  // 初期値は無効 (2006.11.14 yutaka)
 	Alpha = 255;
 	IgnoreSizeMessage = FALSE;
-#if UNICODE_DEBUG
-	TipWinCodeDebug = NULL;
-#endif
-
-	// UnicodeDebugParam
-	{
-#if _DEBUG
-		UnicodeDebugParam.CodePopupEnable = TRUE;
-#else
-		UnicodeDebugParam.CodePopupEnable = FALSE;
-#endif
-		UnicodeDebugParam.CodePopupKey1 = VK_CONTROL;
-		UnicodeDebugParam.CodePopupKey2 = VK_CONTROL;
-		UnicodeDebugParam.UseUnicodeApi = FALSE;
-        UnicodeDebugParam.CodePageForANSIDraw = 932;
-	}
 
 	/* Initialize scroll buffer */
-	UnicodeDebugParam.UseUnicodeApi = IsWindowsNTKernel() ? TRUE : FALSE;
-	InitBuffer(UnicodeDebugParam.UseUnicodeApi);
-	BuffSetDispCodePage(UnicodeDebugParam.CodePageForANSIDraw);
+	InitBuffer();
 
 	InitDisp();
 
@@ -485,7 +701,7 @@ CVTWindow::CVTWindow(HINSTANCE hInstance)
 	wc.lpszMenuName = NULL;
 	wc.lpszClassName = VTClassName;
 
-	_RegisterClassW(&wc);
+	RegisterClass(&wc);
 	m_hAccel = ::LoadAccelerators(hInstance, MAKEINTRESOURCE(IDR_ACC));
 
 	if (ts.VTPos.x==CW_USEDEFAULT) {
@@ -497,7 +713,7 @@ CVTWindow::CVTWindow(HINSTANCE hInstance)
 		rect.right = rect.left + 100;
 		rect.bottom = rect.top + 100;
 	}
-	CreateW(hInstance, VTClassName, L"Tera Term", Style, rect, NULL, NULL);
+	Create(hInstance, VTClassName, _T("Tera Term"), Style, rect, NULL, NULL);
 
 	/*--------- Init2 -----------------*/
 	HVTWin = GetSafeHwnd();
@@ -514,7 +730,7 @@ CVTWindow::CVTWindow(HINSTANCE hInstance)
 #ifdef ALPHABLEND_TYPE2
 //<!--by AKASI
 	if(BGNoFrame && ts.HideTitle > 0) {
-		DWORD ExStyle = (DWORD)::GetWindowLongPtr(HVTWin,GWL_EXSTYLE);
+		ExStyle  = ::GetWindowLongPtr(HVTWin,GWL_EXSTYLE);
 		ExStyle &= ~WS_EX_CLIENTEDGE;
 		::SetWindowLongPtr(HVTWin,GWL_EXSTYLE,ExStyle);
 	}
@@ -593,10 +809,6 @@ CVTWindow::CVTWindow(HINSTANCE hInstance)
 	DropLists = NULL;
 	DropListCount = 0;
 
-#if UNICODE_DEBUG
-	CtrlKeyState = 0;
-#endif
-
 	// TipWin
 	TipWin = new CTipWin(hInstance);
 	TipWin->Create(HVTWin);
@@ -646,15 +858,11 @@ void CVTWindow::ButtonUp(BOOL Paste)
 	// バッファが選択状態だったら、選択内容がクリップボードに
 	// コピーされてしまう問題を修正 (2007.12.6 maya)
 	if (!disableBuffEndSelect) {
-		wchar_t *strW = BuffEndSelect();
-		if (strW != NULL) {
-			CBSetTextW(HVTWin, strW, 0);
-		}
+		BuffEndSelect();
 	}
 
 	if (Paste) {
 		CBStartPaste(HVTWin, FALSE, BracketedPasteMode());
-
 		// スクロール位置をリセット
 		if (WinOrgY != 0) {
 			DispVScroll(SCROLL_BOTTOM, 0);
@@ -721,7 +929,7 @@ void CVTWindow::ButtonDown(POINT p, int LMR)
 		(ts.PasteFlag & CPF_CONFIRM_RBUTTON) != 0 &&
 		cv.Ready &&
 		!mousereport &&
-		IsSendVarNULL() && IsFileVarNULL() &&
+		(SendVar==NULL) && (FileVar==NULL) &&
 		(cv.PortType!=IdFile) &&
 		(IsClipboardFormatAvailable(CF_TEXT) ||
 		 IsClipboardFormatAvailable(CF_OEMTEXT))) {
@@ -871,102 +1079,17 @@ static BOOL isLogMeTTExist()
 
 void CVTWindow::InitMenu(HMENU *Menu)
 {
-	static const DlgTextInfo MenuTextInfo[] = {
-		{ ID_FILE, "MENU_FILE" },
-		{ ID_EDIT, "MENU_EDIT" },
-		{ ID_SETUP, "MENU_SETUP" },
-		{ ID_CONTROL, "MENU_CONTROL" },
-		{ ID_HELPMENU, "MENU_HELP" },
-	};
-	static const DlgTextInfo FileMenuTextInfo[] = {
-		{ ID_FILE_NEWCONNECTION, "MENU_FILE_NEW" },
-		{ ID_FILE_DUPLICATESESSION, "MENU_FILE_DUPLICATE" },
-		{ ID_FILE_CYGWINCONNECTION, "MENU_FILE_GYGWIN" },
-		{ ID_FILE_LOG, "MENU_FILE_LOG" },
-		{ ID_FILE_COMMENTTOLOG, "MENU_FILE_COMMENTLOG" },
-		{ ID_FILE_VIEWLOG, "MENU_FILE_VIEWLOG" },
-		{ ID_FILE_SHOWLOGDIALOG, "MENU_FILE_SHOWLOGDIALOG" },
-		{ ID_FILE_PAUSELOG, "MENU_FILE_PAUSELOG" },
-		{ ID_FILE_STOPLOG, "MENU_FILE_STOPLOG" },
-		{ ID_FILE_SENDFILE, "MENU_FILE_SENDFILE" },
-		{ ID_FILE_REPLAYLOG, "MENU_FILE_REPLAYLOG" },
-		{ ID_FILE_CHANGEDIR, "MENU_FILE_CHANGEDIR" },
-		{ ID_FILE_LOGMEIN, "MENU_FILE_LOGMETT" },
-		{ ID_FILE_PRINT2, "MENU_FILE_PRINT" },
-		{ ID_FILE_DISCONNECT, "MENU_FILE_DISCONNECT" },
-		{ ID_FILE_EXIT, "MENU_FILE_EXIT" },
-		{ ID_FILE_EXITALL, "MENU_FILE_EXITALL" },
-		{ 11, "MENU_TRANS" },
-		{ ID_FILE_KERMITRCV, "MENU_TRANS_KERMIT_RCV" },
-		{ ID_FILE_KERMITGET, "MENU_TRANS_KERMIT_GET" },
-		{ ID_FILE_KERMITSEND, "MENU_TRANS_KERMIT_SEND" },
-		{ ID_FILE_KERMITFINISH, "MENU_TRANS_KERMIT_FINISH" },
-		{ ID_FILE_XRCV, "MENU_TRANS_X_RCV" },
-		{ ID_FILE_XSEND, "MENU_TRANS_X_SEND" },
-		{ ID_FILE_YRCV, "MENU_TRANS_Y_RCV" },
-		{ ID_FILE_YSEND, "MENU_TRANS_Y_SEND" },
-		{ ID_FILE_ZRCV, "MENU_TRANS_Z_RCV" },
-		{ ID_FILE_ZSEND, "MENU_TRANS_Z_SEND" },
-		{ ID_FILE_BPRCV, "MENU_TRANS_BP_RCV" },
-		{ ID_FILE_BPSEND, "MENU_TRANS_BP_SEND" },
-		{ ID_FILE_QVRCV, "MENU_TRANS_QV_RCV" },
-		{ ID_FILE_QVSEND, "MENU_TRANS_QV_SEND" },
-	};
-	static const DlgTextInfo EditMenuTextInfo[] = {
-		{ ID_EDIT_COPY2, "MENU_EDIT_COPY" },
-		{ ID_EDIT_COPYTABLE, "MENU_EDIT_COPYTABLE" },
-		{ ID_EDIT_PASTE2, "MENU_EDIT_PASTE" },
-		{ ID_EDIT_PASTECR, "MENU_EDIT_PASTECR" },
-		{ ID_EDIT_CLEARSCREEN, "MENU_EDIT_CLSCREEN" },
-		{ ID_EDIT_CLEARBUFFER, "MENU_EDIT_CLBUFFER" },
-		{ ID_EDIT_CANCELSELECT, "MENU_EDIT_CANCELSELECT" },
-		{ ID_EDIT_SELECTSCREEN, "MENU_EDIT_SELECTSCREEN" },
-		{ ID_EDIT_SELECTALL, "MENU_EDIT_SELECTALL" },
-	};
-	static const DlgTextInfo SetupMenuTextInfo[] = {
-		{ ID_SETUP_TERMINAL, "MENU_SETUP_TERMINAL" },
-		{ ID_SETUP_WINDOW, "MENU_SETUP_WINDOW" },
-		{ ID_SETUP_FONT, "MENU_SETUP_FONT" },
-		{ ID_SETUP_DLG_FONT, "MENU_SETUP_DIALOG_FONT" },
-		{ 2, "MENU_SETUP_FONT_SUBMENU" },
-		{ ID_SETUP_KEYBOARD, "MENU_SETUP_KEYBOARD" },
-		{ ID_SETUP_SERIALPORT, "MENU_SETUP_SERIALPORT" },
-		{ ID_SETUP_TCPIP, "MENU_SETUP_TCPIP" },
-		{ ID_SETUP_GENERAL, "MENU_SETUP_GENERAL" },
-		{ ID_SETUP_ADDITIONALSETTINGS, "MENU_SETUP_ADDITION" },
-		{ ID_SETUP_SAVE, "MENU_SETUP_SAVE" },
-		{ ID_SETUP_RESTORE, "MENU_SETUP_RESTORE" },
-		{ ID_OPEN_SETUP, "MENU_SETUP_OPENSETUP" },
-		{ ID_SETUP_LOADKEYMAP, "MENU_SETUP_LOADKEYMAP" },
-	};
-	static const DlgTextInfo ControlMenuTextInfo[] = {
-		{ ID_CONTROL_RESETTERMINAL, "MENU_CONTROL_RESET" },
-		{ ID_CONTROL_RESETREMOTETITLE, "MENU_CONTROL_RESETTITLE" },
-		{ ID_CONTROL_AREYOUTHERE, "MENU_CONTROL_AREYOUTHERE" },
-		{ ID_CONTROL_SENDBREAK, "MENU_CONTROL_SENDBREAK" },
-		{ ID_CONTROL_RESETPORT, "MENU_CONTROL_RESETPORT" },
-		{ ID_CONTROL_BROADCASTCOMMAND, "MENU_CONTROL_BROADCAST" },
-		{ ID_CONTROL_OPENTEK, "MENU_CONTROL_OPENTEK" },
-		{ ID_CONTROL_CLOSETEK, "MENU_CONTROL_CLOSETEK" },
-		{ ID_CONTROL_MACRO, "MENU_CONTROL_MACRO" },
-		{ ID_CONTROL_SHOW_MACRO, "MENU_CONTROL_SHOW_MACRO" },
-	};
-	static const DlgTextInfo HelpMenuTextInfo[] = {
-		{ ID_HELP_INDEX2, "MENU_HELP_INDEX" },
-		{ ID_HELP_ABOUT, "MENU_HELP_ABOUT" },
-	};
+	*Menu = LoadMenu(m_hInst,
+	                 MAKEINTRESOURCE(IDR_MENU));
+	char uimsg[MAX_UIMSG];
+	int ret;
 
-	HMENU hMenu = LoadMenu(m_hInst, MAKEINTRESOURCE(IDR_MENU));
-	*Menu = hMenu;
-
-	FileMenu = GetSubMenu(hMenu,ID_FILE);
+	FileMenu = GetSubMenu(*Menu,ID_FILE);
 	TransMenu = GetSubMenu(FileMenu,ID_TRANSFER);
-	EditMenu = GetSubMenu(hMenu,ID_EDIT);
-	SetupMenu = GetSubMenu(hMenu,ID_SETUP);
-	ControlMenu = GetSubMenu(hMenu,ID_CONTROL);
-	HelpMenu = GetSubMenu(hMenu,ID_HELPMENU);
-
-	SetDlgMenuTexts(hMenu, MenuTextInfo, _countof(MenuTextInfo), ts.UILanguageFile);
+	EditMenu = GetSubMenu(*Menu,ID_EDIT);
+	SetupMenu = GetSubMenu(*Menu,ID_SETUP);
+	ControlMenu = GetSubMenu(*Menu,ID_CONTROL);
+	HelpMenu = GetSubMenu(*Menu,ID_HELPMENU);
 
 	/* LogMeTT の存在を確認してメニューを追加する */
 	if (isLogMeTTExist()) {
@@ -975,23 +1098,247 @@ void CVTWindow::InitMenu(HMENU *Menu)
 		::InsertMenu(FileMenu, ID_FILE_PRINT2, MF_SEPARATOR, NULL, NULL);
 	}
 
-	SetDlgMenuTexts(FileMenu, FileMenuTextInfo, _countof(FileMenuTextInfo), ts.UILanguageFile);
-	SetDlgMenuTexts(EditMenu, EditMenuTextInfo, _countof(EditMenuTextInfo), ts.UILanguageFile);
-	SetDlgMenuTexts(SetupMenu, SetupMenuTextInfo, _countof(SetupMenuTextInfo), ts.UILanguageFile);
-	SetDlgMenuTexts(ControlMenu, ControlMenuTextInfo, _countof(ControlMenuTextInfo), ts.UILanguageFile);
-	SetDlgMenuTexts(HelpMenu, HelpMenuTextInfo, _countof(HelpMenuTextInfo), ts.UILanguageFile);
+	GetMenuString(*Menu, ID_FILE, uimsg, sizeof(uimsg), MF_BYPOSITION);
+	get_lang_msg("MENU_FILE", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(*Menu, ID_FILE, MF_BYPOSITION, ID_FILE, ts.UIMsg);
+	GetMenuString(FileMenu, ID_FILE_NEWCONNECTION, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("MENU_FILE_NEW", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(FileMenu, ID_FILE_NEWCONNECTION, MF_BYCOMMAND, ID_FILE_NEWCONNECTION, ts.UIMsg);
+	GetMenuString(FileMenu, ID_FILE_DUPLICATESESSION, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("MENU_FILE_DUPLICATE", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(FileMenu, ID_FILE_DUPLICATESESSION, MF_BYCOMMAND, ID_FILE_DUPLICATESESSION, ts.UIMsg);
+	GetMenuString(FileMenu, ID_FILE_CYGWINCONNECTION, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("MENU_FILE_GYGWIN", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(FileMenu, ID_FILE_CYGWINCONNECTION, MF_BYCOMMAND, ID_FILE_CYGWINCONNECTION, ts.UIMsg);
+	GetMenuString(FileMenu, ID_FILE_LOG, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("MENU_FILE_LOG", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(FileMenu, ID_FILE_LOG, MF_BYCOMMAND, ID_FILE_LOG, ts.UIMsg);
+	GetMenuString(FileMenu, ID_FILE_COMMENTTOLOG, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("MENU_FILE_COMMENTLOG", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(FileMenu, ID_FILE_COMMENTTOLOG, MF_BYCOMMAND, ID_FILE_COMMENTTOLOG, ts.UIMsg);
+	GetMenuString(FileMenu, ID_FILE_VIEWLOG, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("MENU_FILE_VIEWLOG", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(FileMenu, ID_FILE_VIEWLOG, MF_BYCOMMAND, ID_FILE_VIEWLOG, ts.UIMsg);
+	GetMenuString(FileMenu, ID_FILE_SHOWLOGDIALOG, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("MENU_FILE_SHOWLOGDIALOG", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(FileMenu, ID_FILE_SHOWLOGDIALOG, MF_BYCOMMAND, ID_FILE_SHOWLOGDIALOG, ts.UIMsg);
+	GetMenuString(FileMenu, ID_FILE_PAUSELOG, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("MENU_FILE_PAUSELOG", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(FileMenu, ID_FILE_PAUSELOG, MF_BYCOMMAND, ID_FILE_PAUSELOG, ts.UIMsg);
+	GetMenuString(FileMenu, ID_FILE_STOPLOG, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("MENU_FILE_STOPLOG", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(FileMenu, ID_FILE_STOPLOG, MF_BYCOMMAND, ID_FILE_STOPLOG, ts.UIMsg);
+	GetMenuString(FileMenu, ID_FILE_SENDFILE, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("MENU_FILE_SENDFILE", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(FileMenu, ID_FILE_SENDFILE, MF_BYCOMMAND, ID_FILE_SENDFILE, ts.UIMsg);
+	GetMenuString(FileMenu, ID_FILE_REPLAYLOG, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("MENU_FILE_REPLAYLOG", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(FileMenu, ID_FILE_REPLAYLOG, MF_BYCOMMAND, ID_FILE_REPLAYLOG, ts.UIMsg);
+	GetMenuString(FileMenu, ID_FILE_CHANGEDIR, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("MENU_FILE_CHANGEDIR", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(FileMenu, ID_FILE_CHANGEDIR, MF_BYCOMMAND, ID_FILE_CHANGEDIR, ts.UIMsg);
+	ret = GetMenuString(FileMenu, ID_FILE_LOGMEIN, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	if (ret != 0) {
+		get_lang_msg("MENU_FILE_LOGMETT", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+		ModifyMenu(FileMenu, ID_FILE_LOGMEIN, MF_BYCOMMAND, ID_FILE_LOGMEIN, ts.UIMsg);
+	}
+	GetMenuString(FileMenu, ID_FILE_PRINT2, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("MENU_FILE_PRINT", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(FileMenu, ID_FILE_PRINT2, MF_BYCOMMAND, ID_FILE_PRINT2, ts.UIMsg);
+	GetMenuString(FileMenu, ID_FILE_DISCONNECT, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("MENU_FILE_DISCONNECT", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(FileMenu, ID_FILE_DISCONNECT, MF_BYCOMMAND, ID_FILE_DISCONNECT, ts.UIMsg);
+	GetMenuString(FileMenu, ID_FILE_EXIT, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("MENU_FILE_EXIT", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(FileMenu, ID_FILE_EXIT, MF_BYCOMMAND, ID_FILE_EXIT, ts.UIMsg);
+	GetMenuString(FileMenu, ID_FILE_EXITALL, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("MENU_FILE_EXITALL", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(FileMenu, ID_FILE_EXITALL, MF_BYCOMMAND, ID_FILE_EXITALL, ts.UIMsg);
+
+	GetMenuString(FileMenu, 11, uimsg, sizeof(uimsg), MF_BYPOSITION);
+	get_lang_msg("MENU_TRANS", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(FileMenu, 11, MF_BYPOSITION, 11, ts.UIMsg);
+
+	GetMenuString(FileMenu, ID_FILE_KERMITRCV, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("MENU_TRANS_KERMIT_RCV", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(FileMenu, ID_FILE_KERMITRCV, MF_BYCOMMAND, ID_FILE_KERMITRCV, ts.UIMsg);
+	GetMenuString(FileMenu, ID_FILE_KERMITGET, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("MENU_TRANS_KERMIT_GET", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(FileMenu, ID_FILE_KERMITGET, MF_BYCOMMAND, ID_FILE_KERMITGET, ts.UIMsg);
+	GetMenuString(FileMenu, ID_FILE_KERMITSEND, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("MENU_TRANS_KERMIT_SEND", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(FileMenu, ID_FILE_KERMITSEND, MF_BYCOMMAND, ID_FILE_KERMITSEND, ts.UIMsg);
+	GetMenuString(FileMenu, ID_FILE_KERMITFINISH, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("MENU_TRANS_KERMIT_FINISH", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(FileMenu, ID_FILE_KERMITFINISH, MF_BYCOMMAND, ID_FILE_KERMITFINISH, ts.UIMsg);
+
+	GetMenuString(FileMenu, ID_FILE_XRCV, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("MENU_TRANS_X_RCV", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(FileMenu, ID_FILE_XRCV, MF_BYCOMMAND, ID_FILE_XRCV, ts.UIMsg);
+	GetMenuString(FileMenu, ID_FILE_XSEND, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("MENU_TRANS_X_SEND", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(FileMenu, ID_FILE_XSEND, MF_BYCOMMAND, ID_FILE_XSEND, ts.UIMsg);
+
+	GetMenuString(FileMenu, ID_FILE_YRCV, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("MENU_TRANS_Y_RCV", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(FileMenu, ID_FILE_YRCV, MF_BYCOMMAND, ID_FILE_YRCV, ts.UIMsg);
+	GetMenuString(FileMenu, ID_FILE_YSEND, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("MENU_TRANS_Y_SEND", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(FileMenu, ID_FILE_YSEND, MF_BYCOMMAND, ID_FILE_YSEND, ts.UIMsg);
+
+	GetMenuString(FileMenu, ID_FILE_ZRCV, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("MENU_TRANS_Z_RCV", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(FileMenu, ID_FILE_ZRCV, MF_BYCOMMAND, ID_FILE_ZRCV, ts.UIMsg);
+	GetMenuString(FileMenu, ID_FILE_ZSEND, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("MENU_TRANS_Z_SEND", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(FileMenu, ID_FILE_ZSEND, MF_BYCOMMAND, ID_FILE_ZSEND, ts.UIMsg);
+
+	GetMenuString(FileMenu, ID_FILE_BPRCV, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("MENU_TRANS_BP_RCV", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(FileMenu, ID_FILE_BPRCV, MF_BYCOMMAND, ID_FILE_BPRCV, ts.UIMsg);
+	GetMenuString(FileMenu, ID_FILE_BPSEND, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("MENU_TRANS_BP_SEND", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(FileMenu, ID_FILE_BPSEND, MF_BYCOMMAND, ID_FILE_BPSEND, ts.UIMsg);
+
+	GetMenuString(FileMenu, ID_FILE_QVRCV, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("MENU_TRANS_QV_RCV", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(FileMenu, ID_FILE_QVRCV, MF_BYCOMMAND, ID_FILE_QVRCV, ts.UIMsg);
+	GetMenuString(FileMenu, ID_FILE_QVSEND, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("MENU_TRANS_QV_SEND", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(FileMenu, ID_FILE_QVSEND, MF_BYCOMMAND, ID_FILE_QVSEND, ts.UIMsg);
+
+	GetMenuString(*Menu, ID_EDIT, uimsg, sizeof(uimsg), MF_BYPOSITION);
+	get_lang_msg("MENU_EDIT", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(*Menu, ID_EDIT, MF_BYPOSITION, ID_EDIT, ts.UIMsg);
+	GetMenuString(EditMenu, ID_EDIT_COPY2, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("MENU_EDIT_COPY", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(EditMenu, ID_EDIT_COPY2, MF_BYCOMMAND, ID_EDIT_COPY2, ts.UIMsg);
+	GetMenuString(EditMenu, ID_EDIT_COPYTABLE, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("MENU_EDIT_COPYTABLE", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(EditMenu, ID_EDIT_COPYTABLE, MF_BYCOMMAND, ID_EDIT_COPYTABLE, ts.UIMsg);
+	GetMenuString(EditMenu, ID_EDIT_PASTE2, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("MENU_EDIT_PASTE", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(EditMenu, ID_EDIT_PASTE2, MF_BYCOMMAND, ID_EDIT_PASTE2, ts.UIMsg);
+	GetMenuString(EditMenu, ID_EDIT_PASTECR, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("MENU_EDIT_PASTECR", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(EditMenu, ID_EDIT_PASTECR, MF_BYCOMMAND, ID_EDIT_PASTECR, ts.UIMsg);
+	GetMenuString(EditMenu, ID_EDIT_CLEARSCREEN, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("MENU_EDIT_CLSCREEN", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(EditMenu, ID_EDIT_CLEARSCREEN, MF_BYCOMMAND, ID_EDIT_CLEARSCREEN, ts.UIMsg);
+	GetMenuString(EditMenu, ID_EDIT_CLEARBUFFER, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("MENU_EDIT_CLBUFFER", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(EditMenu, ID_EDIT_CLEARBUFFER, MF_BYCOMMAND, ID_EDIT_CLEARBUFFER, ts.UIMsg);
+	GetMenuString(EditMenu, ID_EDIT_CANCELSELECT, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("MENU_EDIT_CANCELSELECT", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(EditMenu, ID_EDIT_CANCELSELECT, MF_BYCOMMAND, ID_EDIT_CANCELSELECT, ts.UIMsg);
+	GetMenuString(EditMenu, ID_EDIT_SELECTSCREEN, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("MENU_EDIT_SELECTSCREEN", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(EditMenu, ID_EDIT_SELECTSCREEN, MF_BYCOMMAND, ID_EDIT_SELECTSCREEN, ts.UIMsg);
+	GetMenuString(EditMenu, ID_EDIT_SELECTALL, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("MENU_EDIT_SELECTALL", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(EditMenu, ID_EDIT_SELECTALL, MF_BYCOMMAND, ID_EDIT_SELECTALL, ts.UIMsg);
+
+	GetMenuString(*Menu, ID_SETUP, uimsg, sizeof(uimsg), MF_BYPOSITION);
+	get_lang_msg("MENU_SETUP", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(*Menu, ID_SETUP, MF_BYPOSITION, ID_SETUP, ts.UIMsg);
+	GetMenuString(SetupMenu, ID_SETUP_TERMINAL, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("MENU_SETUP_TERMINAL", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(SetupMenu, ID_SETUP_TERMINAL, MF_BYCOMMAND, ID_SETUP_TERMINAL, ts.UIMsg);
+	GetMenuString(SetupMenu, ID_SETUP_WINDOW, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("MENU_SETUP_WINDOW", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(SetupMenu, ID_SETUP_WINDOW, MF_BYCOMMAND, ID_SETUP_WINDOW, ts.UIMsg);
+	GetMenuString(SetupMenu, ID_SETUP_FONT, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("MENU_SETUP_FONT", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(SetupMenu, ID_SETUP_FONT, MF_BYCOMMAND, ID_SETUP_FONT, ts.UIMsg);
+	GetMenuString(SetupMenu, ID_SETUP_DLG_FONT, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("MENU_SETUP_DIALOG_FONT", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(SetupMenu, ID_SETUP_DLG_FONT, MF_BYCOMMAND, ID_SETUP_DLG_FONT, ts.UIMsg);
+	GetMenuString(SetupMenu, 2, uimsg, sizeof(uimsg), MF_BYPOSITION);
+	get_lang_msg("MENU_SETUP_FONT_SUBMENU", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(SetupMenu, 2, MF_BYPOSITION, 2, ts.UIMsg);
+	GetMenuString(SetupMenu, ID_SETUP_KEYBOARD, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("MENU_SETUP_KEYBOARD", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(SetupMenu, ID_SETUP_KEYBOARD, MF_BYCOMMAND, ID_SETUP_KEYBOARD, ts.UIMsg);
+	GetMenuString(SetupMenu, ID_SETUP_SERIALPORT, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("MENU_SETUP_SERIALPORT", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(SetupMenu, ID_SETUP_SERIALPORT, MF_BYCOMMAND, ID_SETUP_SERIALPORT, ts.UIMsg);
+	GetMenuString(SetupMenu, ID_SETUP_TCPIP, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("MENU_SETUP_TCPIP", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(SetupMenu, ID_SETUP_TCPIP, MF_BYCOMMAND, ID_SETUP_TCPIP, ts.UIMsg);
+	GetMenuString(SetupMenu, ID_SETUP_GENERAL, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("MENU_SETUP_GENERAL", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(SetupMenu, ID_SETUP_GENERAL, MF_BYCOMMAND, ID_SETUP_GENERAL, ts.UIMsg);
+	GetMenuString(SetupMenu, ID_SETUP_ADDITIONALSETTINGS, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("MENU_SETUP_ADDITION", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(SetupMenu, ID_SETUP_ADDITIONALSETTINGS, MF_BYCOMMAND, ID_SETUP_ADDITIONALSETTINGS, ts.UIMsg);
+	GetMenuString(SetupMenu, ID_SETUP_SAVE, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("MENU_SETUP_SAVE", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(SetupMenu, ID_SETUP_SAVE, MF_BYCOMMAND, ID_SETUP_SAVE, ts.UIMsg);
+	GetMenuString(SetupMenu, ID_SETUP_RESTORE, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("MENU_SETUP_RESTORE", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(SetupMenu, ID_SETUP_RESTORE, MF_BYCOMMAND, ID_SETUP_RESTORE, ts.UIMsg);
+	GetMenuString(SetupMenu, ID_OPEN_SETUP, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("MENU_SETUP_OPENSETUP", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(SetupMenu, ID_OPEN_SETUP, MF_BYCOMMAND, ID_OPEN_SETUP, ts.UIMsg);
+	GetMenuString(SetupMenu, ID_SETUP_LOADKEYMAP, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("MENU_SETUP_LOADKEYMAP", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(SetupMenu, ID_SETUP_LOADKEYMAP, MF_BYCOMMAND, ID_SETUP_LOADKEYMAP, ts.UIMsg);
+
+	GetMenuString(*Menu, ID_CONTROL, uimsg, sizeof(uimsg), MF_BYPOSITION);
+	get_lang_msg("MENU_CONTROL", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(*Menu, ID_CONTROL, MF_BYPOSITION, ID_CONTROL, ts.UIMsg);
+	GetMenuString(ControlMenu, ID_CONTROL_RESETTERMINAL, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("MENU_CONTROL_RESET", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(ControlMenu, ID_CONTROL_RESETTERMINAL, MF_BYCOMMAND, ID_CONTROL_RESETTERMINAL, ts.UIMsg);
+	GetMenuString(ControlMenu, ID_CONTROL_RESETREMOTETITLE, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("MENU_CONTROL_RESETTITLE", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(ControlMenu, ID_CONTROL_RESETREMOTETITLE, MF_BYCOMMAND, ID_CONTROL_RESETREMOTETITLE, ts.UIMsg);
+	GetMenuString(ControlMenu, ID_CONTROL_AREYOUTHERE, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("MENU_CONTROL_AREYOUTHERE", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(ControlMenu, ID_CONTROL_AREYOUTHERE, MF_BYCOMMAND, ID_CONTROL_AREYOUTHERE, ts.UIMsg);
+	GetMenuString(ControlMenu, ID_CONTROL_SENDBREAK, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("MENU_CONTROL_SENDBREAK", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(ControlMenu, ID_CONTROL_SENDBREAK, MF_BYCOMMAND, ID_CONTROL_SENDBREAK, ts.UIMsg);
+	GetMenuString(ControlMenu, ID_CONTROL_RESETPORT, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("MENU_CONTROL_RESETPORT", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(ControlMenu, ID_CONTROL_RESETPORT, MF_BYCOMMAND, ID_CONTROL_RESETPORT, ts.UIMsg);
+	GetMenuString(ControlMenu, ID_CONTROL_BROADCASTCOMMAND, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("MENU_CONTROL_BROADCAST", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(ControlMenu, ID_CONTROL_BROADCASTCOMMAND, MF_BYCOMMAND, ID_CONTROL_BROADCASTCOMMAND, ts.UIMsg);
+	GetMenuString(ControlMenu, ID_CONTROL_OPENTEK, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("MENU_CONTROL_OPENTEK", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(ControlMenu, ID_CONTROL_OPENTEK, MF_BYCOMMAND, ID_CONTROL_OPENTEK, ts.UIMsg);
+	GetMenuString(ControlMenu, ID_CONTROL_CLOSETEK, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("MENU_CONTROL_CLOSETEK", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(ControlMenu, ID_CONTROL_CLOSETEK, MF_BYCOMMAND, ID_CONTROL_CLOSETEK, ts.UIMsg);
+
+	GetMenuString(ControlMenu, ID_CONTROL_MACRO, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("MENU_CONTROL_MACRO", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(ControlMenu, ID_CONTROL_MACRO, MF_BYCOMMAND, ID_CONTROL_MACRO, ts.UIMsg);
+	GetMenuString(ControlMenu, ID_CONTROL_SHOW_MACRO, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("MENU_CONTROL_SHOW_MACRO", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(ControlMenu, ID_CONTROL_SHOW_MACRO, MF_BYCOMMAND, ID_CONTROL_SHOW_MACRO, ts.UIMsg);
+
+	GetMenuString(*Menu, ID_HELPMENU, uimsg, sizeof(uimsg), MF_BYPOSITION);
+	get_lang_msg("MENU_HELP", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(*Menu, ID_HELPMENU, MF_BYPOSITION, ID_HELPMENU, ts.UIMsg);
+	GetMenuString(HelpMenu, ID_HELP_INDEX2, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("MENU_HELP_INDEX", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(HelpMenu, ID_HELP_INDEX2, MF_BYCOMMAND, ID_HELP_INDEX2, ts.UIMsg);
+	GetMenuString(HelpMenu, ID_HELP_ABOUT, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("MENU_HELP_ABOUT", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(HelpMenu, ID_HELP_ABOUT, MF_BYCOMMAND, ID_HELP_ABOUT, ts.UIMsg);
 
 	if ((ts.MenuFlag & MF_SHOWWINMENU) !=0) {
-		wchar_t uimsg[MAX_UIMSG];
 		WinMenu = CreatePopupMenu();
-		get_lang_msgW("MENU_WINDOW", uimsg, _countof(uimsg),
-					  L"&Window", ts.UILanguageFile);
-		_InsertMenuW(hMenu, ID_HELPMENU,
-					 MF_STRING | MF_ENABLED | MF_POPUP | MF_BYPOSITION,
-					 (UINT_PTR)WinMenu, uimsg);
+		get_lang_msg("MENU_WINDOW", ts.UIMsg, sizeof(ts.UIMsg),
+		             "&Window", ts.UILanguageFile);
+		::InsertMenu(*Menu,ID_HELPMENU,
+		             MF_STRING | MF_ENABLED | MF_POPUP | MF_BYPOSITION,
+		             (UINT_PTR)WinMenu, ts.UIMsg);
 	}
 
-	TTXModifyMenu(hMenu); /* TTPLUG */
+	TTXModifyMenu(*Menu); /* TTPLUG */
 }
 
 void CVTWindow::InitMenuPopup(HMENU SubMenu)
@@ -1015,8 +1362,8 @@ void CVTWindow::InitMenuPopup(HMENU SubMenu)
 			}
 		}
 
-		if ( (! cv.Ready) || (!IsSendVarNULL()) ||
-		     (!IsFileVarNULL()) || (cv.PortType==IdFile) ) {
+		if ( (! cv.Ready) || (SendVar!=NULL) ||
+		     (FileVar!=NULL) || (cv.PortType==IdFile) ) {
 			EnableMenuItem(FileMenu,ID_FILE_SENDFILE,MF_BYCOMMAND | MF_GRAYED);
 			EnableMenuItem(FileMenu,ID_TRANSFER,MF_BYPOSITION | MF_GRAYED); /* Transfer */
 			EnableMenuItem(FileMenu,ID_FILE_CHANGEDIR,MF_BYCOMMAND | MF_GRAYED);
@@ -1042,14 +1389,14 @@ void CVTWindow::InitMenuPopup(HMENU SubMenu)
 		EnableMenuItem(FileMenu,ID_FILE_LOGMEIN,MF_BYCOMMAND | MF_ENABLED);
 
 		// XXX: この位置にしないと、logがグレイにならない。 (2005.2.1 yutaka)
-		if (FLogIsOpend()) { // ログ採取モードの場合
+		if (LogVar!=NULL) { // ログ採取モードの場合
 			EnableMenuItem(FileMenu,ID_FILE_LOG,MF_BYCOMMAND | MF_GRAYED);
 			EnableMenuItem(FileMenu,ID_FILE_COMMENTTOLOG, MF_BYCOMMAND | MF_ENABLED);
 			EnableMenuItem(FileMenu,ID_FILE_VIEWLOG, MF_BYCOMMAND | MF_ENABLED);
 			EnableMenuItem(FileMenu,ID_FILE_SHOWLOGDIALOG, MF_BYCOMMAND | MF_ENABLED);
 			EnableMenuItem(FileMenu,ID_FILE_PAUSELOG, MF_BYCOMMAND | MF_ENABLED);
 			EnableMenuItem(FileMenu,ID_FILE_STOPLOG, MF_BYCOMMAND | MF_ENABLED);
-			if (FLogIsPause()) {
+			if (cv.FilePause & OpLog) {
 				CheckMenuItem(FileMenu,ID_FILE_PAUSELOG, MF_BYCOMMAND | MF_CHECKED);
 			}
 			else {
@@ -1099,7 +1446,7 @@ void CVTWindow::InitMenuPopup(HMENU SubMenu)
 			EnableMenuItem(EditMenu,ID_EDIT_COPYTABLE,MF_BYCOMMAND | MF_GRAYED);
 		}
 		if (cv.Ready &&
-		    IsSendVarNULL() && IsFileVarNULL() &&
+		    (SendVar==NULL) && (FileVar==NULL) &&
 		    (cv.PortType!=IdFile) &&
 		    (IsClipboardFormatAvailable(CF_TEXT) ||
 		    IsClipboardFormatAvailable(CF_OEMTEXT))) {
@@ -1117,7 +1464,7 @@ void CVTWindow::InitMenuPopup(HMENU SubMenu)
 		 * (ID_SETUP_SERIALPORT)のメニューが選択できないようになっていたが、
 		 * このガードを外し、シリアルポート設定ダイアログから新しい接続ができるようにする。
 		 */
-		if (!IsSendVarNULL() || !IsFileVarNULL() || Connecting) {
+		if ((SendVar!=NULL) || (FileVar!=NULL) || Connecting) {
 			EnableMenuItem(SetupMenu,ID_SETUP_SERIALPORT,MF_BYCOMMAND | MF_GRAYED);
 		}
 		else {
@@ -1127,7 +1474,7 @@ void CVTWindow::InitMenuPopup(HMENU SubMenu)
 	else if (SubMenu == ControlMenu)
 	{
 		if (cv.Ready &&
-		    IsSendVarNULL() && IsFileVarNULL()) {
+		    (SendVar==NULL) && (FileVar==NULL)) {
 			if (ts.DisableMenuSendBreak) {
 				EnableMenuItem(ControlMenu,ID_CONTROL_SENDBREAK,MF_BYCOMMAND | MF_GRAYED);
 			}
@@ -1146,7 +1493,7 @@ void CVTWindow::InitMenuPopup(HMENU SubMenu)
 			EnableMenuItem(ControlMenu,ID_CONTROL_RESETPORT,MF_BYCOMMAND | MF_GRAYED);
 		}
 
-		if (cv.Ready && cv.TelFlag && IsFileVarNULL()) {
+		if (cv.Ready && cv.TelFlag && (FileVar==NULL)) {
 			EnableMenuItem(ControlMenu,ID_CONTROL_AREYOUTHERE,MF_BYCOMMAND | MF_ENABLED);
 		}
 		else {
@@ -1160,7 +1507,7 @@ void CVTWindow::InitMenuPopup(HMENU SubMenu)
 			EnableMenuItem(ControlMenu,ID_CONTROL_CLOSETEK,MF_BYCOMMAND | MF_ENABLED);
 		}
 
-		if (DDELog || !IsFileVarNULL()) {
+		if ((ConvH!=0) || (FileVar!=NULL)) {
 			EnableMenuItem(ControlMenu,ID_CONTROL_MACRO,MF_BYCOMMAND | MF_GRAYED);
 			EnableMenuItem(ControlMenu,ID_CONTROL_SHOW_MACRO,MF_BYCOMMAND | MF_ENABLED);
 		}
@@ -1181,13 +1528,17 @@ void CVTWindow::InitMenuPopup(HMENU SubMenu)
 // added ConfirmPasteMouseRButton (2007.3.17 maya)
 void CVTWindow::InitPasteMenu(HMENU *Menu)
 {
-	static const DlgTextInfo MenuTextInfo[] = {
-		{ ID_EDIT_PASTE2, "MENU_EDIT_PASTE" },
-		{ ID_EDIT_PASTECR, "MENU_EDIT_PASTECR" },
-	};
+	char uimsg[MAX_UIMSG];
+
 	*Menu = LoadMenu(m_hInst,
 	                 MAKEINTRESOURCE(IDR_PASTEMENU));
-	SetDlgMenuTexts(*Menu, MenuTextInfo, _countof(MenuTextInfo), ts.UILanguageFile);
+
+	GetMenuString(*Menu, ID_EDIT_PASTE2, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("MENU_EDIT_PASTE", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(*Menu, ID_EDIT_PASTE2, MF_BYCOMMAND, ID_EDIT_PASTE2, ts.UIMsg);
+	GetMenuString(*Menu, ID_EDIT_PASTECR, uimsg, sizeof(uimsg), MF_BYCOMMAND);
+	get_lang_msg("MENU_EDIT_PASTECR", ts.UIMsg, sizeof(ts.UIMsg), uimsg, ts.UILanguageFile);
+	ModifyMenu(*Menu, ID_EDIT_PASTECR, MF_BYCOMMAND, ID_EDIT_PASTECR, ts.UIMsg);
 }
 
 void CVTWindow::ResetSetup()
@@ -1281,6 +1632,8 @@ void CVTWindow::SetupTerm()
 		if (cv.TelFlag && (ts.TelEcho>0)) {
 			TelChangeEcho();
 		}
+		_free_locale(cv.locale);
+		cv.locale = _create_locale(LC_ALL, cv.Locale);
 	}
 
 	if ((ts.TerminalWidth!=NumOfColumns) ||
@@ -1429,14 +1782,10 @@ void CVTWindow::OnActivate(UINT nState, HWND pWndOther, BOOL bMinimized)
 	}
 }
 
-/**
- *	キーボードから1文字入力
- *	@param	nChar	UTF-16 char(wchar_t)	IsWindowUnicode() == TRUE 時
- *					ANSI char(char)			IsWindowUnicode() == FALSE 時
- */
 void CVTWindow::OnChar(WPARAM nChar, UINT nRepCnt, UINT nFlags)
 {
 	unsigned int i;
+	char Code;
 
 	if (!KeybEnabled || (TalkStatus!=IdTalkKeyb)) {
 		return;
@@ -1446,28 +1795,17 @@ void CVTWindow::OnChar(WPARAM nChar, UINT nRepCnt, UINT nFlags)
 		::PostMessage(HVTWin,WM_SYSCHAR,nChar,MAKELONG(nRepCnt,nFlags));
 		return;
 	}
+	Code = nChar;
 
-	wchar_t u16;
-	if (IsWindowUnicode(HVTWin) == TRUE) {
-		// 入力は UTF-16
-		u16 = (wchar_t)nChar;
-	} else {
-		// 入力は ANSI
-		//		ANSI(ACP) -> UTF-32 -> UTF-16
-		const char mb_str[2] = {(char)nChar, 0};
-		unsigned int u32;
-		size_t mb_len = MBCPToUTF32(mb_str, 1, CP_ACP, &u32);
-		if (mb_len == 0) {
-			return;
-		}
-		u16 = (wchar_t)u32;
+	if ((ts.Language==IdRussian) &&
+	    ((BYTE)Code>=128)) {
+		Code = (char)RussConv(ts.RussKeyb,ts.RussClient,(BYTE)Code);
 	}
 
-	// バッファへ出力、画面へ出力
 	for (i=1 ; i<=nRepCnt ; i++) {
-		CommTextOutW(&cv,&u16,1);
+		CommTextOut(&cv,&Code,1);
 		if (ts.LocalEcho>0) {
-			CommTextEchoW(&cv,&u16,1);
+			CommTextEcho(&cv,&Code,1);
 		}
 	}
 
@@ -1477,26 +1815,8 @@ void CVTWindow::OnChar(WPARAM nChar, UINT nRepCnt, UINT nFlags)
 	}
 }
 
-LRESULT CVTWindow::OnUniChar(WPARAM wParam, LPARAM lParam)
-{
-	if (wParam == UNICODE_NOCHAR) {
-		// このメッセージをサポートしているかテストできるようにするため
-		return TRUE;
-	}
-
-	char32_t u32 = (char32_t)wParam;
-	wchar_t strW[2];
-	size_t u16_len = UTF32ToUTF16(u32, strW, _countof(strW));
-	CommTextOutW(&cv, strW, u16_len);
-	if (ts.LocalEcho > 0) {
-		CommTextEchoW(&cv, strW, u16_len);
-	}
-
-	return FALSE;
-}
-
 /* copy from ttset.c*/
-static void WriteInt2(const char *Sect, const char *Key, const char *FName, int i1, int i2)
+static void WriteInt2(PCHAR Sect, PCHAR Key, PCHAR FName, int i1, int i2)
 {
 	char Temp[32];
 	_snprintf_s(Temp, sizeof(Temp), _TRUNCATE, "%d,%d", i1, i2);
@@ -1522,22 +1842,17 @@ void CVTWindow::OnClose()
 		MessageBeep(0);
 		return;
 	}
-
+	get_lang_msg("MSG_DISCONNECT_CONF", ts.UIMsg, sizeof(ts.UIMsg),
+	             "Disconnect?", ts.UILanguageFile);
 	if (cv.Ready && (cv.PortType==IdTCPIP) &&
 	    ((ts.PortFlag & PF_CONFIRMDISCONN) != 0) &&
-	    ! CloseTT) {
-		wchar_t uimsg[MAX_UIMSG];
-		get_lang_msgW("MSG_DISCONNECT_CONF", uimsg, _countof(uimsg),
-					  L"Disconnect?", ts.UILanguageFile);
-		int result = _MessageBoxW(HVTWin, uimsg, L"Tera Term",
-								  MB_OKCANCEL | MB_ICONEXCLAMATION | MB_DEFBUTTON2);
-		if (result == IDCANCEL) {
-			return;
-		}
+	    ! CloseTT &&
+	    (::MessageBox(HVTWin, ts.UIMsg, "Tera Term",
+	     MB_OKCANCEL | MB_ICONEXCLAMATION | MB_DEFBUTTON2)==IDCANCEL)) {
+		return;
 	}
 
-	FLogClose();
-	FileSendEnd();
+	FileTransEnd(0);
 	ProtoEnd();
 
 	SaveVTPos();
@@ -1549,10 +1864,10 @@ void CVTWindow::OnAllClose()
 {
 	// 突然終了させると危険なので、かならずユーザに問い合わせを出すようにする。
 	// (2013.8.17 yutaka)
-	wchar_t uimsg[MAX_UIMSG];
-
-	get_lang_msgW("MSG_ALL_TERMINATE_CONF", uimsg, _countof(uimsg), L"Terminate ALL Tera Term(s)?", ts.UILanguageFile);
-	if (_MessageBoxW(HVTWin, uimsg, L"Tera Term", MB_OKCANCEL | MB_ICONERROR | MB_DEFBUTTON2) == IDCANCEL)
+	get_lang_msg("MSG_ALL_TERMINATE_CONF", ts.UIMsg, sizeof(ts.UIMsg),
+	             "Terminate ALL Tera Term(s)?", ts.UILanguageFile);
+	if (::MessageBox(HVTWin, ts.UIMsg, "Tera Term",
+	     MB_OKCANCEL | MB_ICONERROR | MB_DEFBUTTON2)==IDCANCEL)
 		return;
 
 	BroadcastClosingMessage(HVTWin);
@@ -1595,10 +1910,8 @@ void CVTWindow::OnDestroy()
 	while (FreeTTDLG());
 #endif
 
-#if 0
 	do { }
 	while (FreeTTFILE());
-#endif
 
 	if (HTEKWin != NULL) {
 		::DestroyWindow(HTEKWin);
@@ -1609,24 +1922,30 @@ void CVTWindow::OnDestroy()
 
 	FreeBuffer();
 
+	TTCFrameWnd::OnDestroy();
 	TTXEnd(); /* TTPLUG */
 
 	DeleteNotifyIcon(&cv);
 }
 
-static void EscapeFilename(const wchar_t *src, wchar_t *dest)
+static void EscapeFilename(const char *src, char *dest)
 {
-#define ESCAPE_CHARS	L" ;&()$!`'[]{}#^~"
-	const wchar_t *s = src;
-	wchar_t *d = dest;
+#define ESCAPE_CHARS	" ;&()$!`'[]{}#^~"
+	const char *s = src;
+	char *d = dest;
 	while (*s) {
-		wchar_t c = *s++;
-		if (c == L'\\') {
+		if (isleadbyte(*s)) { // multi-byte
+			*d++ = *s++;
+			*d++ = *s++;
+			continue;
+		}
+		char c = *s++;
+		if (c == '\\') {
 			// パスの区切りを \ -> / へ
 			*d = '/';
-		} else if (wcschr(ESCAPE_CHARS, c) != NULL) {
+		} else if (strchr(ESCAPE_CHARS, c) != NULL) {
 			// エスケープが必要な文字
-			*d++ = L'\\';
+			*d++ = '\\';
 			*d = c;
 		} else {
 			*d = c;
@@ -1636,25 +1955,36 @@ static void EscapeFilename(const wchar_t *src, wchar_t *dest)
 	*d = '\0'; // null-terminate
 }
 
-static wchar_t *GetPasteString(const wchar_t *str, bool escape)
+static void PasteString(PComVar cv, const char *str, bool escape)
 {
-	wchar_t *tmpbuf;
-	if (!escape) {
-		tmpbuf = _wcsdup(str);
-	}
-	else {
-		const size_t len = wcslen(str) * sizeof(wchar_t) * 2;
-		tmpbuf = (wchar_t *)malloc(len);
+	PCHAR ptr = (PCHAR)str;
+	char *tmpbuf = NULL;
+	if (escape) {
+		size_t len = strlen(str) * 2;
+		tmpbuf = (char *)malloc(len);
 		EscapeFilename(str, tmpbuf);
+		ptr = tmpbuf;
 	}
-	return tmpbuf;
+
+	// consoleへ送信
+	while (*ptr) {
+		CommTextOut(cv, ptr, 1);
+		if (ts.LocalEcho > 0) {
+			CommTextEcho(cv, ptr, 1);
+		}
+		ptr++;
+	}
+
+	if (tmpbuf != NULL) free(tmpbuf);
 }
 
 /* 入力はファイルのみ(フォルダは含まれない) */
-static bool SendScp(wchar_t *Filenames[], int FileCount, const char *SendDir)
+static bool SendScp(char *Filenames[], int FileCount, const char *SendDir)
 {
 	typedef int (CALLBACK *PSSH_start_scp)(char *, char *);
+	typedef int (CALLBACK *PSSH_scp_sending_status)(void);
 	static PSSH_start_scp func = NULL;
+	static PSSH_scp_sending_status func_status = NULL;
 	static HMODULE h = NULL;
 	char msg[128];
 
@@ -1673,13 +2003,31 @@ static bool SendScp(wchar_t *Filenames[], int FileCount, const char *SendDir)
 			goto scp_send_error;
 		}
 	}
-
-	for (int i = 0; i < FileCount; i++) {
-		char *FileName = ToU8W(Filenames[i]);
-		func(FileName, ts.ScpSendDir);
-		free(FileName);
+	if (func_status == NULL) {
+		func_status = (PSSH_scp_sending_status)GetProcAddress(h, "TTXScpSendingStatus");
+		if (func_status == NULL) {
+			_snprintf_s(msg, sizeof(msg), _TRUNCATE, "GetProcAddress(\"TTXScpSendingStatus\")) %d", GetLastError());
+			goto scp_send_error;
+		}
 	}
+
+	if (SendScpDoing) {
+		if (func_status()) {
+			return false;
+		} else {
+			DropListsSendScpIndex++;
+		}
+	}
+
+	func(Filenames[0], ts.ScpSendDir);
+
 	return true;
+}
+
+static void StartSendScpTimer(void)
+{
+	DropListsSendScpIndex = 0;
+	SetTimer(HVTWin, IdScpSendingTimer, 100, NULL);
 }
 
 void CVTWindow::DropListFree()
@@ -1706,8 +2054,8 @@ LRESULT CVTWindow::OnDropNotify(WPARAM ShowDialog, LPARAM lParam)
 	int FileCount = 0;
 	int DirectoryCount = 0;
 	for (int i = 0; i < DropListCount; i++) {
-		const wchar_t *FileName = DropLists[i];
-		const DWORD attr = _GetFileAttributesW(FileName);
+		const char *FileName = DropLists[i];
+		const DWORD attr = GetFileAttributes(FileName);
 		if (attr == INVALID_FILE_ATTRIBUTES) {
 			FileCount++;
 		} else if (attr & FILE_ATTRIBUTE_DIRECTORY) {
@@ -1785,7 +2133,7 @@ LRESULT CVTWindow::OnDropNotify(WPARAM ShowDialog, LPARAM lParam)
 	}
 
 	for (int i = 0; i < DropListCount; i++) {
-		const wchar_t *FileName = DropLists[i];
+		const char *FileName = DropLists[i];
 
 		if (!DoSameProcess) {
 			bool DoSameProcessNextDrop;
@@ -1821,10 +2169,30 @@ LRESULT CVTWindow::OnDropNotify(WPARAM ShowDialog, LPARAM lParam)
 			// cancel
 			break;
 		case DROP_TYPE_SEND_FILE:
-			SendMemSendFile(FileName, FALSE, SENDMEM_DELAYTYPE_NO_DELAY, 0, 0);
-			break;
 		case DROP_TYPE_SEND_FILE_BINARY:
-			SendMemSendFile(FileName, TRUE, SENDMEM_DELAYTYPE_NO_DELAY, 0, 0);
+			if (SendVar==NULL && NewFileVar(&SendVar)) {
+				HelpId = HlpFileSend;
+				strncpy_s(SendVar->FullName, sizeof(SendVar->FullName), FileName,  _TRUNCATE);
+				SendVar->DirLen = 0;
+				ts.TransBin = DropType == DROP_TYPE_SEND_FILE ? 0 : 1;
+				FileSendStart();
+#if 0
+#if 0
+				goto finish;	// send fileは連続してできない
+#else
+				{
+					LONG lCount = 0;
+					CWinApp *app = AfxGetApp();
+					while(1) {
+						if (SendVar == NULL) {
+							break;
+						}
+						app->OnIdle(lCount++);
+					}
+				}
+#endif
+#endif
+			}
 			break;
 		case DROP_TYPE_PASTE_FILENAME:
 		{
@@ -1832,16 +2200,10 @@ LRESULT CVTWindow::OnDropNotify(WPARAM ShowDialog, LPARAM lParam)
 
 			TermSendStartBracket();
 
-			wchar_t *str = GetPasteString(FileName, escape);
-			TermPasteStringNoBracket(str, wcslen(str));
-			free(str);
+			PasteString(&cv, FileName, escape);
 			if (DropListCount > 1 && i < DropListCount - 1) {
-				if (DropTypePaste & DROP_TYPE_PASTE_NEWLINE) {
-					TermPasteStringNoBracket(L"\x0d", 1);	// 改行(CR,0x0d)
-				}
-				else {
-					TermPasteStringNoBracket(L" ", 1);		// space
-				}
+				const char *separator = (DropTypePaste & DROP_TYPE_PASTE_NEWLINE) ? "\n" : " ";
+				PasteString(&cv, separator, false);
 			}
 
 			TermSendEndBracket();
@@ -1850,14 +2212,43 @@ LRESULT CVTWindow::OnDropNotify(WPARAM ShowDialog, LPARAM lParam)
 		}
 		case DROP_TYPE_SCP:
 		{
-			// send by scp
-			wchar_t **FileNames = &DropLists[i];
-			int FileCount = DoSameProcess ? DropListCount - i : 1;
-			if (!SendScp(FileNames, FileCount, ts.ScpSendDir)) {
+			// すでにSCP送信中なら何もしない。
+			if (SendScpDoing) {
+				// do nothing.
 				goto finish;
+
+			} else {
+				// 一括送信の場合はタイマー処理を行うことで、連続送信による
+				// エラーが起こらないようにする。
+				if (DoSameProcess) {
+					int j;
+
+					DropListCountSendScp = DropListCount - i;
+					DropListsSendScp = (char **)malloc(sizeof(char *) * DropListCountSendScp);
+
+					for (j = 0 ; j < DropListCountSendScp ; j++) {
+						DropListsSendScp[j] = _strdup(DropLists[j]);
+					}
+					SendScpDoing = TRUE;
+
+					StartSendScpTimer();
+					goto finish;
+
+				} else {
+					// send by scp
+					char **FileNames = &DropLists[i];
+					int FileCount = 1;
+					if (!SendScp(FileNames, FileCount, ts.ScpSendDir)) {
+						goto finish;
+					}
+					i += FileCount - 1;
+					break;
+
+				}
+
 			}
-			i += FileCount - 1;
-			break;
+
+
 		}
 		}
 	}
@@ -1870,22 +2261,18 @@ finish:
 void CVTWindow::OnDropFiles(HDROP hDropInfo)
 {
 	::SetForegroundWindow(HVTWin);
-	if (cv.Ready && IsSendVarNULL())
+	if (cv.Ready && SendVar==NULL)
 	{
 		const UINT ShowDialog =
 			((GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0) ? 1 : 0;
-		DropListCount = _DragQueryFileW(hDropInfo, -1, NULL, 0);
-		DropLists = (wchar_t **)malloc(sizeof(wchar_t *) * DropListCount);
+		DropListCount = DragQueryFile(hDropInfo, -1, NULL, 0);
+		DropLists = (char **)malloc(sizeof(char *) * DropListCount);
 
 		for (int i = 0; i < DropListCount; i++) {
-			const UINT cch = _DragQueryFileW(hDropInfo, i, NULL, 0);
-			if (cch == 0) {
-				continue;
-			}
-			wchar_t *FileName = (wchar_t *)malloc(sizeof(wchar_t) * (cch + 1));
-			_DragQueryFileW(hDropInfo,i,FileName,cch + 1);
-			FileName[cch] = '\0';
+			const UINT cch = DragQueryFile(hDropInfo, i, NULL, 0) + 1;
+			char *FileName = (char *)malloc(cch);
 			DropLists[i] = FileName;
+			DragQueryFile(hDropInfo,i,FileName,cch);
 		}
 
 		::PostMessage(HVTWin, WM_USER_DROPNOTIFY, ShowDialog, 0);
@@ -1945,53 +2332,9 @@ void CVTWindow::OnInitMenuPopup(HMENU hPopupMenu, UINT nIndex, BOOL bSysMenu)
 
 void CVTWindow::OnKeyDown(WPARAM nChar, UINT nRepCnt, UINT nFlags)
 {
-#if UNICODE_DEBUG
-	if (UnicodeDebugParam.CodePopupEnable)
-	{
-		const DWORD now = GetTickCount();
-		switch(CtrlKeyState) {
-		case 0:
-			if (nChar == UnicodeDebugParam.CodePopupKey1) {
-				CtrlKeyDownTick = now;
-				CtrlKeyState = 1;
-			}
-			break;
-		case 2:
-			if (nChar != UnicodeDebugParam.CodePopupKey2) {
-				CtrlKeyState = 0;
-				break;
-			}
-			if (now - CtrlKeyDownTick < 500 && TipWinCodeDebug == NULL) {
-				POINT pos;
-				GetCursorPos(&pos);
-				ScreenToClient(m_hWnd, &pos);
-				CodePopup(pos.x, pos.y);
-				CtrlKeyState = 3;
-			} else {
-				CtrlKeyDownTick = now;
-				CtrlKeyState = 1;
-			}
-			break;
-		case 3:
-			break;
-		default:
-			CtrlKeyState = 0;
-			break;
-		}
-	}
-	if (TipWinCodeDebug != NULL && nChar == VK_SHIFT) {
-		POINT pos;
-		GetCursorPos(&pos);
-		ScreenToClient(m_hWnd, &pos);
-		wchar_t *buf = BuffGetCharInfo(pos.x, pos.y);
-		CBSetTextW(HVTWin, buf, 0);
-		free(buf);
-		MessageBeep(MB_OK);
-		TipWinDestroy(TipWinCodeDebug);
-		TipWinCodeDebug = NULL;
-		CtrlKeyState = 0;
-	}
-#endif
+	BYTE KeyState[256];
+	MSG M;
+
 	switch (KeyDown(HVTWin,nChar,nRepCnt,nFlags & 0x1ff)) {
 	case KEYDOWN_OTHER:
 		break;
@@ -2007,14 +2350,11 @@ void CVTWindow::OnKeyDown(WPARAM nChar, UINT nRepCnt, UINT nFlags)
 
 	if (MetaKey(ts.MetaKey) && (nFlags & 0x2000) != 0)
 	{
-		BYTE KeyState[256];
-		MSG M;
-
 		PeekMessage((LPMSG)&M,HVTWin,WM_CHAR,WM_CHAR,PM_REMOVE);
 		/* for Ctrl+Alt+Key combination */
-		GetKeyboardState(KeyState);
+		GetKeyboardState((PBYTE)KeyState);
 		KeyState[VK_MENU] = 0;
-		SetKeyboardState(KeyState);
+		SetKeyboardState((PBYTE)KeyState);
 		M.hwnd = HVTWin;
 		M.message = WM_KEYDOWN;
 		M.wParam = nChar;
@@ -2027,20 +2367,6 @@ void CVTWindow::OnKeyDown(WPARAM nChar, UINT nRepCnt, UINT nFlags)
 void CVTWindow::OnKeyUp(WPARAM nChar, UINT nRepCnt, UINT nFlags)
 {
 	KeyUp(nChar);
-#if UNICODE_DEBUG
-	if (CtrlKeyState == 1 && nChar == UnicodeDebugParam.CodePopupKey1) {
-		CtrlKeyState++;
-	} else {
-		CtrlKeyState = 0;
-	}
-	if (nChar == UnicodeDebugParam.CodePopupKey2) {
-		if (TipWinCodeDebug != NULL) {
-			TipWinDestroy(TipWinCodeDebug);
-			TipWinCodeDebug = NULL;
-			CtrlKeyState = 0;
-		}
-	}
-#endif
 }
 
 void CVTWindow::OnKillFocus(HWND hNewWnd)
@@ -2148,31 +2474,10 @@ LRESULT CVTWindow::OnMouseActivate(HWND pDesktopWnd, UINT nHitTest, UINT message
 	}
 }
 
-
-void CVTWindow::CodePopup(int client_x, int client_y)
-{
-	wchar_t *buf = BuffGetCharInfo(client_x, client_y);
-	if (TipWinCodeDebug == NULL) {
-		TipWinCodeDebug = TipWinCreate(m_hInst, m_hWnd);
-	}
-	POINT pos = { client_x, client_y };
-	ClientToScreen(m_hWnd, &pos);
-	TipWinSetPos(TipWinCodeDebug, pos.x, pos.y);
-	TipWinSetTextW(TipWinCodeDebug, buf);
-	TipWinSetVisible(TipWinCodeDebug, TRUE);
-	free(buf);
-}
-
 void CVTWindow::OnMouseMove(WPARAM nFlags, POINTS point)
 {
 	int i;
-	BOOL mousereport = FALSE;
-
-#if UNICODE_DEBUG
-	if (TipWinCodeDebug != NULL) {
-		CodePopup(point.x, point.y);
-	}
-#endif
+	BOOL mousereport;
 
 	if (!IgnoreRelease)
 		mousereport = MouseReport(IdMouseEventMove, 0, point.x, point.y);
@@ -2232,8 +2537,8 @@ BOOL CVTWindow::OnMouseWheel(
 		if (InTitleBar) {
 			int delta = zDelta < 0 ? -1 : 1;
 			int newAlpha = Alpha;
-			wchar_t tipbuf[32];
-			wchar_t uimsg[MAX_UIMSG];
+			TCHAR tipbuf[32];
+			TCHAR uimsg[MAX_UIMSG];
 			POINT tippos;
 
 			newAlpha += delta * ts.MouseWheelScrollLine;
@@ -2243,8 +2548,8 @@ BOOL CVTWindow::OnMouseWheel(
 				newAlpha = 0;
 			SetWindowAlpha(newAlpha);
 
-			get_lang_msgW("TOOLTIP_TITLEBAR_OPACITY", uimsg, sizeof(uimsg), L"Opacity %.1f %%", ts.UILanguageFile);
-			_snwprintf_s(tipbuf, _countof(tipbuf), uimsg, (newAlpha / 255.0) * 100);
+			get_lang_msg("TOOLTIP_TITLEBAR_OPACITY", uimsg, sizeof(uimsg), "Opacity %.1f %%", ts.UILanguageFile);
+			_stprintf_s(tipbuf, _countof(tipbuf), uimsg, (newAlpha / 255.0) * 100);
 
 			tippos = TipWin->GetPos();
 			if (tippos.x != pt.x ||
@@ -2547,6 +2852,10 @@ void CVTWindow::OnSizing(WPARAM fwSide, LPRECT pRect)
 
 void CVTWindow::OnSysChar(WPARAM nChar, UINT nRepCnt, UINT nFlags)
 {
+	char e = ESC;
+	char Code;
+	unsigned int i;
+
 #ifdef WINDOW_MAXMIMUM_ENABLED
 	// ALT + xを押下すると WM_SYSCHAR が飛んでくる。
 	// ALT + Enterでウィンドウの最大化 (2005.4.24 yutaka)
@@ -2560,55 +2869,30 @@ void CVTWindow::OnSysChar(WPARAM nChar, UINT nRepCnt, UINT nFlags)
 #endif
 
 	if (MetaKey(ts.MetaKey)) {
-		if (!KeybEnabled || (TalkStatus != IdTalkKeyb))
-			return;
-
-		char Code = nChar;
-		wchar_t u16;
-		switch (ts.Meta8Bit) {
-		case IdMeta8BitRaw:
-			Code = nChar;
-			break;
-		default:
-			if (IsWindowUnicode(HVTWin) == TRUE) {
-				u16 = nChar;
-			}
-			else {
-				if (ts.Meta8Bit != IdMeta8BitRaw) {
-					const char mb_str[2] = {(char)nChar, 0};
-					unsigned int u32;
-					size_t mb_len = MBCPToUTF32(mb_str, 1, CP_ACP, &u32);
-					if (mb_len == 0) {
-						return;
-					}
-					u16 = (wchar_t)u32;
-				}
-			}
-		}
-		for (unsigned int i = 1; i <= nRepCnt; i++) {
+		if (!KeybEnabled || (TalkStatus!=IdTalkKeyb)) return;
+		Code = nChar;
+		for (i=1 ; i<=nRepCnt ; i++) {
 			switch (ts.Meta8Bit) {
-				case IdMeta8BitRaw:
-					Code |= 0x80;
-					CommBinaryBuffOut(&cv, &Code, 1);
-					if (ts.LocalEcho) {
-						CommBinaryEcho(&cv, &Code, 1);
-					}
-					break;
-				case IdMeta8BitText:
-					u16 |= 0x80;
-					CommTextOutW(&cv, &u16, 1);
-					if (ts.LocalEcho) {
-						CommTextEchoW(&cv, &u16, 1);
-					}
-					break;
-				default: {
-					const wchar_t e = ESC;
-					CommTextOutW(&cv, &e, 1);
-					CommTextOutW(&cv, &u16, 1);
-					if (ts.LocalEcho) {
-						CommTextEchoW(&cv, &e, 1);
-						CommTextEchoW(&cv, &u16, 1);
-					}
+			  case IdMeta8BitRaw:
+				Code |= 0x80;
+				CommBinaryBuffOut(&cv, &Code, 1);
+				if (ts.LocalEcho) {
+					CommBinaryEcho(&cv, &Code, 1);
+				}
+				break;
+			  case IdMeta8BitText:
+				Code |= 0x80;
+				CommTextOut(&cv, &Code, 1);
+				if (ts.LocalEcho) {
+					CommTextEcho(&cv, &Code, 1);
+				}
+				break;
+			  default:
+				CommTextOut(&cv, &e, 1);
+				CommTextOut(&cv, &Code, 1);
+				if (ts.LocalEcho) {
+					CommTextEcho(&cv, &e, 1);
+					CommTextEcho(&cv, &Code, 1);
 				}
 			}
 		}
@@ -2692,6 +2976,33 @@ void CVTWindow::OnTimer(UINT_PTR nIDEvent)
 			//::PostMessage(HVTWin, WM_USER_COMMNOTIFY, 0, FD_CLOSE);
 		}
 	}
+	else if (nIDEvent == IdScpSendingTimer) {
+		char **FileNames;
+		int FileCount;
+		int j;
+
+		if (DropListsSendScpIndex >= DropListCountSendScp) {
+			::KillTimer(HVTWin, IdScpSendingTimer);
+
+			for (j = 0 ; j < DropListCountSendScp; j++) {
+				free(DropListsSendScp[j]);
+				DropListsSendScp[j] = NULL;
+			}
+			free(DropListsSendScp);
+			DropListCountSendScp = 0;
+
+			SendScpDoing = FALSE;
+
+		} else {
+			FileNames = &DropListsSendScp[DropListsSendScpIndex];
+			FileCount = DropListCountSendScp;
+
+			SendScp(FileNames, FileCount, ts.ScpSendDir);
+
+		}
+
+		return;
+	}
 
 	::KillTimer(HVTWin, nIDEvent);
 
@@ -2736,10 +3047,10 @@ void CVTWindow::OnTimer(UINT_PTR nIDEvent)
 			}
 			break;
 		case IdPrnStartTimer:
-			PrnFileStart(PrintFile_);
+			PrnFileStart();
 			break;
 		case IdPrnProcTimer:
-			PrnFileDirectProc(PrintFile_);
+			PrnFileDirectProc();
 			break;
 	}
 }
@@ -3035,65 +3346,32 @@ static LRESULT ReplyIMERequestDocumentfeed(HWND hWnd, LPARAM lParam)
 
 	if (lParam == 0)
 	{  // 1回目の呼び出し サイズだけを返す
-		if(IsWindowUnicode(hWnd) == FALSE) {
-			// ANSI版
-			char buf[512];			// 参照文字列を受け取るバッファ
-			size_t str_len_count;
-			int cx;
+		char buf[512];			// 参照文字列を受け取るバッファ
+		size_t str_len_count;
+		int cx;
+		assert(IsWindowUnicode(hWnd) == FALSE);
 
-			// 参照文字列取得、1行取り出す
-			{	// カーソルから後ろ、スペース以外が見つかったところを行末とする
-				int x;
-				int len;
-				cx = BuffGetCurrentLineData(buf, sizeof(buf));
-				len = cx;
-				for (x=cx; x < NumOfColumns; x++) {
-					const char c = buf[x];
-					if (c != 0 && c != 0x20) {
-						len = x+1;
-					}
+		// 参照文字列取得、1行取り出す
+		{	// カーソルから後ろ、スペース以外が見つかったところを行末とする
+			int x;
+			int len;
+			cx = BuffGetCurrentLineData(buf, sizeof(buf));
+			len = cx;
+			for (x=cx; x < NumOfColumns; x++) {
+				const char c = buf[x];
+				if (c != 0 && c != 0x20) {
+					len = x+1;
 				}
-				str_len_count = len;
 			}
-
-			// IMEに返す構造体を作成する
-			if (pReconvPtrSave != NULL) {
-				free(pReconvPtrSave);
-			}
-			pReconvPtrSave = (RECONVERTSTRING *)CreateReconvStringStA(
-				hWnd, buf, str_len_count, cx, &ReconvSizeSave);
+			str_len_count = len;
 		}
-		else {
-			// UNICODE版
-			size_t str_len_count;
-			int cx;
-			wchar_t *strW;
 
-			// 参照文字列取得、1行取り出す
-			{	// カーソルから後ろ、スペース以外が見つかったところを行末とする
-				int x;
-				size_t len = 0;
-				cx = CursorX;
-				strW = BuffGetLineStrW(CursorY, &cx, &len);
-				len = cx;
-				for (x=cx; x < NumOfColumns; x++) {
-					const wchar_t c = strW[x];
-					if (c == 0 || c == 0x20) {
-						len = x;
-						break;
-					}
-				}
-				str_len_count = len;
-			}
-
-			// IMEに返す構造体を作成する
-			if (pReconvPtrSave != NULL) {
-				free(pReconvPtrSave);
-			}
-			pReconvPtrSave = (RECONVERTSTRING *)CreateReconvStringStW(
-				hWnd, strW, str_len_count, cx, &ReconvSizeSave);
-			free(strW);
+		// IMEに返す構造体を作成する
+		if (pReconvPtrSave != NULL) {
+			free(pReconvPtrSave);
 		}
+		pReconvPtrSave = (RECONVERTSTRING *)CreateReconvStringStA(
+			hWnd, buf, str_len_count, cx, &ReconvSizeSave);
 
 		// 1回目はサイズだけを返す
 		result = ReconvSizeSave;
@@ -3102,12 +3380,8 @@ static LRESULT ReplyIMERequestDocumentfeed(HWND hWnd, LPARAM lParam)
 		// 2回目の呼び出し 構造体を渡す
 		if (pReconvPtrSave != NULL) {
 			RECONVERTSTRING *pReconv = (RECONVERTSTRING*)lParam;
-			result = 0;
-			if (pReconv->dwSize >= ReconvSizeSave) {
-				// 1回目のサイズが確保されてきているはず
-				memcpy(pReconv, pReconvPtrSave, ReconvSizeSave);
-				result = ReconvSizeSave;
-			}
+			memcpy(pReconv, pReconvPtrSave, ReconvSizeSave);
+			result = ReconvSizeSave;
 			free(pReconvPtrSave);
 			pReconvPtrSave = NULL;
 			ReconvSizeSave = 0;
@@ -3116,6 +3390,11 @@ static LRESULT ReplyIMERequestDocumentfeed(HWND hWnd, LPARAM lParam)
 			result = 0;
 		}
 	}
+
+#if 0
+	OutputDebugPrintf("WM_IME_REQUEST,IMR_DOCUMENTFEED lp=%p LRESULT %d\n",
+		lParam, result);
+#endif
 
 	return result;
 }
@@ -3295,8 +3574,8 @@ LRESULT CVTWindow::OnChangeTBar(WPARAM wParam, LPARAM lParam)
 	DWORD Style,ExStyle;
 	HMENU SysMenu;
 
-	Style = (DWORD)::GetWindowLongPtr (HVTWin, GWL_STYLE);
-	ExStyle = (DWORD)::GetWindowLongPtr (HVTWin, GWL_EXSTYLE);
+	Style = ::GetWindowLongPtr (HVTWin, GWL_STYLE);
+	ExStyle = ::GetWindowLongPtr (HVTWin, GWL_EXSTYLE);
 	TBar = ((Style & WS_SYSMENU)!=0);
 	if (TBar == (ts.HideTitle==0)) {
 		return 0;
@@ -3398,20 +3677,16 @@ LRESULT CVTWindow::OnCommOpen(WPARAM wParam, LPARAM lParam)
 		return 0;
 	}
 
-	/* Auto start logging or /L= option */
-	if (ts.LogAutoStart || ts.LogFN[0] != 0) {
-		if (ts.LogFN[0] == 0) {
-			wchar_t *filenameW = FLogGetLogFilename(NULL);
-			char *filenameA = ToCharW(filenameW);
-			strncpy_s(ts.LogFN, sizeof(ts.LogFN), filenameA, _TRUNCATE);
-			free(filenameA);
-			free(filenameW);
-		}
-		if (ts.LogFN[0]!=0) {
-			wchar_t *fnW = ToWcharA(ts.LogFN);
-			FLogOpen(fnW, LOG_UTF8, FALSE);
-			free(fnW);
-		}
+	/* Auto start logging (2007.5.31 maya) */
+	if (ts.LogAutoStart && ts.LogFN[0]==0) {
+		strncpy_s(ts.LogFN, sizeof(ts.LogFN), ts.LogDefaultName, _TRUNCATE);
+	}
+	/* ログ採取が有効で開始していなければ開始する (2006.9.18 maya) */
+	if ((ts.LogFN[0]!=0) && (LogVar==NULL) && NewFileVar(&LogVar)) {
+		LogVar->DirLen = 0;
+		strncpy_s(LogVar->FullName, sizeof(LogVar->FullName), ts.LogFN, _TRUNCATE);
+		HelpId = HlpFileLog;
+		LogStart();
 	}
 
 	if ((ts.PortType==IdTCPIP) &&
@@ -3456,6 +3731,23 @@ LRESULT CVTWindow::OnCommOpen(WPARAM wParam, LPARAM lParam)
 				TCPLocalEchoUsed = TRUE;
 				ts.LocalEcho = ts.TCPLocalEcho;
 			}
+		}
+	}
+
+	if (DDELog || FileLog) {
+		if (! CreateLogBuf()) {
+			if (DDELog) {
+				EndDDE();
+			}
+			if (FileLog) {
+				FileTransEnd(OpLog);
+			}
+		}
+	}
+
+	if (BinLog) {
+		if (! CreateBinBuf()) {
+			FileTransEnd(OpLog);
 		}
 	}
 
@@ -3506,13 +3798,11 @@ LRESULT CVTWindow::OnDlgHelp(WPARAM wParam, LPARAM lParam)
 	return 0;
 }
 
-#if 0
 LRESULT CVTWindow::OnFileTransEnd(WPARAM wParam, LPARAM lParam)
 {
 	FileTransEnd(wParam);
 	return 0;
 }
-#endif
 
 LRESULT CVTWindow::OnGetSerialNo(WPARAM wParam, LPARAM lParam)
 {
@@ -3700,10 +3990,10 @@ void CVTWindow::OnDuplicateSession()
 	strncpy_s(cygterm_cfg, sizeof(cygterm_cfg), ts.HomeDir, _TRUNCATE);
 	AppendSlash(cygterm_cfg, sizeof(cygterm_cfg));
 	strncat_s(cygterm_cfg, sizeof(cygterm_cfg), "cygterm.cfg", _TRUNCATE);
-	fopen_s(&fp, cygterm_cfg, "r");
+	fp = fopen(cygterm_cfg, "r");
 	if (fp != NULL) {
 		while (fgets(buf, sizeof(buf), fp) != NULL) {
-			size_t len = strlen(buf);
+			int len = strlen(buf);
 
 			if (buf[len - 1] == '\n')
 				buf[len - 1] = '\0';
@@ -3764,33 +4054,19 @@ void CVTWindow::OnDuplicateSession()
 
 	if (CreateProcess(NULL, Command, NULL, NULL, FALSE, 0,
 	                  NULL, NULL, &si, &pi) == 0) {
-		wchar_t buf[80];
-		wchar_t uimsg[MAX_UIMSG];
-		wchar_t uimsg2[MAX_UIMSG];
-		get_lang_msgW("MSG_ERROR", uimsg, _countof(uimsg), L"ERROR", ts.UILanguageFile);
-		get_lang_msgW("MSG_EXEC_TT_ERROR", uimsg2, _countof(uimsg2),
-					  L"Can't execute Tera Term. (%d)", ts.UILanguageFile);
-		_snwprintf_s(buf, _countof(buf), _TRUNCATE, uimsg2, GetLastError());
-		_MessageBoxW(NULL, buf, uimsg, MB_OK | MB_ICONWARNING);
+		char buf[80];
+		char uimsg[MAX_UIMSG];
+		get_lang_msg("MSG_ERROR", uimsg, sizeof(uimsg), "ERROR", ts.UILanguageFile);
+		get_lang_msg("MSG_EXEC_TT_ERROR", ts.UIMsg, sizeof(ts.UIMsg),
+		             "Can't execute Tera Term. (%d)", ts.UILanguageFile);
+		_snprintf_s(buf, sizeof(buf), _TRUNCATE, ts.UIMsg, GetLastError());
+		::MessageBox(NULL, buf, uimsg, MB_OK | MB_ICONWARNING);
 	} else {
 		CloseHandle(pi.hThread);
 		CloseHandle(pi.hProcess);
 	}
 }
 
-static void __dupenv_s(char **envptr, size_t, const char* name)
-{
-#if defined(_MSC_VER)
-	_dupenv_s(envptr, NULL, name);
-#else
-    const char* s = getenv(name);
-	if (s == NULL) {
-		*envptr = NULL;
-		return;
-	}
-	*envptr = strdup(s);
-#endif
-}
 
 //
 // Connect to local cygwin
@@ -3799,13 +4075,12 @@ void CVTWindow::OnCygwinConnection()
 {
 	char file[MAX_PATH], *filename;
 	char c, *envptr, *envbuff=NULL;
-	size_t envbufflen;
+	int envbufflen;
 	const char *exename = "cygterm.exe";
 	char cygterm[MAX_PATH];
 	STARTUPINFO si;
 	PROCESS_INFORMATION pi;
-	wchar_t uimsg[MAX_UIMSG];
-	wchar_t uimsg2[MAX_UIMSG];
+	char uimsg[MAX_UIMSG];
 
 	if (strlen(ts.CygwinDirectory) > 0) {
 		if (SearchPath(ts.CygwinDirectory, "bin\\cygwin1", ".dll", sizeof(file), file, &filename) > 0) {
@@ -3819,40 +4094,38 @@ void CVTWindow::OnCygwinConnection()
 
 	for (c = 'C' ; c <= 'Z' ; c++) {
 		char tmp[MAX_PATH];
-		sprintf_s(tmp, "%c:\\cygwin\\bin;%c:\\cygwin64\\bin", c, c);
+		sprintf(tmp, "%c:\\cygwin\\bin;%c:\\cygwin64\\bin", c, c);
 		if (SearchPath(tmp, "cygwin1", ".dll", sizeof(file), file, &filename) > 0) {
 			goto found_dll;
 		}
 	}
 
-	get_lang_msgW("MSG_ERROR", uimsg, _countof(uimsg), L"ERROR", ts.UILanguageFile);
-	get_lang_msgW("MSG_FIND_CYGTERM_DIR_ERROR", uimsg2, sizeof(uimsg2),
-				  L"Can't find Cygwin directory.", ts.UILanguageFile);
-	_MessageBoxW(NULL, uimsg2, uimsg, MB_OK | MB_ICONWARNING);
+	get_lang_msg("MSG_ERROR", uimsg, sizeof(uimsg), "ERROR", ts.UILanguageFile);
+	get_lang_msg("MSG_FIND_CYGTERM_DIR_ERROR", ts.UIMsg, sizeof(ts.UIMsg),
+	             "Can't find Cygwin directory.", ts.UILanguageFile);
+	::MessageBox(NULL, ts.UIMsg, uimsg, MB_OK | MB_ICONWARNING);
 	return;
 
 found_dll:;
-	__dupenv_s(&envptr, NULL, "PATH");
+	envptr = getenv("PATH");
 	file[strlen(file)-12] = '\0'; // delete "\\cygwin1.dll"
 	if (envptr != NULL) {
 		envbufflen = strlen(file) + strlen(envptr) + 7; // "PATH="(5) + ";"(1) + NUL(1)
 		if ((envbuff = (char *)malloc(envbufflen)) == NULL) {
-			get_lang_msgW("MSG_ERROR", uimsg, _countof(uimsg), L"ERROR", ts.UILanguageFile);
-			get_lang_msgW("MSG_CYGTERM_ENV_ALLOC_ERROR", uimsg2, _countof(uimsg2),
-						  L"Can't allocate memory for environment variable.", ts.UILanguageFile);
-			_MessageBoxW(NULL, uimsg2, uimsg, MB_OK | MB_ICONWARNING);
-			free(envptr);
+			get_lang_msg("MSG_ERROR", uimsg, sizeof(uimsg), "ERROR", ts.UILanguageFile);
+			get_lang_msg("MSG_CYGTERM_ENV_ALLOC_ERROR", ts.UIMsg, sizeof(ts.UIMsg),
+			             "Can't allocate memory for environment variable.", ts.UILanguageFile);
+			::MessageBox(NULL, ts.UIMsg, uimsg, MB_OK | MB_ICONWARNING);
 			return;
 		}
 		_snprintf_s(envbuff, envbufflen, _TRUNCATE, "PATH=%s;%s", file, envptr);
-		free(envptr);
 	} else {
 		envbufflen = strlen(file) + 6; // "PATH="(5) + NUL(1)
 		if ((envbuff = (char *)malloc(envbufflen)) == NULL) {
-			get_lang_msgW("MSG_ERROR", uimsg, _countof(uimsg), L"ERROR", ts.UILanguageFile);
-			get_lang_msgW("MSG_CYGTERM_ENV_ALLOC_ERROR", uimsg2, _countof(uimsg2),
-						  L"Can't allocate memory for environment variable.", ts.UILanguageFile);
-			_MessageBoxW(NULL, uimsg2, uimsg, MB_OK | MB_ICONWARNING);
+			get_lang_msg("MSG_ERROR", uimsg, sizeof(uimsg), "ERROR", ts.UILanguageFile);
+			get_lang_msg("MSG_CYGTERM_ENV_ALLOC_ERROR", ts.UIMsg, sizeof(ts.UIMsg),
+			             "Can't allocate memory for environment variable.", ts.UILanguageFile);
+			::MessageBox(NULL, ts.UIMsg, uimsg, MB_OK | MB_ICONWARNING);
 			return;
 		}
 		_snprintf_s(envbuff, envbufflen, _TRUNCATE, "PATH=%s", file);
@@ -3874,10 +4147,10 @@ found_path:;
 
 	if (CreateProcess(NULL, cygterm, NULL, NULL, FALSE, 0,
 	                  NULL, NULL, &si, &pi) == 0) {
-		get_lang_msgW("MSG_ERROR", uimsg, _countof(uimsg), L"ERROR", ts.UILanguageFile);
-		get_lang_msgW("MSG_EXEC_CYGTERM_ERROR", uimsg2, _countof(uimsg2),
-		              L"Can't execute Cygterm.", ts.UILanguageFile);
-		_MessageBoxW(NULL, uimsg2, uimsg, MB_OK | MB_ICONWARNING);
+		get_lang_msg("MSG_ERROR", uimsg, sizeof(uimsg), "ERROR", ts.UILanguageFile);
+		get_lang_msg("MSG_EXEC_CYGTERM_ERROR", ts.UIMsg, sizeof(ts.UIMsg),
+		             "Can't execute Cygterm.", ts.UILanguageFile);
+		::MessageBox(NULL, ts.UIMsg, uimsg, MB_OK | MB_ICONWARNING);
 	} else {
 		CloseHandle(pi.hThread);
 		CloseHandle(pi.hProcess);
@@ -3900,14 +4173,13 @@ void CVTWindow::OnTTMenuLaunch()
 
 	if (CreateProcess(exename, NULL, NULL, NULL, FALSE, 0,
 	                  NULL, NULL, &si, &pi) == 0) {
-		wchar_t buf[80];
-		wchar_t uimsg[MAX_UIMSG];
-		wchar_t uimsg2[MAX_UIMSG];
-		get_lang_msgW("MSG_ERROR", uimsg, _countof(uimsg), L"ERROR", ts.UILanguageFile);
-		get_lang_msgW("MSG_EXEC_TTMENU_ERROR", uimsg2, _countof(uimsg2),
-					  L"Can't execute TeraTerm Menu. (%d)", ts.UILanguageFile);
-		_snwprintf_s(buf, _countof(buf), _TRUNCATE, uimsg2, GetLastError());
-		_MessageBoxW(NULL, buf, uimsg, MB_OK | MB_ICONWARNING);
+		char buf[80];
+		char uimsg[MAX_UIMSG];
+		get_lang_msg("MSG_ERROR", uimsg, sizeof(uimsg), "ERROR", ts.UILanguageFile);
+		get_lang_msg("MSG_EXEC_TTMENU_ERROR", ts.UIMsg, sizeof(ts.UIMsg),
+		             "Can't execute TeraTerm Menu. (%d)", ts.UILanguageFile);
+		_snprintf_s(buf, sizeof(buf), _TRUNCATE, ts.UIMsg, GetLastError());
+		::MessageBox(NULL, buf, uimsg, MB_OK | MB_ICONWARNING);
 	} else {
 		CloseHandle(pi.hThread);
 		CloseHandle(pi.hProcess);
@@ -3933,14 +4205,13 @@ void CVTWindow::OnLogMeInLaunch()
 
 	if (CreateProcess(NULL, LogMeTT, NULL, NULL, FALSE, 0,
 	                  NULL, NULL, &si, &pi) == 0) {
-		wchar_t buf[80];
-		wchar_t uimsg[MAX_UIMSG];
-		wchar_t uimsg2[MAX_UIMSG];
-		get_lang_msgW("MSG_ERROR", uimsg, _countof(uimsg), L"ERROR", ts.UILanguageFile);
-		get_lang_msgW("MSG_EXEC_LOGMETT_ERROR", uimsg2, _countof(uimsg2),
-					  L"Can't execute LogMeTT. (%d)", ts.UILanguageFile);
-		_snwprintf_s(buf, _countof(buf), _TRUNCATE, uimsg2, GetLastError());
-		_MessageBoxW(NULL, buf, uimsg, MB_OK | MB_ICONWARNING);
+		char buf[80];
+		char uimsg[MAX_UIMSG];
+		get_lang_msg("MSG_ERROR", uimsg, sizeof(uimsg), "ERROR", ts.UILanguageFile);
+		get_lang_msg("MSG_EXEC_LOGMETT_ERROR", ts.UIMsg, sizeof(ts.UIMsg),
+		             "Can't execute LogMeTT. (%d)", ts.UILanguageFile);
+		_snprintf_s(buf, sizeof(buf), _TRUNCATE, ts.UIMsg, GetLastError());
+		::MessageBox(NULL, buf, uimsg, MB_OK | MB_ICONWARNING);
 	} else {
 		CloseHandle(pi.hThread);
 		CloseHandle(pi.hProcess);
@@ -3950,107 +4221,112 @@ void CVTWindow::OnLogMeInLaunch()
 
 void CVTWindow::OnFileLog()
 {
-	FLogDlgInfo_t info;
-	info.filename = NULL;
-	BOOL r = FLogOpenDialog(hInst, m_hWnd, &info);
-	if (r) {
-		const wchar_t *filename = info.filename;
-		if (!info.append) {
-			// ファイル削除
-			_DeleteFileW(filename);
-		}
-		BOOL r = FLogOpen(filename, info.code, info.bom);
-		if (r != FALSE) {
-			if (FLogIsOpendText()) {
-				// 現在バッファにあるデータをすべて書き出してから、
-				// ログ採取を開始する。
-				// (2013.9.29 yutaka)
-				if (ts.LogAllBuffIncludedInFirst) {
-					FLogOutputAllBuffer();
-				}
+	HelpId = HlpFileLog;
+	LogStart();
+}
+
+
+static LRESULT CALLBACK OnCommentDlgProc(HWND hDlgWnd, UINT msg, WPARAM wp, LPARAM lp)
+{
+	static const DlgTextInfo TextInfos[] = {
+		{ 0, "DLG_COMMENT_TITLE" },
+		{ IDOK, "BTN_OK" }
+	};
+	char buf[256];
+	UINT ret;
+
+	switch (msg) {
+		case WM_INITDIALOG:
+			//SetDlgItemText(hDlgWnd, IDC_EDIT_COMMENT, "サンプル");
+			// エディットコントロールにフォーカスをあてる
+			SetFocus(GetDlgItem(hDlgWnd, IDC_EDIT_COMMENT));
+			SetDlgTexts(hDlgWnd, TextInfos, _countof(TextInfos), ts.UILanguageFile);
+			return FALSE;
+
+		case WM_COMMAND:
+			switch (LOWORD(wp)) {
+				case IDOK:
+					memset(buf, 0, sizeof(buf));
+					ret = GetDlgItemTextA(hDlgWnd, IDC_EDIT_COMMENT, buf, sizeof(buf) - 1);
+					if (ret > 0) { // テキスト取得成功
+						//buf[sizeof(buf) - 1] = '\0';  // null-terminate
+						CommentLogToFile(buf, ret);
+					}
+					TTEndDialog(hDlgWnd, IDOK);
+					break;
+				default:
+					return FALSE;
 			}
-		}
-		else {
-			// ログできない
-			static const TTMessageBoxInfoW mbinfo = {
-				"Tera Term",
-				NULL, L"Tera Term: File open error",
-				NULL, L"Can not create a `%s' file."
-			};
-			TTMessageBoxW(m_hWnd, &mbinfo, MB_OK | MB_ICONERROR, ts.UILanguageFile, filename);
-		}
-		free(info.filename);
+			break;
+		case WM_CLOSE:
+			TTEndDialog(hDlgWnd, 0);
+			return TRUE;
+
+		default:
+			return FALSE;
 	}
+	return TRUE;
 }
 
 void CVTWindow::OnCommentToLog()
 {
-	if (!FLogIsOpendText()) {
-		// 選択できないので呼ばれないはず
-		char uimsg[MAX_UIMSG];
-		get_lang_msg("MSG_ERROR", uimsg, sizeof(uimsg), "ERROR", ts.UILanguageFile);
-		get_lang_msg("MSG_COMMENT_LOG_OPEN_ERROR", ts.UIMsg, sizeof(ts.UIMsg),
-		             "It is not opened by the log file yet.", ts.UILanguageFile);
-		::MessageBox(NULL, ts.UIMsg, uimsg, MB_OK|MB_ICONEXCLAMATION);
-		return;
-	}
-	FLogAddCommentDlg(m_hInst, HVTWin);
+	// ログファイルへコメントを追加する (2004.8.6 yutaka)
+	TTDialogBox(m_hInst, MAKEINTRESOURCE(IDD_COMMENT_DIALOG),
+				HVTWin, (DLGPROC)OnCommentDlgProc);
 }
 
 // ログの閲覧 (2005.1.29 yutaka)
 void CVTWindow::OnViewLog()
 {
-	STARTUPINFOW si;
+	char command[MAX_PATH*2+3]; // command "filename"
+	char *file;
+	STARTUPINFO si;
 	PROCESS_INFORMATION pi;
 
-	if(!FLogIsOpend()) {
+	if (LogVar == NULL || !LogVar->FileOpen) {
 		return;
 	}
 
-	const wchar_t *filename = FLogGetFilename();
+	file = LogVar->FullName;
 
 	memset(&si, 0, sizeof(si));
-	GetStartupInfoW(&si);
+	GetStartupInfo(&si);
 	memset(&pi, 0, sizeof(pi));
 
-	wchar_t *command;
-	wchar_t *ViewlogEditor = ToWcharA(ts.ViewlogEditor);
-	aswprintf(&command, L"\"%s\" \"%s\"", ViewlogEditor, filename);
-	free(ViewlogEditor);
+	_snprintf_s(command, sizeof(command), _TRUNCATE, "\"%s\" \"%s\"", ts.ViewlogEditor, file);
 
-	BOOL r = _CreateProcessW(NULL, command, NULL, NULL, FALSE, 0,
-							 NULL, NULL, &si, &pi);
-	free(command);
-	if (r == 0) {
-		DWORD error = GetLastError();
-		static const TTMessageBoxInfoW mbinfo = {
-			"Tera Term",
-			"MSG_ERROR", L"ERROR",
-			"MSG_VIEW_LOGFILE_ERROR", L"Can't view logging file. (%d)"
-		};
-		TTMessageBoxW(m_hWnd, &mbinfo, MB_OK | MB_ICONWARNING, ts.UILanguageFile, error);
+	if (CreateProcess(NULL, command, NULL, NULL, FALSE, 0,
+	                  NULL, NULL, &si, &pi) == 0) {
+		char buf[80];
+		char uimsg[MAX_UIMSG];
+		get_lang_msg("MSG_ERROR", uimsg, sizeof(uimsg), "ERROR", ts.UILanguageFile);
+		get_lang_msg("MSG_VIEW_LOGFILE_ERROR", ts.UIMsg, sizeof(ts.UIMsg),
+		             "Can't view logging file. (%d)", ts.UILanguageFile);
+		_snprintf_s(buf, sizeof(buf), _TRUNCATE, ts.UIMsg, GetLastError());
+		::MessageBox(NULL, buf, uimsg, MB_OK | MB_ICONWARNING);
 	} else {
 		CloseHandle(pi.hThread);
 		CloseHandle(pi.hProcess);
 	}
 }
 
+
 // 隠しているログダイアログを表示する (2008.2.3 maya)
 void CVTWindow::OnShowLogDialog()
 {
-	FLogShowDlg();
+	ShowFTDlg(OpLog);
 }
 
 // ログ取得を中断/再開する
 void CVTWindow::OnPauseLog()
 {
-	FLogPause(FLogIsPause() ? FALSE : TRUE);
+	FLogChangeButton(!(cv.FilePause & OpLog));
 }
 
 // ログ取得を終了する
 void CVTWindow::OnStopLog()
 {
-	FLogClose();
+	FileTransEnd(OpLog);
 }
 
 // ログの再生 (2006.12.13 yutaka)
@@ -4093,122 +4369,102 @@ void CVTWindow::OnReplayLog()
 
 	if (CreateProcess(NULL, Command, NULL, NULL, FALSE, 0,
 	                  NULL, NULL, &si, &pi) == 0) {
-		wchar_t buf[80];
-		wchar_t uimsgW[MAX_UIMSG];
-		wchar_t uimsgW2[MAX_UIMSG];
-		get_lang_msgW("MSG_ERROR", uimsgW, _countof(uimsgW), L"ERROR", ts.UILanguageFile);
-		get_lang_msgW("MSG_EXEC_TT_ERROR", uimsgW2, _countof(uimsgW2),
-		              L"Can't execute Tera Term. (%d)", ts.UILanguageFile);
-		_snwprintf_s(buf, _countof(buf), _TRUNCATE, uimsgW2, GetLastError());
-		_MessageBoxW(NULL, buf, uimsgW, MB_OK | MB_ICONWARNING);
+		char buf[80];
+		get_lang_msg("MSG_ERROR", uimsg, sizeof(uimsg), "ERROR", ts.UILanguageFile);
+		get_lang_msg("MSG_EXEC_TT_ERROR", ts.UIMsg, sizeof(ts.UIMsg),
+		             "Can't execute Tera Term. (%d)", ts.UILanguageFile);
+		_snprintf_s(buf, sizeof(buf), _TRUNCATE, ts.UIMsg, GetLastError());
+		::MessageBox(NULL, buf, uimsg, MB_OK | MB_ICONWARNING);
 	} else {
 		CloseHandle(pi.hThread);
 		CloseHandle(pi.hProcess);
 	}
 }
 
+
 void CVTWindow::OnFileSend()
 {
-	// new file send
-	SetDialogFont(ts.DialogFontName, ts.DialogFontPoint, ts.DialogFontCharSet,
-				  ts.UILanguageFile, "Tera Term", "DLG_TAHOMA_FONT");
-	sendfiledlgdata data;
-	data.UILanguageFile = ts.UILanguageFile;
-	data.filesend_filter = ts.FileSendFilter;
-	INT_PTR ok = sendfiledlg(m_hInst, m_hWnd, &data);
-	if (ok != IDOK) {
-		return;
-	}
-
-	wchar_t *filename = data.filename;
-	if (!data.method_4) {
-		SendMemSendFile(filename, data.binary, (SendMemDelayType)data.delay_type, data.delay_tick, data.send_size);
-	}
-	else {
-		// file send same as teraterm 4
-		HelpId = HlpFileSend;
-		FileSendStart(filename, 0);
-	}
-	free(filename);
+	HelpId = HlpFileSend;
+	FileSendStart();
 }
 
 void CVTWindow::OnFileKermitRcv()
 {
-	KermitStartRecive(FALSE);
+	KermitStart(IdKmtReceive);
 }
 
 void CVTWindow::OnFileKermitGet()
 {
 	HelpId = HlpFileKmtGet;
-	KermitGet(NULL);
+	KermitStart(IdKmtGet);
 }
 
 void CVTWindow::OnFileKermitSend()
 {
 	HelpId = HlpFileKmtSend;
-	KermitStartSend(NULL);
+	KermitStart(IdKmtSend);
 }
 
 void CVTWindow::OnFileKermitFinish()
 {
-	KermitFinish(FALSE);
+	KermitStart(IdKmtFinish);
 }
 
 void CVTWindow::OnFileXRcv()
 {
 	HelpId = HlpFileXmodemRecv;
-	XMODEMStartReceive(NULL, 0, 0);
+	XMODEMStart(IdXReceive);
 }
 
 void CVTWindow::OnFileXSend()
 {
 	HelpId = HlpFileXmodemSend;
-	XMODEMStartSend(NULL, 0);
+	XMODEMStart(IdXSend);
 }
 
 void CVTWindow::OnFileYRcv()
 {
 	HelpId = HlpFileYmodemRecv;
-	YMODEMStartReceive(FALSE);
+	YMODEMStart(IdYReceive);
 }
 
 void CVTWindow::OnFileYSend()
 {
 	HelpId = HlpFileYmodemSend;
-	YMODEMStartSend(NULL);
+	YMODEMStart(IdYSend);
 }
 
 void CVTWindow::OnFileZRcv()
 {
-	ZMODEMStartReceive(FALSE, FALSE);
+	ZMODEMStart(IdZReceive);
 }
 
 void CVTWindow::OnFileZSend()
 {
 	HelpId = HlpFileZmodemSend;
-	ZMODEMStartSend(NULL, 0, FALSE);
+	ZMODEMStart(IdZSend);
 }
 
 void CVTWindow::OnFileBPRcv()
 {
-	BPStartReceive(TRUE, TRUE);
+	BPStart(IdBPReceive);
 }
 
 void CVTWindow::OnFileBPSend()
 {
 	HelpId = HlpFileBPlusSend;
-	BPStartSend(NULL);
+	BPStart(IdBPSend);
 }
 
 void CVTWindow::OnFileQVRcv()
 {
-	QVStartReceive(FALSE);
+	QVStart(IdQVReceive);
 }
 
 void CVTWindow::OnFileQVSend()
 {
 	HelpId = HlpFileQVSend;
-	QVStartSend(NULL);
+	QVStart(IdQVSend);
 }
 
 void CVTWindow::OnFileChangeDir()
@@ -4238,10 +4494,9 @@ void CVTWindow::Disconnect(BOOL confirm)
 	if ((cv.PortType==IdTCPIP) &&
 	    ((ts.PortFlag & PF_CONFIRMDISCONN) != 0) &&
 	    (confirm)) {
-		wchar_t uimsg[MAX_UIMSG];
-		get_lang_msgW("MSG_DISCONNECT_CONF", uimsg, _countof(uimsg),
-					  L"Disconnect?", ts.UILanguageFile);
-		if (_MessageBoxW(HVTWin, uimsg, L"Tera Term",
+		get_lang_msg("MSG_DISCONNECT_CONF", ts.UIMsg, sizeof(ts.UIMsg),
+		             "Disconnect?", ts.UILanguageFile);
+		if (::MessageBox(HVTWin, ts.UIMsg, "Tera Term",
 		                 MB_OKCANCEL | MB_ICONEXCLAMATION | MB_DEFBUTTON2)==IDCANCEL) {
 			return;
 		}
@@ -4263,24 +4518,19 @@ void CVTWindow::OnFileExit()
 void CVTWindow::OnEditCopy()
 {
 	// copy selected text to clipboard
-	wchar_t *strW = BuffCBCopyUnicode(FALSE);
-	CBSetTextW(HVTWin, strW, 0);
-	free(strW);
+	BuffCBCopy(FALSE);
 }
 
 void CVTWindow::OnEditCopyTable()
 {
 	// copy selected text to clipboard in Excel format
-	wchar_t *strW = BuffCBCopyUnicode(TRUE);
-	CBSetTextW(HVTWin, strW, 0);
-	free(strW);
+	BuffCBCopy(TRUE);
 }
 
 void CVTWindow::OnEditPaste()
 {
 	// add confirm (2008.2.4 yutaka)
 	CBStartPaste(HVTWin, FALSE, BracketedPasteMode());
-
 	// スクロール位置をリセット
 	if (WinOrgY != 0) {
 		DispVScroll(SCROLL_BOTTOM, 0);
@@ -4291,7 +4541,6 @@ void CVTWindow::OnEditPasteCR()
 {
 	// add confirm (2008.3.11 maya)
 	CBStartPaste(HVTWin, TRUE, BracketedPasteMode());
-
 	// スクロール位置をリセット
 	if (WinOrgY != 0) {
 		DispVScroll(SCROLL_BOTTOM, 0);
@@ -4360,27 +4609,31 @@ void CVTWindow::OnEditCancelSelection()
 // (2008.5.12 maya) changed to PropertySheet
 void CVTWindow::OnExternalSetup()
 {
-	BOOL old_use_unicode_api = UnicodeDebugParam.UseUnicodeApi;
+	DWORD ret;
+
 	SetDialogFont(ts.DialogFontName, ts.DialogFontPoint, ts.DialogFontCharSet,
 				  ts.UILanguageFile, "Tera Term", "DLG_TAHOMA_FONT");
-	CAddSettingPropSheetDlg CAddSetting(m_hInst, HVTWin);
-	INT_PTR ret = CAddSetting.DoModal();
-	if (ret == IDOK) {
+	CAddSettingPropSheetDlg CAddSetting(m_hInst, _T("Tera Term: Additional settings"), HVTWin);
+	ret = CAddSetting.DoModal();
+	switch (ret) {
+		case (DWORD)-1:
+		case IDABORT:
+			ret = GetLastError();
+			break;
+		case IDOK:
 #ifdef ALPHABLEND_TYPE2
-		BGInitialize(FALSE);
-		BGSetupPrimary(TRUE);
+			BGInitialize(FALSE);
+			BGSetupPrimary(TRUE);
 #else
-		DispApplyANSIColor();
+			DispApplyANSIColor();
 #endif
-		DispSetNearestColors(IdBack, IdFore+8, NULL);
-		ChangeWin();
-		ChangeFont();
-		if (old_use_unicode_api != UnicodeDebugParam.UseUnicodeApi) {
-			BuffSetDispAPI(UnicodeDebugParam.UseUnicodeApi);
-		}
-
-		// コーディングタブで設定が変化したときコールする必要がある
-		SetupTerm();
+			DispSetNearestColors(IdBack, IdFore+8, NULL);
+			ChangeWin();
+			ChangeFont();
+			break;
+		default:
+			/* nothing to do */
+			break;
 	}
 }
 
@@ -4463,17 +4716,15 @@ void CVTWindow::OnSetupFont()
 {
 	HelpId = HlpSetupFont;
 	DispSetupFontDlg();
-	// ANSI表示用のコードページを設定する
-	BuffSetDispCodePage(UnicodeDebugParam.CodePageForANSIDraw);
 }
 
-static UINT_PTR CALLBACK TFontHook(HWND Dialog, UINT Message, WPARAM wParam, LPARAM lParam)
+static BOOL CALLBACK TFontHook(HWND Dialog, UINT Message, WPARAM wParam, LPARAM lParam)
 {
 	if (Message == WM_INITDIALOG) {
-		wchar_t uimsg[MAX_UIMSG];
-		get_lang_msgW("DLG_CHOOSEFONT_STC6", uimsg, _countof(uimsg),
-					  L"\"Font style\" selection here won't affect actual font appearance.", ts.UILanguageFile);
-		_SetDlgItemTextW(Dialog, stc6, uimsg);
+		TCHAR uimsg[MAX_UIMSG];
+		get_lang_msgT("DLG_CHOOSEFONT_STC6", uimsg, _countof(uimsg),
+					  _T("\"Font style\" selection here won't affect actual font appearance."), ts.UILanguageFile);
+		SetDlgItemTextT(Dialog, stc6, uimsg);
 
 		SetFocus(GetDlgItem(Dialog,cmb1));
 
@@ -4509,7 +4760,7 @@ void CVTWindow::OnSetupDlgFont()
 	if (IsWindows7OrLater() && ts.ListHiddenFonts) {
 		cf.Flags |= CF_INACTIVEFONTS;
 	}
-	cf.lpfnHook = TFontHook;
+	cf.lpfnHook = (LPCFHOOKPROC)(&TFontHook);
 	cf.nFontType = REGULAR_FONTTYPE;
 	cf.hInstance = m_hInst;
 	HelpId = HlpSetupFont;
@@ -4564,12 +4815,12 @@ void CVTWindow::OnSetupSerialPort()
 	FreeTTDLG();
 
 	if (Ok && ts.ComPort > 0) {
-		/*
+		/* 
 		 * TCP/IPによる接続中の場合は新規プロセスとして起動する。
 		 * New connectionからシリアル接続する動作と基本的に同じ動作となる。
 		 */
 		if ( cv.Ready && (cv.PortType != IdSerial) ) {
-			_snprintf_s(Command, sizeof(Command),
+			_snprintf_s(Command, sizeof(Command), 
 				"ttermpro /C=%u /SPEED=%lu /CDELAYPERCHAR=%u /CDELAYPERLINE=%u ",
 				ts.ComPort, ts.Baud, ts.DelayPerChar, ts.DelayPerLine);
 
@@ -4638,146 +4889,6 @@ void CVTWindow::OnSetupGeneral()
 	FreeTTDLG();
 }
 
-static wchar_t *_get_lang_msg(const char *key, const wchar_t *def, const char *iniFile)
-{
-	return TTGetLangStrW("Tera Term", key, def, iniFile);
-}
-
-/* GetSetupFname function id */
-typedef enum {
-	GSF_SAVE,		// Save setup
-	GSF_RESTORE,	// Restore setup
-	GSF_LOADKEY,	// Load key map
-} GetSetupFnameFuncId;
-
-static BOOL _GetSetupFname(HWND HWin, GetSetupFnameFuncId FuncId, PTTSet ts)
-{
-	wchar_t *FNameFilter;
-	wchar_t TempDir[MAX_PATH];
-	wchar_t DirW[MAX_PATH];
-	wchar_t NameW[MAX_PATH];
-	const char *UILanguageFile = ts->UILanguageFile;
-
-	/* save current dir */
-	_GetCurrentDirectoryW(_countof(TempDir), TempDir);
-
-	/* File name filter */
-	if (FuncId==GSF_LOADKEY) {
-		FNameFilter = _get_lang_msg("FILEDLG_KEYBOARD_FILTER", L"keyboard setup files (*.cnf)\\0*.cnf\\0\\0", UILanguageFile);
-	}
-	else {
-		FNameFilter = _get_lang_msg("FILEDLG_SETUP_FILTER", L"setup files (*.ini)\\0*.ini\\0\\0", UILanguageFile);
-	}
-
-	if (FuncId==GSF_LOADKEY) {
-		size_t i, j;
-		wchar_t *KeyCnfFNW = ToWcharA(ts->KeyCnfFN);
-		GetFileNamePosW(KeyCnfFNW,&i,&j);
-		wcsncpy_s(NameW, _countof(NameW),&KeyCnfFNW[j], _TRUNCATE);
-		memcpy(DirW, KeyCnfFNW, sizeof(wchar_t) * i);
-		DirW[i] = 0;
-
-		if ((wcslen(NameW) == 0) || (_wcsicmp(NameW, L"KEYBOARD.CNF") == 0)) {
-			wcsncpy_s(NameW, _countof(NameW),L"KEYBOARD.CNF", _TRUNCATE);
-		}
-	}
-	else {
-		size_t i, j;
-		wchar_t *SetupFNameW = ToWcharA(ts->SetupFName);
-		GetFileNamePosW(SetupFNameW,&i,&j);
-		wcsncpy_s(NameW, _countof(NameW),&SetupFNameW[j], _TRUNCATE);
-		memcpy(DirW, SetupFNameW, sizeof(wchar_t) * i);
-		DirW[i] = 0;
-
-		if ((wcslen(NameW) == 0) || (_wcsicmp(NameW, L"TERATERM.INI") == 0)) {
-			wcsncpy_s(NameW, _countof(NameW), L"TERATERM.INI", _TRUNCATE);
-		}
-	}
-
-	if (wcslen(DirW) == 0) {
-		wchar_t *HomeDirW = ToWcharA(ts->HomeDir);
-		wcsncpy_s(DirW, _countof(DirW), HomeDirW, _TRUNCATE);
-		free(HomeDirW);
-	}
-
-	SetCurrentDirectoryW(DirW);
-
-	/* OPENFILENAME record */
-	OPENFILENAMEW ofn = {};
-	ofn.lStructSize = get_OPENFILENAME_SIZE();
-	ofn.hwndOwner   = HWin;
-	ofn.lpstrFile   = NameW;
-	ofn.nMaxFile    = sizeof(NameW);
-	ofn.lpstrFilter = FNameFilter;
-	ofn.nFilterIndex = 1;
-	ofn.hInstance = hInst;
-
-	BOOL Ok;
-	switch (FuncId) {
-	case GSF_SAVE:
-		ofn.lpstrDefExt = L"ini";
-		ofn.Flags = OFN_PATHMUSTEXIST | OFN_OVERWRITEPROMPT | OFN_HIDEREADONLY | OFN_SHOWHELP;
-		// 初期ファイルディレクトリをプログラム本体がある箇所に固定する (2005.1.6 yutaka)
-		// 読み込まれたteraterm.iniがあるディレクトリに固定する。
-		// これにより、/F= で指定された位置に保存されるようになる。(2005.1.26 yutaka)
-		// Windows Vista ではファイル名まで指定すると NULL と同じ挙動をするようなので、
-		// ファイル名を含まない形でディレクトリを指定するようにした。(2006.9.16 maya)
-//		ofn.lpstrInitialDir = __argv[0];
-//		ofn.lpstrInitialDir = ts->SetupFName;
-		ofn.lpstrInitialDir = DirW;
-		ofn.lpstrTitle = _get_lang_msg("FILEDLG_SAVE_SETUP_TITLE", L"Tera Term: Save setup", UILanguageFile);
-		Ok = _GetSaveFileNameW(&ofn);
-		if (Ok) {
-			char *Name = ToCharW(NameW);
-			strncpy_s(ts->SetupFName, sizeof(ts->SetupFName), Name, _TRUNCATE);
-			free(Name);
-		}
-		break;
-	case GSF_RESTORE:
-		ofn.lpstrDefExt = L"ini";
-		ofn.Flags = OFN_FILEMUSTEXIST | OFN_HIDEREADONLY | OFN_SHOWHELP;
-		ofn.lpstrTitle = _get_lang_msg("FILEDLG_RESTORE_SETUP_TITLE", L"Tera Term: Restore setup", UILanguageFile);
-		Ok = _GetOpenFileNameW(&ofn);
-		if (Ok) {
-			char *Name = ToCharW(NameW);
-			strncpy_s(ts->SetupFName, sizeof(ts->SetupFName), Name, _TRUNCATE);
-			free(Name);
-		}
-		break;
-	case GSF_LOADKEY:
-		ofn.lpstrDefExt = L"cnf";
-		ofn.Flags = OFN_FILEMUSTEXIST | OFN_HIDEREADONLY | OFN_SHOWHELP;
-		ofn.lpstrTitle = _get_lang_msg("FILEDLG_LOAD_KEYMAP_TITLE", L"Tera Term: Load key map", UILanguageFile);
-		Ok = _GetOpenFileNameW(&ofn);
-		if (Ok) {
-			char *Name = ToCharW(NameW);
-			strncpy_s(ts->KeyCnfFN, sizeof(ts->KeyCnfFN), Name, _TRUNCATE);
-			free(Name);
-		}
-		break;
-	default:
-		assert(FALSE);
-		Ok = FALSE;
-		break;
-	}
-
-#if defined(_DEBUG)
-	if (!Ok) {
-		DWORD Err = GetLastError();
-		DWORD DlgErr = CommDlgExtendedError();
-		assert(Err == 0 && DlgErr == 0);
-	}
-#endif
-
-	free(FNameFilter);
-	free((void *)ofn.lpstrTitle);
-
-	/* restore dir */
-	_SetCurrentDirectoryW(TempDir);
-
-	return Ok;
-}
-
 void CVTWindow::OnSetupSave()
 {
 	BOOL Ok;
@@ -4785,8 +4896,12 @@ void CVTWindow::OnSetupSave()
 	int ret;
 
 	strncpy_s(TmpSetupFN, sizeof(TmpSetupFN),ts.SetupFName, _TRUNCATE);
+	if (! LoadTTFILE()) {
+		return;
+	}
 	HelpId = HlpSetupSave;
-	Ok = _GetSetupFname(HVTWin,GSF_SAVE,&ts);
+	Ok = (*GetSetupFname)(HVTWin,GSF_SAVE,&ts);
+	FreeTTFILE();
 	if (! Ok) {
 		return;
 	}
@@ -4794,12 +4909,11 @@ void CVTWindow::OnSetupSave()
 	// 書き込みできるかの判別を追加 (2005.11.3 yutaka)
 	if ((ret = _access(ts.SetupFName, 0x02)) != 0) {
 		if (errno != ENOENT) {  // ファイルがすでに存在する場合のみエラーとする (2005.12.13 yutaka)
-			wchar_t uimsg[MAX_UIMSG];
-			wchar_t uimsg2[MAX_UIMSG];
-			get_lang_msgW("MSG_TT_ERROR", uimsg, _countof(uimsg), L"Tera Term: ERROR", ts.UILanguageFile);
-			get_lang_msgW("MSG_SAVESETUP_PERMISSION_ERROR", uimsg2, _countof(uimsg2),
-						  L"TERATERM.INI file doesn't have the writable permission.", ts.UILanguageFile);
-			_MessageBoxW(HVTWin, uimsg2, uimsg, MB_OK|MB_ICONEXCLAMATION);
+			char uimsg[MAX_UIMSG];
+			get_lang_msg("MSG_TT_ERROR", uimsg, sizeof(uimsg), "Tera Term: ERROR", ts.UILanguageFile);
+			get_lang_msg("MSG_SAVESETUP_PERMISSION_ERROR", ts.UIMsg, sizeof(ts.UIMsg),
+			             "TERATERM.INI file doesn't have the writable permission.", ts.UILanguageFile);
+			MessageBox(ts.UIMsg, uimsg, MB_OK|MB_ICONEXCLAMATION);
 			return;
 		}
 	}
@@ -4842,15 +4956,11 @@ void CVTWindow::OnSetupRestore()
 	BOOL Ok;
 
 	HelpId = HlpSetupRestore;
-#if 0
 	if (! LoadTTFILE()) {
 		return;
 	}
-#endif
-	Ok = _GetSetupFname(HVTWin,GSF_RESTORE,&ts);
-#if 0
+	Ok = (*GetSetupFname)(HVTWin,GSF_RESTORE,&ts);
 	FreeTTFILE();
-#endif
 	if (Ok) {
 		RestoreSetup();
 	}
@@ -4870,20 +4980,19 @@ static BOOL openFileWithApplication(char *pathname, char *filename, char *editor
 	STARTUPINFO si;
 	PROCESS_INFORMATION pi;
 	BOOL ret = FALSE;
-	wchar_t buf[80];
-	wchar_t uimsg[MAX_UIMSG];
-	wchar_t uimsg2[MAX_UIMSG];
+	char buf[80];
+	char uimsg[MAX_UIMSG];
 
 	SetLastError(NO_ERROR);
 
 	_snprintf_s(fullpath, sizeof(fullpath), "%s\\%s", pathname, filename);
 	if (_access(fullpath, 0) != 0) { // ファイルが存在しない
 		DWORD no = GetLastError();
-		get_lang_msgW("MSG_ERROR", uimsg, _countof(uimsg), L"ERROR", ts.UILanguageFile);
-		get_lang_msgW("DLG_SETUPDIR_NOFILE_ERROR", uimsg2, _countof(uimsg2),
-					  L"File does not exist.(%d)", ts.UILanguageFile);
-		_snwprintf_s(buf, _countof(buf), _TRUNCATE, uimsg2, no);
-		_MessageBoxW(NULL, buf, uimsg, MB_OK | MB_ICONWARNING);
+		get_lang_msg("MSG_ERROR", uimsg, sizeof(uimsg), "ERROR", ts.UILanguageFile);
+		get_lang_msg("DLG_SETUPDIR_NOFILE_ERROR", ts.UIMsg, sizeof(ts.UIMsg),
+			"File does not exist.(%d)", ts.UILanguageFile);
+		_snprintf_s(buf, sizeof(buf), _TRUNCATE, ts.UIMsg, no);
+		::MessageBox(NULL, buf, uimsg, MB_OK | MB_ICONWARNING);
 		goto error;
 	}
 
@@ -4896,11 +5005,11 @@ static BOOL openFileWithApplication(char *pathname, char *filename, char *editor
 	if (CreateProcess(NULL, command, NULL, NULL, FALSE, 0,
 		NULL, NULL, &si, &pi) == 0) { // 起動失敗
 		DWORD no = GetLastError();
-		get_lang_msgW("MSG_ERROR", uimsg, _countof(uimsg), L"ERROR", ts.UILanguageFile);
-		get_lang_msgW("DLG_SETUPDIR_OPENFILE_ERROR", uimsg2, _countof(uimsg2),
-					  L"Cannot open file.(%d)", ts.UILanguageFile);
-		_snwprintf_s(buf, _countof(buf), _TRUNCATE, uimsg2, no);
-		_MessageBoxW(NULL, buf, uimsg, MB_OK | MB_ICONWARNING);
+		get_lang_msg("MSG_ERROR", uimsg, sizeof(uimsg), "ERROR", ts.UILanguageFile);
+		get_lang_msg("DLG_SETUPDIR_OPENFILE_ERROR", ts.UIMsg, sizeof(ts.UIMsg),
+			"Cannot open file.(%d)", ts.UILanguageFile);
+		_snprintf_s(buf, sizeof(buf), _TRUNCATE, ts.UIMsg, no);
+		::MessageBox(NULL, buf, uimsg, MB_OK | MB_ICONWARNING);
 		goto error;
 	} else {
 		CloseHandle(pi.hThread);
@@ -4920,29 +5029,38 @@ error:;
 // return TRUE: success
 //        FALSE: failure
 //
-static BOOL openDirectoryWithExplorer(const wchar_t *path)
+static BOOL openDirectoryWithExplorer(char *path)
 {
 	LPSHELLFOLDER pDesktopFolder;
 	LPMALLOC pMalloc;
 	LPITEMIDLIST pIDL;
+	WCHAR pwszDisplayName[1024];
+	size_t szRet, DisplayNameMax;
 	SHELLEXECUTEINFO si;
 	BOOL ret = FALSE;
 
+	DisplayNameMax = sizeof(pwszDisplayName) / sizeof(pwszDisplayName[0]);
+
 	if (SHGetDesktopFolder(&pDesktopFolder) == S_OK) {
 		if (SHGetMalloc(&pMalloc) == S_OK) {
-			if (pDesktopFolder->ParseDisplayName(NULL, NULL, (LPWSTR)path, NULL, &pIDL, NULL) == S_OK) {
-				::ZeroMemory(&si, sizeof(si));
-				si.cbSize = sizeof(si);
-				si.fMask = SEE_MASK_IDLIST;
-				si.lpVerb = _T("open");
-				si.lpIDList = pIDL;
-				si.nShow = SW_SHOWNORMAL;
-				::ShellExecuteEx(&si);
-				pMalloc->Free((void *)pIDL);
+			szRet = mbstowcs(pwszDisplayName, path, DisplayNameMax - 1);
+			if (szRet != -1) {
+				pwszDisplayName[szRet] = L'\0';
 
-				ret = TRUE;
+				if (pDesktopFolder->ParseDisplayName(NULL, NULL, pwszDisplayName, NULL, &pIDL, NULL) == S_OK) {
+					::ZeroMemory(&si, sizeof(si));
+					si.cbSize = sizeof(si);
+					si.fMask = SEE_MASK_IDLIST;
+					si.lpVerb = _T("open");
+					si.lpIDList = pIDL;
+					si.nShow = SW_SHOWNORMAL;
+					::ShellExecuteEx(&si);
+					pMalloc->Free((void*)pIDL);
+
+					ret = TRUE;
+				}
+
 			}
-
 			pMalloc->Release();
 		}
 		pDesktopFolder->Release();
@@ -4951,15 +5069,14 @@ static BOOL openDirectoryWithExplorer(const wchar_t *path)
 	return (ret);
 }
 
+
 //
 // フォルダもしくはファイルを開く。
 //
 static void openFileDirectory(char *path, char *filename, BOOL open_directory_only, char *open_editor)
 {
 	if (open_directory_only) {
-		wchar_t *pathW = ToWcharA(path);
-		openDirectoryWithExplorer(pathW);
-		free(pathW);
+		openDirectoryWithExplorer(path);
 	}
 	else {
 		openFileWithApplication(path, filename, open_editor);
@@ -5336,15 +5453,11 @@ void CVTWindow::OnSetupLoadKeyMap()
 	BOOL Ok;
 
 	HelpId = HlpSetupLoadKeyMap;
-#if 0
 	if (! LoadTTFILE()) {
 		return;
 	}
-#endif
-	Ok = _GetSetupFname(HVTWin,GSF_LOADKEY,&ts);
-#if 0
+	Ok = (*GetSetupFname)(HVTWin,GSF_LOADKEY,&ts);
 	FreeTTFILE();
-#endif
 	if (! Ok) {
 		return;
 	}
@@ -5410,14 +5523,661 @@ void CVTWindow::OnControlResetPort()
 	CommResetSerial(&ts, &cv, TRUE);
 }
 
+void ApplyBroadCastCommandHisotry(HWND Dialog, char *historyfile)
+{
+	char EntName[13];
+	char Command[HostNameMaxLength+1];
+	int i = 1;
+
+	SendDlgItemMessage(Dialog, IDC_COMMAND_EDIT, CB_RESETCONTENT, 0, 0);
+	do {
+		_snprintf_s(EntName, sizeof(EntName), _TRUNCATE, "Command%d", i);
+		GetPrivateProfileString("BroadcastCommands",EntName,"",
+		                        Command,sizeof(Command), historyfile);
+		if (strlen(Command) > 0) {
+			SendDlgItemMessage(Dialog, IDC_COMMAND_EDIT, CB_ADDSTRING,
+			                   0, (LPARAM)Command);
+		}
+		i++;
+	} while ((i <= ts.MaxBroadcatHistory) && (strlen(Command)>0));
+
+	SendDlgItemMessage(Dialog, IDC_COMMAND_EDIT, EM_LIMITTEXT,
+	                   HostNameMaxLength-1, 0);
+
+	SendDlgItemMessage(Dialog, IDC_COMMAND_EDIT, CB_SETCURSEL,0,0);
+}
+
+// ドロップダウンの中のエディットコントロールを
+// サブクラス化するためのウインドウプロシージャ
+static WNDPROC OrigBroadcastEditProc; // Original window procedure
+static HWND BroadcastWindowList;
+static LRESULT CALLBACK BroadcastEditProc(HWND dlg, UINT msg,
+                                          WPARAM wParam, LPARAM lParam)
+{
+	char buf[1024];
+	int len;
+
+	switch (msg) {
+		case WM_CREATE:
+			break;
+
+		case WM_DESTROY:
+			break;
+
+		case WM_LBUTTONUP:
+			// すでにテキストが入力されている場合は、カーソルを末尾へ移動させる。
+			len = GetWindowText(dlg, buf, sizeof(buf));
+			SendMessage(dlg, EM_SETSEL, len, len);
+			SetFocus(dlg);
+			break;
+
+		case WM_LBUTTONDOWN:
+		case WM_RBUTTONDOWN:
+		case WM_RBUTTONUP:
+			SetFocus(dlg);
+			break;
+
+		case WM_KEYDOWN:
+		case WM_KEYUP:
+		case WM_SYSKEYDOWN:
+		case WM_SYSKEYUP:
+			{
+				int i;
+				HWND hd;
+				int count;
+
+				if (wParam == 0x0d) {  // Enter key
+					SetWindowText(dlg, "");
+					SendMessage(dlg, EM_SETSEL, 0, 0);
+				}
+
+				count = SendMessage(BroadcastWindowList, LB_GETCOUNT, 0, 0);
+				for (i = 0 ; i < count ; i++) {
+					if (SendMessage(BroadcastWindowList, LB_GETSEL, i, 0)) {
+						hd = GetNthWin(i);
+						if (hd) {
+							PostMessage(hd, msg, wParam, lParam);
+						}
+					}
+				}
+			}
+			break;
+
+		case WM_CHAR:
+			// 入力した文字がIDC_COMMAND_EDITに残らないように捨てる
+			return FALSE;
+
+		default:
+			return CallWindowProc(OrigBroadcastEditProc, dlg, msg, wParam, lParam);
+	}
+
+	return FALSE;
+}
+
+static void UpdateBroadcastWindowList(HWND hWnd)
+{
+	int i, count;
+	HWND hd;
+	TCHAR szWindowText[256];
+
+	SendMessage(hWnd, LB_RESETCONTENT, 0, 0);
+
+	count = GetRegisteredWindowCount();
+	for (i = 0 ; i < count ; i++) {
+		hd = GetNthWin(i);
+		if (hd == NULL) {
+			break;
+		}
+
+		GetWindowText(hd, szWindowText, 256);
+		SendMessage(hWnd, LB_INSERTSTRING, -1, (LPARAM)szWindowText);
+	}
+}
+
+/*
+ * ダイアログで選択されたウィンドウのみ、もしくは親ウィンドウのみに送るブロードキャストモード。
+ * リアルタイムモードが off の時に利用される。
+ */
+void SendBroadcastMessageToSelected(HWND HVTWin, HWND hWnd, int parent_only, char *buf, int buflen)
+{
+	int i;
+	int count;
+	HWND hd;
+	COPYDATASTRUCT cds;
+
+	ZeroMemory(&cds, sizeof(cds));
+	cds.dwData = IPC_BROADCAST_COMMAND;
+	cds.cbData = buflen;
+	cds.lpData = buf;
+
+	if (parent_only) {
+		// 親ウィンドウのみに WM_COPYDATA メッセージを送る
+		SendMessage(GetParent(hWnd), WM_COPYDATA, (WPARAM)HVTWin, (LPARAM)&cds);
+	}
+	else {
+		// ダイアログで選択されたウィンドウにメッセージを送る
+		count = SendMessage(BroadcastWindowList, LB_GETCOUNT, 0, 0);
+		for (i = 0 ; i < count ; i++) {
+			// リストボックスで選択されているか
+			if (SendMessage(BroadcastWindowList, LB_GETSEL, i, 0)) {
+				if ((hd = GetNthWin(i)) != NULL) {
+					// WM_COPYDATAを使って、プロセス間通信を行う。
+					SendMessage(hd, WM_COPYDATA, (WPARAM)HVTWin, (LPARAM)&cds);
+				}
+			}
+		}
+	}
+}
+
+/*
+ * 全 Tera Term へメッセージを送信するブロードキャストモード。
+ * "sendbroadcast"マクロコマンドからのみ利用される。
+ */
+void SendBroadcastMessage(HWND HVTWin, HWND hWnd, char *buf, int buflen)
+{
+	int i, count;
+	HWND hd;
+	COPYDATASTRUCT cds;
+
+	ZeroMemory(&cds, sizeof(cds));
+	cds.dwData = IPC_BROADCAST_COMMAND;
+	cds.cbData = buflen;
+	cds.lpData = buf;
+
+	count = GetRegisteredWindowCount();
+
+	// 全 Tera Term へメッセージを送る。
+	for (i = 0 ; i < count ; i++) {
+		if ((hd = GetNthWin(i)) == NULL) {
+			break;
+		}
+		// WM_COPYDATAを使って、プロセス間通信を行う。
+		SendMessage(hd, WM_COPYDATA, (WPARAM)HVTWin, (LPARAM)&cds);
+	}
+}
+
+
+/*
+ * 任意の Tera Term 群へメッセージを送信するマルチキャストモード。厳密には、
+ * ブロードキャスト送信を行い、受信側でメッセージを取捨選択する。
+ * "sendmulticast"マクロコマンドからのみ利用される。
+ */
+void SendMulticastMessage(HWND HVTWin, HWND hWnd, char *name, char *buf, int buflen)
+{
+	int i, count;
+	HWND hd;
+	COPYDATASTRUCT cds;
+	char *msg = NULL;
+	int msglen, nlen;
+
+	/* 送信メッセージを構築する。
+	 *
+	 * msg
+	 * +------+--------------+--+
+	 * |name\0|buf           |\0|
+	 * +------+--------------+--+
+	 * <--------------------->
+	 * msglen = strlen(name) + 1 + buflen
+	 * bufの直後には \0 は付かない。
+	 */
+	nlen = strlen(name) + 1;
+	msglen = nlen + buflen;
+	if ((msg = (char *)malloc(msglen)) == NULL) {
+		return;
+	}
+	strcpy_s(msg, msglen, name);
+	memcpy_s(msg + nlen, msglen - nlen, buf, buflen);
+
+	ZeroMemory(&cds, sizeof(cds));
+	cds.dwData = IPC_MULTICAST_COMMAND;
+	cds.cbData = msglen;
+	cds.lpData = msg;
+
+	count = GetRegisteredWindowCount();
+
+	// すべてのTera Termにメッセージとデータを送る
+	for (i = 0 ; i < count ; i++) {
+		if ((hd = GetNthWin(i)) == NULL) {
+			break;
+		}
+
+		// WM_COPYDATAを使って、プロセス間通信を行う。
+		SendMessage(hd, WM_COPYDATA, (WPARAM)HVTWin, (LPARAM)&cds);
+	}
+
+	free(msg);
+}
+
+void SetMulticastName(char *name)
+{
+	strncpy_s(ts.MulticastName, sizeof(ts.MulticastName), name, _TRUNCATE);
+}
+
+static int CompareMulticastName(char *name)
+{
+	return strcmp(ts.MulticastName, name);
+}
+
+//
+// すべてのターミナルへ同一コマンドを送信するモードレスダイアログの表示
+// (2005.1.22 yutaka)
+//
+static LRESULT CALLBACK BroadcastCommandDlgProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp)
+{
+	static const DlgTextInfo TextInfos[] = {
+		{ 0, "DLG_BROADCAST_TITLE" },
+		{ IDC_HISTORY_CHECK, "DLG_BROADCAST_HISTORY" },
+		{ IDC_ENTERKEY_CHECK, "DLG_BROADCAST_ENTER" },
+		{ IDC_PARENT_ONLY, "DLG_BROADCAST_PARENTONLY" },
+		{ IDC_REALTIME_CHECK, "DLG_BROADCAST_REALTIME" },
+		{ IDOK, "DLG_BROADCAST_SUBMIT" },
+		{ IDCANCEL, "BTN_CLOSE" },
+	};
+	char buf[256 + 3];
+	UINT ret;
+	LRESULT checked;
+	LRESULT history;
+	char historyfile[MAX_PATH];
+	static HWND hwndBroadcast     = NULL; // Broadcast dropdown
+	static HWND hwndBroadcastEdit = NULL; // Edit control on Broadcast dropdown
+	// for resize
+	RECT rc_dlg, rc, rc_ok;
+	POINT p;
+	static int ok2right, cancel2right, cmdlist2ok, list2bottom, list2right;
+	// for update list
+	const int list_timer_id = 100;
+	const int list_timer_tick = 1000; // msec
+	static int prev_instances = 0;
+	// for status bar
+	static HWND hStatus = NULL;
+	static int init_width, init_height;
+
+	switch (msg) {
+		case WM_SHOWWINDOW:
+			if (wp) {  // show
+				// Tera Term window list
+				UpdateBroadcastWindowList(GetDlgItem(hWnd, IDC_LIST));
+				return TRUE;
+			}
+			break;
+
+		case WM_INITDIALOG:
+			// ラジオボタンのデフォルトは CR にする。
+			SendMessage(GetDlgItem(hWnd, IDC_RADIO_CR), BM_SETCHECK, BST_CHECKED, 0);
+			// デフォルトでチェックボックスを checked 状態にする。
+			SendMessage(GetDlgItem(hWnd, IDC_ENTERKEY_CHECK), BM_SETCHECK, BST_CHECKED, 0);
+			// history を反映する (2007.3.3 maya)
+			if (ts.BroadcastCommandHistory) {
+				SendMessage(GetDlgItem(hWnd, IDC_HISTORY_CHECK), BM_SETCHECK, BST_CHECKED, 0);
+			}
+			GetDefaultFName(ts.HomeDir, BROADCAST_LOGFILE, historyfile, sizeof(historyfile));
+			ApplyBroadCastCommandHisotry(hWnd, historyfile);
+
+			// エディットコントロールにフォーカスをあてる
+			SetFocus(GetDlgItem(hWnd, IDC_COMMAND_EDIT));
+
+			// サブクラス化させてリアルタイムモードにする (2008.1.21 yutaka)
+			hwndBroadcast = GetDlgItem(hWnd, IDC_COMMAND_EDIT);
+			hwndBroadcastEdit = GetWindow(hwndBroadcast, GW_CHILD);
+			OrigBroadcastEditProc = (WNDPROC)GetWindowLongPtr(hwndBroadcastEdit, GWLP_WNDPROC);
+			SetWindowLongPtr(hwndBroadcastEdit, GWLP_WNDPROC, (LONG_PTR)BroadcastEditProc);
+			// デフォルトはon。残りはdisable。
+			SendMessage(GetDlgItem(hWnd, IDC_REALTIME_CHECK), BM_SETCHECK, BST_CHECKED, 0);  // default on
+			EnableWindow(GetDlgItem(hWnd, IDC_HISTORY_CHECK), FALSE);
+			EnableWindow(GetDlgItem(hWnd, IDC_RADIO_CRLF), FALSE);
+			EnableWindow(GetDlgItem(hWnd, IDC_RADIO_CR), FALSE);
+			EnableWindow(GetDlgItem(hWnd, IDC_RADIO_LF), FALSE);
+			EnableWindow(GetDlgItem(hWnd, IDC_ENTERKEY_CHECK), FALSE);
+			EnableWindow(GetDlgItem(hWnd, IDC_PARENT_ONLY), FALSE);
+
+			// Tera Term window list
+			BroadcastWindowList = GetDlgItem(hWnd, IDC_LIST);
+			UpdateBroadcastWindowList(BroadcastWindowList);
+
+			// I18N
+			SetDlgTexts(hWnd, TextInfos, _countof(TextInfos), ts.UILanguageFile);
+
+			// ダイアログの初期サイズを保存
+			GetWindowRect(hWnd, &rc_dlg);
+			init_width = rc_dlg.right - rc_dlg.left;
+			init_height = rc_dlg.bottom - rc_dlg.top;
+
+			// 現在サイズから必要な値を計算
+			GetClientRect(hWnd, &rc_dlg);
+			p.x = rc_dlg.right;
+			p.y = rc_dlg.bottom;
+			ClientToScreen(hWnd, &p);
+
+			GetWindowRect(GetDlgItem(hWnd, IDOK), &rc_ok);
+			ok2right = p.x - rc_ok.left;
+
+			GetWindowRect(GetDlgItem(hWnd, IDCANCEL), &rc);
+			cancel2right = p.x - rc.left;
+
+			GetWindowRect(GetDlgItem(hWnd, IDC_COMMAND_EDIT), &rc);
+			cmdlist2ok = rc_ok.left - rc.right;
+
+			GetWindowRect(GetDlgItem(hWnd, IDC_LIST), &rc);
+			list2bottom = p.y - rc.bottom;
+			list2right = p.x - rc.right;
+
+			// リサイズアイコンを右下に表示させたいので、ステータスバーを付ける。
+			InitCommonControls();
+			hStatus = CreateStatusWindow(
+				WS_CHILD | WS_VISIBLE |
+				CCS_BOTTOM | SBARS_SIZEGRIP, NULL, hWnd, 1);
+
+			// リスト更新タイマーの開始
+			SetTimer(hWnd, list_timer_id, list_timer_tick, NULL);
+
+			return FALSE;
+
+		case WM_COMMAND:
+			switch (wp) {
+			case IDC_ENTERKEY_CHECK | (BN_CLICKED << 16):
+				// チェックの有無により、ラジオボタンの有効・無効を決める。
+				checked = SendMessage(GetDlgItem(hWnd, IDC_ENTERKEY_CHECK), BM_GETCHECK, 0, 0);
+				if (checked & BST_CHECKED) { // 改行コードあり
+					EnableWindow(GetDlgItem(hWnd, IDC_RADIO_CRLF), TRUE);
+					EnableWindow(GetDlgItem(hWnd, IDC_RADIO_CR), TRUE);
+					EnableWindow(GetDlgItem(hWnd, IDC_RADIO_LF), TRUE);
+
+				} else {
+					EnableWindow(GetDlgItem(hWnd, IDC_RADIO_CRLF), FALSE);
+					EnableWindow(GetDlgItem(hWnd, IDC_RADIO_CR), FALSE);
+					EnableWindow(GetDlgItem(hWnd, IDC_RADIO_LF), FALSE);
+				}
+				return TRUE;
+
+			case IDC_REALTIME_CHECK | (BN_CLICKED << 16):
+				checked = SendMessage(GetDlgItem(hWnd, IDC_REALTIME_CHECK), BM_GETCHECK, 0, 0);
+				if (checked & BST_CHECKED) { // checkあり
+					// new handler
+					hwndBroadcast = GetDlgItem(hWnd, IDC_COMMAND_EDIT);
+					hwndBroadcastEdit = GetWindow(hwndBroadcast, GW_CHILD);
+					OrigBroadcastEditProc = (WNDPROC)GetWindowLongPtr(hwndBroadcastEdit, GWLP_WNDPROC);
+					SetWindowLongPtr(hwndBroadcastEdit, GWLP_WNDPROC, (LONG_PTR)BroadcastEditProc);
+
+					EnableWindow(GetDlgItem(hWnd, IDC_HISTORY_CHECK), FALSE);
+					EnableWindow(GetDlgItem(hWnd, IDC_RADIO_CRLF), FALSE);
+					EnableWindow(GetDlgItem(hWnd, IDC_RADIO_CR), FALSE);
+					EnableWindow(GetDlgItem(hWnd, IDC_RADIO_LF), FALSE);
+					EnableWindow(GetDlgItem(hWnd, IDC_ENTERKEY_CHECK), FALSE);
+					EnableWindow(GetDlgItem(hWnd, IDC_PARENT_ONLY), FALSE);
+					EnableWindow(GetDlgItem(hWnd, IDC_LIST), TRUE);  // true
+				} else {
+					// restore old handler
+					SetWindowLongPtr(hwndBroadcastEdit, GWLP_WNDPROC, (LONG_PTR)OrigBroadcastEditProc);
+
+					EnableWindow(GetDlgItem(hWnd, IDC_HISTORY_CHECK), TRUE);
+					EnableWindow(GetDlgItem(hWnd, IDC_RADIO_CRLF), TRUE);
+					EnableWindow(GetDlgItem(hWnd, IDC_RADIO_CR), TRUE);
+					EnableWindow(GetDlgItem(hWnd, IDC_RADIO_LF), TRUE);
+					EnableWindow(GetDlgItem(hWnd, IDC_ENTERKEY_CHECK), TRUE);
+					EnableWindow(GetDlgItem(hWnd, IDC_PARENT_ONLY), TRUE);
+					EnableWindow(GetDlgItem(hWnd, IDC_LIST), TRUE);  // true
+				}
+				return TRUE;
+			}
+
+			switch (LOWORD(wp)) {
+				case IDOK:
+					{
+						memset(buf, 0, sizeof(buf));
+
+						// realtime modeの場合、Enter keyのみ送る。
+						// cf. http://logmett.com/forum/viewtopic.php?f=8&t=1601
+						// (2011.3.14 hirata)
+						checked = SendMessage(GetDlgItem(hWnd, IDC_REALTIME_CHECK), BM_GETCHECK, 0, 0);
+						if (checked & BST_CHECKED) { // checkあり
+							strncpy_s(buf, sizeof(buf), "\n", _TRUNCATE);
+							SetDlgItemText(hWnd, IDC_COMMAND_EDIT, "");
+							goto skip;
+						}
+
+						ret = GetDlgItemText(hWnd, IDC_COMMAND_EDIT, buf, 256 - 1);
+						if (ret == 0) { // error
+							memset(buf, 0, sizeof(buf));
+						}
+
+						// ブロードキャストコマンドの履歴を保存 (2007.3.3 maya)
+						history = SendMessage(GetDlgItem(hWnd, IDC_HISTORY_CHECK), BM_GETCHECK, 0, 0);
+						if (history) {
+							GetDefaultFName(ts.HomeDir, BROADCAST_LOGFILE, historyfile, sizeof(historyfile));
+							if (LoadTTSET()) {
+								(*AddValueToList)(historyfile, buf, "BroadcastCommands", "Command",
+								                  ts.MaxBroadcatHistory);
+								FreeTTSET();
+							}
+							ApplyBroadCastCommandHisotry(hWnd, historyfile);
+							ts.BroadcastCommandHistory = TRUE;
+						}
+						else {
+							ts.BroadcastCommandHistory = FALSE;
+						}
+						checked = SendMessage(GetDlgItem(hWnd, IDC_ENTERKEY_CHECK), BM_GETCHECK, 0, 0);
+						if (checked & BST_CHECKED) { // 改行コードあり
+							if (SendMessage(GetDlgItem(hWnd, IDC_RADIO_CRLF), BM_GETCHECK, 0, 0) & BST_CHECKED) {
+								strncat_s(buf, sizeof(buf), "\r\n", _TRUNCATE);
+
+							} else if (SendMessage(GetDlgItem(hWnd, IDC_RADIO_CR), BM_GETCHECK, 0, 0) & BST_CHECKED) {
+								strncat_s(buf, sizeof(buf), "\r", _TRUNCATE);
+
+							} else if (SendMessage(GetDlgItem(hWnd, IDC_RADIO_LF), BM_GETCHECK, 0, 0) & BST_CHECKED) {
+								strncat_s(buf, sizeof(buf), "\n", _TRUNCATE);
+
+							} else {
+								strncat_s(buf, sizeof(buf), "\r", _TRUNCATE);
+
+							}
+						}
+
+skip:;
+						// 337: 2007/03/20 チェックされていたら親ウィンドウにのみ送信
+						checked = SendMessage(GetDlgItem(hWnd, IDC_PARENT_ONLY), BM_GETCHECK, 0, 0);
+
+						SendBroadcastMessageToSelected(HVTWin, hWnd, checked, buf, strlen(buf));
+					}
+
+					// モードレスダイアログは一度生成されると、アプリケーションが終了するまで
+					// 破棄されないので、以下の「ウィンドウプロシージャ戻し」は不要と思われる。(yutaka)
+#if 0
+					SetWindowLongPtr(hwndBroadcastEdit, GWLP_WNDPROC, (LONG_PTR)OrigBroadcastEditProc);
+#endif
+
+					//EndDialog(hDlgWnd, IDOK);
+					return TRUE;
+
+				case IDCANCEL:
+					EndDialog(hWnd, 0);
+					//DestroyWindow(hWnd);
+
+					return TRUE;
+
+				case IDC_COMMAND_EDIT:
+					if (HIWORD(wp) == CBN_DROPDOWN) {
+						GetDefaultFName(ts.HomeDir, BROADCAST_LOGFILE, historyfile, sizeof(historyfile));
+						ApplyBroadCastCommandHisotry(hWnd, historyfile);
+					}
+					return FALSE;
+
+				case IDC_LIST:
+					// 一般的なアプリケーションと同じ操作感を持たせるため、
+					// 「SHIFT+クリック」による連続的な選択をサポートする。
+					// (2009.9.28 yutaka)
+					if (HIWORD(wp) == LBN_SELCHANGE && ShiftKey()) {
+						int i, cur, prev;
+
+						cur = ListBox_GetCurSel(BroadcastWindowList);
+						prev = -1;
+						for (i = cur - 1 ; i >= 0 ; i--) {
+							if (ListBox_GetSel(BroadcastWindowList, i)) {
+								prev = i;
+								break;
+							}
+						}
+						if (prev != -1) {
+							// すでに選択済みの箇所があれば、そこから連続選択する。
+							for (i = prev ; i < cur ; i++) {
+								ListBox_SetSel(BroadcastWindowList, TRUE, i);
+							}
+						}
+					}
+
+					return FALSE;
+
+				default:
+					return FALSE;
+			}
+			break;
+
+		case WM_CLOSE:
+			//DestroyWindow(hWnd);
+			EndDialog(hWnd, 0);
+			return TRUE;
+
+		case WM_SIZE:
+			{
+				// 再配置
+				int dlg_w, dlg_h;
+				RECT rc_dlg;
+				RECT rc;
+				POINT p;
+
+				// 新しいダイアログのサイズを得る
+				GetClientRect(hWnd, &rc_dlg);
+				dlg_w = rc_dlg.right;
+				dlg_h = rc_dlg.bottom;
+
+				// OK button
+				GetWindowRect(GetDlgItem(hWnd, IDOK), &rc);
+				p.x = rc.left;
+				p.y = rc.top;
+				ScreenToClient(hWnd, &p);
+				SetWindowPos(GetDlgItem(hWnd, IDOK), 0,
+				             dlg_w - ok2right, p.y, 0, 0,
+				             SWP_NOSIZE | SWP_NOZORDER);
+
+				// Cancel button
+				GetWindowRect(GetDlgItem(hWnd, IDCANCEL), &rc);
+				p.x = rc.left;
+				p.y = rc.top;
+				ScreenToClient(hWnd, &p);
+				SetWindowPos(GetDlgItem(hWnd, IDCANCEL), 0,
+				             dlg_w - cancel2right, p.y, 0, 0,
+				             SWP_NOSIZE | SWP_NOZORDER);
+
+				// Command Edit box
+				GetWindowRect(GetDlgItem(hWnd, IDC_COMMAND_EDIT), &rc);
+				p.x = rc.left;
+				p.y = rc.top;
+				ScreenToClient(hWnd, &p);
+				SetWindowPos(GetDlgItem(hWnd, IDC_COMMAND_EDIT), 0,
+				             0, 0, dlg_w - p.x - ok2right - cmdlist2ok, p.y,
+				             SWP_NOMOVE | SWP_NOZORDER);
+
+				// List Edit box
+				GetWindowRect(GetDlgItem(hWnd, IDC_LIST), &rc);
+				p.x = rc.left;
+				p.y = rc.top;
+				ScreenToClient(hWnd, &p);
+				SetWindowPos(GetDlgItem(hWnd, IDC_LIST), 0,
+				             0, 0, dlg_w - p.x - list2right , dlg_h - p.y - list2bottom,
+				             SWP_NOMOVE | SWP_NOZORDER);
+
+				// status bar
+				SendMessage(hStatus , msg , wp , lp);
+			}
+			return TRUE;
+
+		case WM_GETMINMAXINFO:
+			{
+				// ダイアログの初期サイズより小さくできないようにする
+				LPMINMAXINFO lpmmi;
+				lpmmi = (LPMINMAXINFO)lp;
+				lpmmi->ptMinTrackSize.x = init_width;
+				lpmmi->ptMinTrackSize.y = init_height;
+			}
+			return FALSE;
+
+		case WM_TIMER:
+			{
+				int n;
+
+				if (wp != list_timer_id)
+					break;
+
+				n = GetRegisteredWindowCount();
+				if (n != prev_instances) {
+					prev_instances = n;
+					UpdateBroadcastWindowList(BroadcastWindowList);
+				}
+			}
+			return TRUE;
+
+		case WM_VKEYTOITEM:
+			// リストボックスでキー押下(CTRL+A)されたら、全選択。
+			if ((HWND)lp == BroadcastWindowList) {
+				if (ControlKey() && LOWORD(wp) == 'A') {
+					int i, n;
+
+					//OutputDebugPrintf("msg %x wp %x lp %x\n", msg, wp, lp);
+					n = GetRegisteredWindowCount();
+					for (i = 0 ; i < n ; i++) {
+						ListBox_SetSel(BroadcastWindowList, TRUE, i);
+					}
+				}
+			}
+			return TRUE;
+
+		default:
+			//OutputDebugPrintf("msg %x wp %x lp %x\n", msg, wp, lp);
+			return FALSE;
+	}
+	return TRUE;
+}
+
 void CVTWindow::OnControlBroadcastCommand(void)
 {
-	BroadCastShowDialog(m_hInst, HVTWin);
+	// TODO: モードレスダイアログのハンドルは、親プロセスが DestroyWindow() APIで破棄する
+	// 必要があるが、ここはOS任せとする。
+	static HWND hDlgWnd = NULL;
+	RECT prc, rc;
+	LONG x, y;
+
+	if (hDlgWnd != NULL) {
+		goto activate;
+	}
+
+	hDlgWnd = CreateDialog(m_hInst, MAKEINTRESOURCE(IDD_BROADCAST_DIALOG),
+	                       HVTWin, (DLGPROC)BroadcastCommandDlgProc);
+
+	if (hDlgWnd == NULL) {
+		return;
+	}
+
+	// ダイアログをウィンドウの真上に配置する (2008.1.25 yutaka)
+	GetWindowRect(&prc);
+	::GetWindowRect(hDlgWnd, &rc);
+	x = prc.left;
+	y = prc.top - (rc.bottom - rc.top);
+	if (y < 0) {
+		y = 0;
+	}
+	::SetWindowPos(hDlgWnd, NULL, x, y,  0, 0, SWP_NOSIZE | SWP_NOZORDER);
+
+activate:;
+	::ShowWindow(hDlgWnd, SW_SHOW);
 }
 
 // WM_COPYDATAの受信
 LRESULT CVTWindow::OnReceiveIpcMessage(WPARAM wParam, LPARAM lParam)
 {
+	COPYDATASTRUCT *cds;
+	char *buf, *msg, *name;
+	int buflen, msglen, nlen;
+	int sending = 0;
+
 	if (!cv.Ready) {
 		return 0;
 	}
@@ -5428,17 +6188,50 @@ LRESULT CVTWindow::OnReceiveIpcMessage(WPARAM wParam, LPARAM lParam)
 
 	// 未送信データがある場合は先に送信する
 	// データ量が多い場合は送信しきれない可能性がある
-	if (TalkStatus == IdTalkSendMem) {
-		SendMemContinuously();	// TODO 必要?
+	if (TalkStatus == IdTalkCB) {
+		CBSend();
 	}
-
 	// 送信可能な状態でなければエラー
 	if (TalkStatus != IdTalkKeyb) {
 		return 0;
 	}
 
-	const COPYDATASTRUCT *cds = (COPYDATASTRUCT *)lParam;
-	BroadCastReceive(cds);
+	cds = (COPYDATASTRUCT *)lParam;
+	msglen = cds->cbData;
+	msg = (char *)cds->lpData;
+	if (cds->dwData == IPC_BROADCAST_COMMAND) {
+		buf = msg;
+		buflen = msglen;
+		sending = 1;
+
+	} else if (cds->dwData == IPC_MULTICAST_COMMAND) {
+		name = msg;
+		nlen = strlen(name) + 1;
+		buf = msg + nlen;
+		buflen = msglen - nlen;
+
+		// マルチキャスト名をチェックする
+		if (CompareMulticastName(name) == 0) {  // 同じ
+			sending = 1;
+		}
+	}
+
+	if (sending) {
+		// 端末へ文字列を送り込む
+		// DDE通信に使う関数に変更。(2006.2.7 yutaka)
+		CBStartSend(buf, buflen, FALSE);
+		// 送信データがある場合は送信する
+		if (TalkStatus == IdTalkCB) {
+			CBSend();
+		}
+	}
+
+	// CBStartSend(), CBSend() では送信用バッファにデータを書き込むだけで、
+	// 実際の送信は teraterm.cpp:OnIdle() で CommSend() が呼ばれる事に
+	// よって行われる。
+	// しかし非アクティブなウィンドウでは OnIdle() が呼ばれないので、
+	// 空のメッセージを送って OnIdle() が呼ばれるようにする。
+	::PostMessage(m_hWnd, WM_NULL, 0, 0);
 
 	return 1; // 送信できた場合は1を返す
 }
@@ -5559,23 +6352,9 @@ LRESULT CVTWindow::OnDpiChanged(WPARAM wp, LPARAM)
 	int NewWindowWidth;
 	int NewWindowHeight;
 	if (pAdjustWindowRectExForDpi != NULL || pAdjustWindowRectEx != NULL) {
-		const DWORD Style = (DWORD)::GetWindowLongPtr(m_hWnd, GWL_STYLE);
-		const DWORD ExStyle = (DWORD)::GetWindowLongPtr(m_hWnd, GWL_EXSTYLE);
+		const LONG_PTR Style = ::GetWindowLongPtr(m_hWnd, GWL_STYLE);
+		const LONG_PTR ExStyle = ::GetWindowLongPtr(m_hWnd, GWL_EXSTYLE);
 		const BOOL bMenu = (ts.PopupMenu != 0) ? FALSE : TRUE;
-		if (pGetSystemMetricsForDpi != NULL) {
-			// スクロールバーが表示されている場合は、
-			// スクリーンサイズ(クライアントエリアのサイズ)に追加する
-			int min_pos;
-			int max_pos;
-			GetScrollRange(m_hWnd, SB_VERT, &min_pos, &max_pos);
-			if (min_pos != max_pos) {
-				ScreenWidth += pGetSystemMetricsForDpi(SM_CXVSCROLL, NewDPI);
-			}
-			GetScrollRange(m_hWnd, SB_HORZ, &min_pos, &max_pos);
-			if (min_pos != max_pos) {
-				ScreenHeight += pGetSystemMetricsForDpi(SM_CXHSCROLL, NewDPI);
-			}
-		}
 		RECT Rect = {0, 0, ScreenWidth, ScreenHeight};
 		if (pAdjustWindowRectExForDpi != NULL) {
 			// Windows 10, version 1607+
@@ -5685,9 +6464,6 @@ LRESULT CVTWindow::Proc(UINT msg, WPARAM wp, LPARAM lp)
 	case WM_CHAR:
 		OnChar(wp, LOWORD(lp), HIWORD(lp));
 		break;
-	case WM_UNICHAR:
-		retval = OnUniChar(wp, lp);
-		break;
 	case WM_CLOSE:
 		OnClose();
 		break;
@@ -5760,9 +6536,7 @@ LRESULT CVTWindow::Proc(UINT msg, WPARAM wp, LPARAM lp)
 		OnRButtonUp((UINT)wp, MAKEPOINTS(lp));
 		break;
 	case WM_SETFOCUS:
-#if !UNICODE_DEBUG_CARET_OFF
 		OnSetFocus((HWND)wp);
-#endif
 		DefWindowProc(msg, wp, lp);
 		break;
 	case WM_SIZE:
@@ -5848,11 +6622,9 @@ LRESULT CVTWindow::Proc(UINT msg, WPARAM wp, LPARAM lp)
 	case WM_USER_DLGHELP2:
 		OnDlgHelp(wp, lp);
 		break;
-#if 0
 	case WM_USER_FTCANCEL:
 		OnFileTransEnd(wp, lp);
 		break;
-#endif
 	case WM_USER_GETSERIALNO:
 		retval = OnGetSerialNo(wp, lp);
 		break;
@@ -5866,7 +6638,6 @@ LRESULT CVTWindow::Proc(UINT msg, WPARAM wp, LPARAM lp)
 		OnChangeTitle(wp, lp);
 		break;
 	case WM_COPYDATA:
-		SetTimer(m_hWnd, IdPasteDelayTimer, 0, NULL);  // idle処理を動作させるため
 		OnReceiveIpcMessage(wp, lp);
 		break;
 	case WM_USER_NONCONFIRM_CLOSE:

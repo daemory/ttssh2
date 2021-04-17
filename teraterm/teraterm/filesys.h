@@ -27,45 +27,85 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#pragma once
-
 /* TERATERM.EXE, file transfer routines */
 #ifdef __cplusplus
 extern "C" {
 #endif
+typedef BOOL (PASCAL *PGetSetupFname)
+  (HWND HWin, WORD FuncId, PTTSet ts);
+typedef BOOL (PASCAL *PGetTransFname)
+  (PFileVar fv, PCHAR CurDir, WORD FuncId, LPLONG Option);
+typedef BOOL (PASCAL *PGetMultiFname)
+  (PFileVar fv, PCHAR CurDir, WORD FuncId, LPWORD Option);
+typedef BOOL (PASCAL *PGetGetFname)
+  (HWND HWin, PFileVar fv);
+typedef void (PASCAL *PSetFileVar) (PFileVar fv);
+typedef BOOL (PASCAL *PGetXFname)
+  (HWND HWin, BOOL Receive, LPLONG Option, PFileVar fv, PCHAR CurDir);
+typedef void (PASCAL *PProtoInit)
+  (int Proto, PFileVar fv, PCHAR pv, PComVar cv, PTTSet ts);
+typedef BOOL (PASCAL *PProtoParse)
+  (int Proto, PFileVar fv, PCHAR pv, PComVar cv);
+typedef void (PASCAL *PProtoTimeOutProc)
+  (int Proto, PFileVar fv, PCHAR pv, PComVar cv);
+typedef BOOL (PASCAL *PProtoCancel)
+  (int Proto, PFileVar fv, PCHAR pv, PComVar cv);
+typedef BOOL (PASCAL *PTTFILESetUILanguageFile)
+  (char *file);
+typedef BOOL (PASCAL *PTTFILESetFileSendFilter)
+  (char *file);
 
-// filesys.cpp
-BOOL IsSendVarNULL(void);
-BOOL FileSnedIsSending(void);
-BOOL FileSendStart(const wchar_t *filename, int binary);
-void FileSend(void);
-void FileSendEnd(void);
-void FileSendPause(BOOL Pause);
+extern PGetSetupFname GetSetupFname;
+extern PGetTransFname GetTransFname;
+extern PGetMultiFname GetMultiFname;
+extern PGetGetFname GetGetFname;
+extern PSetFileVar SetFileVar;
+extern PGetXFname GetXFname;
+extern PProtoInit ProtoInit;
+extern PProtoParse ProtoParse;
+extern PProtoTimeOutProc ProtoTimeOutProc;
+extern PProtoCancel ProtoCancel;
+extern PTTFILESetUILanguageFile TTFILESetUILanguageFile;
+extern PTTFILESetFileSendFilter TTFILESetFileSendFilter;
 
-// filesys_proto.cpp
-BOOL ProtoGetProtoFlag(void);
-BOOL IsFileVarNULL(void);
-void ProtoEnd(void);
-int ProtoDlgParse(void);
-void ProtoDlgTimeOut(void);
-void ProtoDlgCancel(void);
-BOOL KermitStartSend(const wchar_t *filename);
-BOOL KermitGet(const wchar_t *filename);
-BOOL KermitStartRecive(BOOL macro);
-BOOL KermitFinish(BOOL macro);
-BOOL XMODEMStartReceive(const wchar_t *fiename, WORD ParamBinaryFlag, WORD ParamXmodemOpt);
-BOOL XMODEMStartSend(const wchar_t *fiename, WORD ParamXmodemOpt);
-BOOL YMODEMStartReceive(BOOL macro);
-BOOL YMODEMStartSend(const wchar_t *fiename);
-BOOL ZMODEMStartReceive(BOOL macro, BOOL autostart);
-BOOL ZMODEMStartSend(const wchar_t *fiename, WORD ParamBinaryFlag, BOOL autostart);
-BOOL BPStartSend(const wchar_t *filename);
-BOOL BPStartReceive(BOOL macro, BOOL autostart);
-BOOL QVStartReceive(BOOL macro);
-BOOL QVStartSend(const wchar_t *filename);
+BOOL LoadTTFILE();
+BOOL FreeTTFILE();
+void ShowFTDlg(WORD OpId);
+BOOL NewFileVar(PFileVar *FV);
+void FreeFileVar(PFileVar *FV);
+
+BOOL LogStart();
+void Log1Byte(BYTE b);
+void LogToFile();
+BOOL CreateLogBuf();
+void FreeLogBuf();
+BOOL CreateBinBuf();
+void FreeBinBuf();
+
+void FileSendStart();
+void FileSend();
+void FLogChangeButton(BOOL Pause);
+void FLogRefreshNum();
+void FileTransEnd(WORD OpId);
+
+void ProtoEnd();
+int ProtoDlgParse();
+void ProtoDlgTimeOut();
+void ProtoDlgCancel();
+void KermitStart(int mode);
+void XMODEMStart(int mode);
+void YMODEMStart(int mode);
+void ZMODEMStart(int mode);
+void BPStart(int mode);
+void QVStart(int mode);
+
+extern PFileVar LogVar, SendVar, FileVar;
+extern BOOL FileLog, BinLog, DDELog;
+
+void logfile_lock_initialize(void);
+void CommentLogToFile(char *buf, int size);
 
 #ifdef __cplusplus
 }
 #endif
 
-#include "filesys_log.h"

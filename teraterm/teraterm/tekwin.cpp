@@ -45,17 +45,16 @@
 #include "ttlib.h"
 #include <htmlhelp.h>
 #include "dlglib.h"
-#include "layer_for_unicode.h"
-#include "codeconv.h"
+#include <tchar.h>
 
-#define TEKClassName L"TEKWin32"
+#define TEKClassName _T("TEKWin32")
 
 /////////////////////////////////////////////////////////////////////////////
 // CTEKWindow
 
 CTEKWindow::CTEKWindow(HINSTANCE hInstance)
 {
-	WNDCLASSW wc;
+	WNDCLASS wc;
 	RECT rect;
 	DWORD Style;
 	int fuLoad = LR_DEFAULTCOLOR;
@@ -85,7 +84,7 @@ CTEKWindow::CTEKWindow(HINSTANCE hInstance)
 	wc.lpszMenuName = NULL;
 	wc.lpszClassName = TEKClassName;
 
-	_RegisterClassW(&wc);
+	RegisterClass(&wc);
 
 	if (ts.TEKPos.x==CW_USEDEFAULT) {
 		rect = rectDefault;
@@ -96,7 +95,7 @@ CTEKWindow::CTEKWindow(HINSTANCE hInstance)
 		rect.right = rect.left + 640; //temporary width
 		rect.bottom = rect.top + 400; //temporary height
 	}
-	CreateW(hInstance, TEKClassName, L"Tera Term", Style, rect, ::GetDesktopWindow(), NULL);
+	Create(hInstance, TEKClassName, _T("Tera Term"), Style, rect, ::GetDesktopWindow(), NULL);
 //--------------------------------------------------------
 	HTEKWin = GetSafeHwnd();
 	if (HTEKWin == NULL) {
@@ -250,43 +249,24 @@ void CTEKWindow::OnActivate(UINT nState, HWND pWndOther, BOOL bMinimized)
 	}
 }
 
-/**
- *	キーボードから1文字入力
- *	@param	nChar	UTF-16 char(wchar_t)	IsWindowUnicode() == TRUE 時
- *					ANSI char(char)			IsWindowUnicode() == FALSE 時
- */
 void CTEKWindow::OnChar(WPARAM nChar, UINT nRepCnt, UINT nFlags)
 {
+	unsigned int i;
+	char Code;
 
 	if (!KeybEnabled || (TalkStatus!=IdTalkKeyb)) {
 		return;
 	}
-
-	wchar_t u16;
-	if (IsWindowUnicode(HTEKWin) == TRUE) {
-		// 入力は UTF-16
-		u16 = (wchar_t)nChar;
-	} else {
-		// 入力は ANSI
-		//		ANSI(ACP) -> UTF-32 -> UTF-16
-		const char mb_str[2] = {(char)nChar, 0};
-		unsigned int u32;
-		size_t mb_len = MBCPToUTF32(mb_str, 1, CP_ACP, &u32);
-		if (mb_len == 0) {
-			return;
-		}
-		u16 = (wchar_t)u32;
-	}
+	Code = nChar;
 
 	if (tk.GIN) {
-		char Code = (char)nChar;
-		TEKReportGIN(&tk, &ts, &cv, Code);
+		TEKReportGIN(&tk,&ts,&cv,Code);
 	}
 	else {
-		for (unsigned int i = 1; i <= nRepCnt; i++) {
-			CommTextOutW(&cv, &u16, 1);
-			if (ts.LocalEcho > 0) {
-				CommTextEchoW(&cv, &u16, 1);
+		for (i=1 ; i<=nRepCnt ; i++) {
+			CommTextOut(&cv,&Code,1);
+			if (ts.LocalEcho>0) {
+				CommTextEcho(&cv,&Code,1);
 			}
 		}
 	}
@@ -296,6 +276,8 @@ void CTEKWindow::OnDestroy()
 {
 	// remove this window from the window list
 	UnregWin(HTEKWin);
+
+	TTCFrameWnd::OnDestroy();
 
 	TEKEnd(&tk);
 	FreeTTTEK();
@@ -655,7 +637,7 @@ LRESULT CTEKWindow::OnChangeTBar(WPARAM wParam, LPARAM lParam)
 LRESULT CTEKWindow::OnDlgHelp(WPARAM wParam, LPARAM lParam)
 {
 	DWORD help_id = (wParam == 0) ? HelpId : (DWORD)wParam;
-	OpenHelp(HH_HELP_CONTEXT, help_id, ts.UILanguageFile);
+	OpenHelp(HH_HELP_CONTEXT, HelpId, ts.UILanguageFile);
 	return 0;
 }
 
@@ -925,6 +907,6 @@ LRESULT CTEKWindow::Proc(UINT msg, WPARAM wp, LPARAM lp)
 		retval = DefWindowProc(msg, wp, lp);
 		break;
 	}
-
+				
 	return retval;
 }

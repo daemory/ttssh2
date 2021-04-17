@@ -1,66 +1,37 @@
-﻿set(PACKAGE_NAME "TTXResizeMenu")
+﻿project(TTXResizeMenu)
 
-project(${PACKAGE_NAME})
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/")
 
-add_library(
-  ${PACKAGE_NAME} SHARED
+set(SRC
   TTXResizeMenu.c
   ReadMe.txt
   ReadMe-ja.txt
   )
 
-if(SUPPORT_OLD_WINDOWS)
-  if(MSVC)
-    target_sources(
-      ${PACKAGE_NAME}
-      PRIVATE
-      ../../teraterm/common/compat_w95_vs2005.c
-      )
-  endif()
-  if(MINGW)
-    target_sources(
-      ${PACKAGE_NAME}
-      PRIVATE
-      ../../teraterm/libmingw/tlssup.c
-      )
-    target_link_libraries(
-      ${PACKAGE_NAME}
-      PRIVATE
-      -Wl,--whole-archive
-      mingw_msvcrt
-      -Wl,--no-whole-archive
-      )
-  endif()
-endif(SUPPORT_OLD_WINDOWS)
+include_directories(
+  ../../teraterm/teraterm
+  ../../teraterm/common
+  )
 
 if (MSVC)
   set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /DELAYLOAD:user32.dll")
 endif()
 
-set_target_properties(
-  ${PACKAGE_NAME}
-  PROPERTIES
-  PREFIX ""
-  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/"
+add_library(
+  TTXResizeMenu SHARED
+  ${SRC}
   )
 
-target_include_directories(
-  ${PACKAGE_NAME}
-  PRIVATE
-  ../../teraterm/teraterm
-  ../../teraterm/common
+set_target_properties(
+  TTXResizeMenu
+  PROPERTIES
+  PREFIX ""
   )
 
 target_link_libraries(
-  ${PACKAGE_NAME}
-  PRIVATE
-  common_static
+  TTXResizeMenu
   ttpcmn
   delayimp
   )
 
-install(
-  TARGETS ${PACKAGE_NAME}
-  RUNTIME
-  DESTINATION .
-  )
+

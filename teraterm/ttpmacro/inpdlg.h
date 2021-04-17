@@ -37,18 +37,15 @@
 class CInpDlg : public CMacroDlgBase
 {
 public:
-	CInpDlg(wchar_t *Input, const wchar_t *Text, const wchar_t *Title,
-	        const wchar_t *Default, BOOL Paswd,
+	CInpDlg(PCHAR Input, PCHAR Text, PCHAR Title,
+	        PCHAR Default, BOOL Paswd,
 	        int x, int y);
 	INT_PTR DoModal(HINSTANCE hInst, HWND hWndParent);
 
 private:
 	enum { IDD = IDD_INPDLG };
 
-	wchar_t *InputStr;
-	const wchar_t *TextStr;
-	const wchar_t *TitleStr;
-	const wchar_t *DefaultStr;
+	PCHAR InputStr, TextStr, TitleStr, DefaultStr;
 	BOOL PaswdFlag;
 	int init_WW, TW, TH, BH, BW, EW, EH;
 	SIZE s;

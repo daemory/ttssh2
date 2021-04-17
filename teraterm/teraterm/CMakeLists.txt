@@ -1,43 +1,84 @@
-﻿set(PACKAGE_NAME "teraterm")
-
-project(${PACKAGE_NAME})
+﻿project(teraterm)
 
 include(${CMAKE_CURRENT_SOURCE_DIR}/../../libs/lib_SFMT.cmake)
 include(${CMAKE_CURRENT_SOURCE_DIR}/../../libs/lib_oniguruma.cmake)
 
-set(ENABLE_DEBUG_INFO 1)
+if(USE_UNICODE_API)
+  add_definitions(-DUNICODE -D_UNICODE)
+endif()
 
-add_executable(
-  ${PACKAGE_NAME} WIN32
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/")
+
+set(COMMON_SRC
+  ../common/tt_res.h
+  ../common/ttcommon.h
+  ../common/ttddecmnd.h
+  ../common/tttypes.h
+  ../common/tektypes.h
+  ../common/ttftypes.h
+  ../common/ttplugin.h
+  ../common/tt-version.h
+  ../common/teraterm.h
+  ../common/ttlib.c
+  ../common/ttlib.h
+  ../common/dlglib.h
+  ../common/dlglib.c
+  ../common/dlglib_cpp.cpp
+  ../common/dlglib_tmpl.cpp
+  ../common/win16api.h
+  ../common/win16api.c
+  ../common/codemap.h
+  ../common/compat_w95.h
+  ../common/compat_win.h
+  ../common/compat_win.cpp
+  ../common/tmfc.cpp
+  ../common/tmfc.h
+  ../common/tmfc_frame.cpp
+  ../common/i18n.h
+  ../common/dllutil.cpp
+  ../common/dllutil.h
+  ../common/codeconv.h
+  ../common/codeconv.cpp
+  ../common/tipwin.h
+  ../common/tipwin.cpp
+  #
+  ../teraterm/unisym2decsp.map
+  ../teraterm/uni2sjis.map
+  ../ttpcmn/sjis2uni.map
+  )
+
+source_group(
+  "common"
+  FILES
+  ${COMMON_SRC}
+  )
+
+set(TTDLG_SRC
+  ../ttpdlg/dlg_res.h
+  ../ttpdlg/ttdlg.c
+  ../ttpdlg/ttdlg.h
+  ../ttpdlg/ttpdlg.rc
+  )
+
+source_group(
+  "ttdlg"
+  FILES
+  ${TTDLG_SRC}
+  )
+
+set(SRC
   addsetting.cpp
   addsetting.h
-  broadcast.cpp
-  broadcast.h
   buffer.c
   buffer.h
-  checkeol.cpp
-  checkeol.h
   clipboar.c
   clipboar.h
-  coding_pp.cpp
-  coding_pp.h
-  coding_pp.rc
-  coding_pp_res.h
   commlib.c
   commlib.h
   dnddlg.cpp
   dnddlg.h
   filesys.cpp
   filesys.h
-  filesys_log.cpp
-  filesys_log.rc
-  filesys_log_res.h
-  filesys_proto.cpp
-  filesys_proto.h
-  font_pp.cpp
-  font_pp.h
-  font_pp.rc
-  font_pp_res.h
   ftdlg.cpp
   ftdlg.h
   keyboard.c
@@ -60,10 +101,9 @@ add_executable(
   teraterml.h
   ttdde.c
   ttdde.h
-  ttdebug.cpp
-  ttdebug.h
   ttdialog.c
   ttdialog.h
+  ttermpro.rc
   ttfileio.c
   ttfileio.h
   ttime.c
@@ -72,6 +112,7 @@ add_executable(
   ttplug.h
   ttsetup.c
   ttsetup.h
+  tt-version.rc
   ttwinman.c
   ttwinman.h
   ttwsk.c
@@ -86,168 +127,51 @@ add_executable(
   winjump.h
   WSAAsyncGetAddrInfo.c
   WSAAsyncGetAddrInfo.h
-  sendmem.cpp
-  sendmem.h
   #
   uni_combining.map
   #
-  ttermpro.rc
-  tt-version.rc
-  teraterm_manifest.rc
+  teraterm.manifest
   #
+  svnversion.h.in
   ${CMAKE_CURRENT_BINARY_DIR}/../ttpdlg/svnversion.h
   #
-  unicode_test.h
-  unicode.h
-  unicode.cpp
-  unicode_asian_width.tbl
-  unicode_combine.tbl
-  unicode_emoji.tbl
-  #
-  ftdlg_lite.h
-  ftdlg_lite.cpp
-  clipboarddlg.h
-  clipboarddlg.cpp
-  debug_pp.cpp
-  debug_pp.h
-  debug_pp.rc
-  sendfiledlg.cpp
-  sendfiledlg.h
+  ${COMMON_SRC}
+  ${TTDLG_SRC}
   )
 
-target_sources(
-  ${PACKAGE_NAME}
-  PRIVATE
-  ../common/tt_res.h
-  ../common/ttcommon.h
-  ../common/ttddecmnd.h
-  ../common/tttypes.h
-  ../common/tektypes.h
-  ../common/ttplugin.h
-  ../common/tt-version.h
-  ../common/teraterm.h
-  ../common/ttlib.c
-  ../common/ttlib.h
-  ../common/dlglib.h
-  ../common/win16api.h
-  ../common/codemap.h
-  ../common/compat_win.h
-  ../common/tmfc.h
-  ../common/i18n.h
-  ../common/dllutil.h
-  ../common/codeconv.h
-  ../common/tipwin.h
-  ../common/layer_for_unicode.h
-  #
-  ../teraterm/unisym2decsp.map
-  ../teraterm/uni2sjis.map
-  ../ttpcmn/sjis2uni.map
+link_directories(
+  ${ONIGURUMA_LIBRARY_DIRS}
+  ${SFMT_LIBRARY_DIRS}
   )
-
-target_sources(
-  ${PACKAGE_NAME}
-  PRIVATE
-  ../susie_plugin/libsusieplugin.cpp
-  ../susie_plugin/libsusieplugin.h
-)
-
-source_group(
-  "table_datas"
-  REGULAR_EXPRESSION
-  "(map|tbl)$"
-  )
-
-source_group(
-  "common"
-  REGULAR_EXPRESSION
-  "..\/common\/"
-  )
-
-target_sources(
-  ${PACKAGE_NAME}
-  PRIVATE
-  ../ttpdlg/dlg_res.h
-  ../ttpdlg/ttdlg.c
-  ../ttpdlg/ttdlg.h
-  ../ttpdlg/ttpdlg.rc
-  )
-
-source_group(
-  "ttpdlg"
-  REGULAR_EXPRESSION
-  "..\/ttpdlg\/")
-
-target_sources(
-  ${PACKAGE_NAME}
-  PRIVATE
-  ../ttpfile/bplus.c
-  ../ttpfile/bplus.h
-  ../ttpfile/filesys_io.h
-  ../ttpfile/filesys_win32.cpp
-  ../ttpfile/filesys_win32.h
-  ../ttpfile/ftlib.c
-  ../ttpfile/ftlib.h
-  ../ttpfile/kermit.c
-  ../ttpfile/kermit.h
-  ../ttpfile/quickvan.c
-  ../ttpfile/quickvan.h
-  ../ttpfile/xmodem.c
-  ../ttpfile/xmodem.h
-  ../ttpfile/ymodem.c
-  ../ttpfile/ymodem.h
-  ../ttpfile/zmodem.c
-  ../ttpfile/zmodem.h
-)
-
-source_group(
-  "ttpfile"
-  REGULAR_EXPRESSION
-  "..\/ttpfile\/")
-
-if(SUPPORT_OLD_WINDOWS)
-  if(MSVC)
-    target_sources(
-      ${PACKAGE_NAME}
-      PRIVATE
-      ../../teraterm/common/compat_w95_vs2005.c
-      )
-  endif()
-  if(MINGW)
-    target_link_libraries(
-      ${PACKAGE_NAME}
-      PRIVATE
-      -Wl,--whole-archive
-      mingw_msvcrt
-      -Wl,--no-whole-archive
-      )
-  endif()
-endif(SUPPORT_OLD_WINDOWS)
 
 if (MSVC)
-  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /DELAYLOAD:user32.dll /DELAYLOAD:shell32.dll /MANIFEST:NO")
+  set_source_files_properties(buffer.c PROPERTIES COMPILE_FLAGS /W4)
+
+  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /DELAYLOAD:user32.dll /DELAYLOAD:shell32.dll")
   if( CMAKE_SIZEOF_VOID_P EQUAL 4 )
     # 32bit
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /DELAYLOAD:imagehlp.dll")
   endif()
 endif()
 
+add_executable(
+  teraterm WIN32
+  ${SRC}
+  )
+
 set_target_properties(
-  ${PACKAGE_NAME}
+  teraterm
   PROPERTIES
   OUTPUT_NAME "ttermpro"
-  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/"
   )
 
 target_include_directories(
-  ${PACKAGE_NAME}
+  teraterm
   PRIVATE
-  .
-  ../teraterm
   ../common
   ../ttpfile
   ../ttpdlg
   ../ttpcmn
-  ../susie_plugin
   ${ONIGURUMA_INCLUDE_DIRS}
   ${CMAKE_CURRENT_BINARY_DIR}/../ttpdlg     # for svnversion.h
   ${SFMT_INCLUDE_DIRS}
@@ -255,45 +179,20 @@ target_include_directories(
 
 if(MINGW)
   target_include_directories(
-    ${PACKAGE_NAME}
+    teraterm
     PRIVATE
     .
     )
 endif()
 
-if(MSVC AND ENABLE_DEBUG_INFO)
-  target_compile_options(
-    ${PACKAGE_NAME}
-    PRIVATE
-    $<$<CONFIG:Release>:/Zi>
-    )
-  if(${CMAKE_VERSION} VERSION_GREATER "3.13")
-    target_link_options(
-      ${PACKAGE_NAME}
-      PRIVATE
-      /DEBUG:FULL
-      /pdbaltpath:ttermpro.pdb
-      /map
-      )
-  endif()
-elseif(MINGW)
-  target_link_options(
-    ${PACKAGE_NAME}
-    PRIVATE
-    -Wl,-Map=ttermpro.map,-cref
-    )
-endif()
-
 target_link_libraries(
-  ${PACKAGE_NAME}
-  PRIVATE
-  common_static
+  teraterm
   ttpcmn
-  #ttpfile
+  ttpfile
   ttpset
   ttptek
-  ${ONIGURUMA_LIB}
-  ${SFMT_LIB}
+  optimized onig.lib
+  debug onigd.lib
   #
   gdi32
   comctl32
@@ -303,16 +202,77 @@ target_link_libraries(
   uuid
   )
 
-install(
-  TARGETS ${PACKAGE_NAME}
-  DESTINATION .
+add_dependencies(
+  teraterm
+  ttpcmn
+  ttpfile
+  ttpset
+  ttptek
   )
-if(MSVC AND ENABLE_DEBUG_INFO AND (${CMAKE_VERSION} VERSION_GREATER "3.13"))
-  install(
-    FILES
-    $<TARGET_PDB_FILE:teraterm>
-    $<$<CONFIG:Debug>:debug/ttermpro.map>
-    $<$<CONFIG:Release>:release/ttermpro.map>
-    DESTINATION .
+
+# copy .lng files
+if(MSVC AND ("${MSVC_VERSION}" GREATER_EQUAL "1910"))
+  # Visual Studio 2017以上の時
+  add_custom_target(
+    copy_lang ALL
+    DEPENDS
+      "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}$(Configuration)/lang/Default.lng"
+      "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}$(Configuration)/lang/English.lng"
+      "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}$(Configuration)/lang/French.lng"
+      "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}$(Configuration)/lang/German.lng"
+      "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}$(Configuration)/lang/Japanese.lng"
+      "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}$(Configuration)/lang/Korean.lng"
+      "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}$(Configuration)/lang/Russian.lng"
+      "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}$(Configuration)/lang/Simplified Chinese.lng"
+      "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}$(Configuration)/lang/Traditional Chinese.lng"
+    )
+  add_custom_command(
+    OUTPUT
+      "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}$(Configuration)/lang/Default.lng"
+      "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}$(Configuration)/lang/English.lng"
+      "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}$(Configuration)/lang/French.lng"
+      "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}$(Configuration)/lang/German.lng"
+      "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}$(Configuration)/lang/Japanese.lng"
+      "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}$(Configuration)/lang/Korean.lng"
+      "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}$(Configuration)/lang/Russian.lng"
+      "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}$(Configuration)/lang/Simplified Chinese.lng"
+      "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}$(Configuration)/lang/Traditional Chinese.lng"
+    COMMAND ${CMAKE_COMMAND} -E copy
+      "${CMAKE_SOURCE_DIR}/installer/release/lang/Default.lng"
+      "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}$(Configuration)/lang/Default.lng"
+    COMMAND ${CMAKE_COMMAND} -E copy
+      "${CMAKE_SOURCE_DIR}/installer/release/lang/English.lng"
+      "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}$(Configuration)/lang/English.lng"
+    COMMAND ${CMAKE_COMMAND} -E copy
+      "${CMAKE_SOURCE_DIR}/installer/release/lang/French.lng"
+      "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}$(Configuration)/lang/French.lng"
+    COMMAND ${CMAKE_COMMAND} -E copy
+      "${CMAKE_SOURCE_DIR}/installer/release/lang/German.lng"
+      "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}$(Configuration)/lang/German.lng"
+    COMMAND ${CMAKE_COMMAND} -E copy
+      "${CMAKE_SOURCE_DIR}/installer/release/lang/Japanese.lng"
+      "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}$(Configuration)/lang/Japanese.lng"
+    COMMAND ${CMAKE_COMMAND} -E copy
+      "${CMAKE_SOURCE_DIR}/installer/release/lang/Korean.lng"
+      "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}$(Configuration)/lang/Korean.lng"
+    COMMAND ${CMAKE_COMMAND} -E copy
+      "${CMAKE_SOURCE_DIR}/installer/release/lang/Russian.lng"
+      "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}$(Configuration)/lang/Russian.lng"
+    COMMAND ${CMAKE_COMMAND} -E copy
+      "${CMAKE_SOURCE_DIR}/installer/release/lang/Simplified Chinese.lng"
+      "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}$(Configuration)/lang/Simplified Chinese.lng"
+    COMMAND ${CMAKE_COMMAND} -E copy
+      "${CMAKE_SOURCE_DIR}/installer/release/lang/Traditional Chinese.lng"
+      "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}$(Configuration)/lang/Traditional Chinese.lng"
     )
 endif()
+
+####
+configure_file(
+  svnversion.h.in
+  ../ttpdlg/svnversion.h @ONLY)
+
+install(
+  TARGETS teraterm
+  DESTINATION .
+  )

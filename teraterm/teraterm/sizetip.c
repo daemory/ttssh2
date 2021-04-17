@@ -31,10 +31,10 @@
 #include "tttypes.h"
 #include "ttlib.h"
 #include "ttwinman.h"
-#include "compat_win.h"
 
 #include <windows.h>
 #include <stdio.h>
+#include <tchar.h>
 
 #include "tipwin.h"
 
@@ -60,20 +60,20 @@ static void FixPosFromFrame(POINT *point, int FrameWidth, BOOL NearestMonitor)
 		ix = point->x;
 		iy = point->y;
 
-		hm = pMonitorFromPoint(*point, MONITOR_DEFAULTTONULL);
+		hm = MonitorFromPoint(*point, MONITOR_DEFAULTTONULL);
 		if (hm == NULL) {
 			if (NearestMonitor) {
 				// 最も近いモニタに表示する
-				hm = pMonitorFromPoint(*point, MONITOR_DEFAULTTONEAREST);
+				hm = MonitorFromPoint(*point, MONITOR_DEFAULTTONEAREST);
 			} else {
 				// スクリーンからはみ出している場合はマウスのあるモニタに表示する
 				GetCursorPos(point);
-				hm = pMonitorFromPoint(*point, MONITOR_DEFAULTTONEAREST);
+				hm = MonitorFromPoint(*point, MONITOR_DEFAULTTONEAREST);
 			}
 		}
 
 		mi.cbSize = sizeof(MONITORINFO);
-		pGetMonitorInfoA(hm, &mi);
+		GetMonitorInfo(hm, &mi);
 		if (ix < mi.rcMonitor.left + FrameWidth) {
 			ix = mi.rcMonitor.left + FrameWidth;
 		}
@@ -110,14 +110,14 @@ static void FixPosFromFrame(POINT *point, int FrameWidth, BOOL NearestMonitor)
  */
 void UpdateSizeTip(HWND src, int cx, int cy, UINT fwSide, int newX, int newY)
 {
-	char str[32];
+	TCHAR str[32];
 	int tooltip_movable = 0;
 
 	if (!tip_enabled)
 		return;
 
 	/* Generate the tip text */
-	_snprintf_s(str, _countof(str), _TRUNCATE, "%dx%d", cx, cy);
+	_stprintf_s(str, _countof(str), _T("%dx%d"), cx, cy);
 
 	// ウィンドウの右、右下、下を掴んだ場合は、ツールチップを左上隅に配置する。
 	// それら以外はリサイズ後の左上隅に配置する。
@@ -144,14 +144,21 @@ void UpdateSizeTip(HWND src, int cx, int cy, UINT fwSide, int newX, int newY)
 		cx = point.x;
 		cy = point.y;
 
-		SizeTip = TipWinCreateA(NULL, src, cx, cy, str);
+		SizeTip = TipWinCreateT(NULL, src, cx, cy, str);
+
+		//OutputDebugPrintf("Created: (%d,%d)\n", cx, cy);
+
 	} else {
 		/* Tip already exists, just set the text */
-		TipWinSetTextA(SizeTip, str);
+		TipWinSetText(SizeTip, str);
+		//SetWindowText(tip_wnd, str);
+
+		//OutputDebugPrintf("Updated: (%d,%d)\n", cx, cy);
 
 		// ウィンドウの左上が移動する場合
 		if (tooltip_movable) {
 			TipWinSetPos(SizeTip, newX + TIP_WIN_FRAME_WIDTH*2, newY + TIP_WIN_FRAME_WIDTH*2);
+			//OutputDebugPrintf("Moved: (%d,%d)\n", newX, newY);
 		}
 	}
 }

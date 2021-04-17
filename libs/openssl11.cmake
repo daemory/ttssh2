@@ -3,8 +3,6 @@
 # cmake -DCMAKE_GENERATOR="Visual Studio 15 2017" -P openssl11.cmake
 # cmake -DCMAKE_GENERATOR="Visual Studio 15 2017" -DCMAKE_CONFIGURATION_TYPE=Release -P openssl11.cmake
 
-option(APPLY_PATCH "patch for windows 95 support" ON)
-
 ####
 if(("${CMAKE_BUILD_TYPE}" STREQUAL "") AND ("${CMAKE_CONFIGURATION_TYPE}" STREQUAL ""))
   if("${CMAKE_GENERATOR}" MATCHES "Visual Studio")
@@ -69,7 +67,7 @@ set(DOWN_DIR "${CMAKE_SOURCE_DIR}/download/openssl")
 
 set(EXTRACT_DIR "${CMAKE_SOURCE_DIR}/build/openssl11/src_${TOOLSET}")
 set(INSTALL_DIR "${CMAKE_SOURCE_DIR}/openssl11_${TOOLSET}")
-if(("${CMAKE_GENERATOR}" MATCHES "Win64") OR ("$ENV{MSYSTEM_CHOST}" STREQUAL "x86_64-w64-mingw32") OR ("${ARCHITECTURE}" MATCHES "x64") OR ("${CMAKE_COMMAND}" MATCHES "mingw64"))
+if(("${CMAKE_GENERATOR}" MATCHES "Win64") OR ("$ENV{MSYSTEM_CHOST}" STREQUAL "x86_64-w64-mingw32") OR ("${ARCHITECTURE}" MATCHES "x64"))
   set(EXTRACT_DIR "${EXTRACT_DIR}_x64")
   set(INSTALL_DIR "${INSTALL_DIR}_x64")
 endif()
@@ -95,17 +93,16 @@ if(CMAKE_HOST_SYSTEM_NAME MATCHES "Linux")
     PERL perl
     )
 elseif("${CMAKE_GENERATOR}" MATCHES "Visual Studio")
-  # Active/Strawberry Perl
+  # Active/Strawberry Perl (cygwin版は使えない)
   find_program(
     PERL perl.exe
     HINTS ${CMAKE_CURRENT_LIST_DIR}/../buildtools/perl/perl/bin
     HINTS c:/Perl64/bin
     HINTS c:/Perl/bin
-    HINTS c:/Strawberry/perl/bin
+    HINTS C:/Strawberry/perl/bin
+#    HINTS c:/cygwin/usr/bin
+#    HINTS c:/cygwin64/usr/bin
     )
-  if("${PERL}" MATCHES "[Cc]ygwin")
-    message(FATAL_ERROR "cygwin perl! ${PERL}")
-  endif()
 else()
   # MinGW
   find_program(
@@ -130,53 +127,6 @@ if(NOT EXISTS ${SRC_DIR}/README)
     COMMAND ${CMAKE_COMMAND} -E tar "xvf" ${DOWN_DIR}/${SRC_ARC}
     WORKING_DIRECTORY ${EXTRACT_DIR}
     )
-
-  if(APPLY_PATCH)
-    find_program(
-      PATCH patch
-      HINTS "${CMAKE_CURRENT_LIST_DIR}/openssl_patch"
-      HINTS "${CMAKE_CURRENT_LIST_DIR}/../buildtools/perl/c/bin"
-      HINTS "C:/Program Files/Git/usr/bin"
-      HINTS c:/cygwin64/usr/bin
-      HINTS c:/cygwin/usr/bin
-      HINTS c:/msys64/usr/bin
-      )
-    message(PATCH=${PATCH})
-    set(PATCH_OPT --binary --backup -p1)
-    if(NOT PATCH)
-      message(FATAL_ERROR "patch not found")
-    endif()
-    execute_process(
-      COMMAND ${PATCH} ${PATCH_OPT}
-      INPUT_FILE ${CMAKE_CURRENT_SOURCE_DIR}/openssl_patch/vs2005.patch
-      WORKING_DIRECTORY ${EXTRACT_DIR}/${SRC_DIR_BASE}
-      )
-    execute_process(
-      COMMAND ${PATCH} ${PATCH_OPT}
-      INPUT_FILE ${CMAKE_CURRENT_SOURCE_DIR}/openssl_patch/ws2_32_dll_patch.txt
-      WORKING_DIRECTORY ${EXTRACT_DIR}/${SRC_DIR_BASE}
-      )
-    execute_process(
-      COMMAND ${PATCH} ${PATCH_OPT}
-      INPUT_FILE ${CMAKE_CURRENT_SOURCE_DIR}/openssl_patch/atomic_api.txt
-      WORKING_DIRECTORY ${EXTRACT_DIR}/${SRC_DIR_BASE}
-      )
-    execute_process(
-      COMMAND ${PATCH} ${PATCH_OPT}
-      INPUT_FILE ${CMAKE_CURRENT_SOURCE_DIR}/openssl_patch/CryptAcquireContextW2.txt
-      WORKING_DIRECTORY ${EXTRACT_DIR}/${SRC_DIR_BASE}
-      )
-    execute_process(
-      COMMAND ${PATCH} ${PATCH_OPT}
-      INPUT_FILE ${CMAKE_CURRENT_SOURCE_DIR}/openssl_patch/atomic_api_win95.txt
-      WORKING_DIRECTORY ${EXTRACT_DIR}/${SRC_DIR_BASE}
-      )
-    execute_process(
-      COMMAND ${PATCH} ${PATCH_OPT}
-      INPUT_FILE ${CMAKE_CURRENT_SOURCE_DIR}/openssl_patch/CryptAcquireContextW_win95.txt
-      WORKING_DIRECTORY ${EXTRACT_DIR}/${SRC_DIR_BASE}
-      )
-  endif(APPLY_PATCH)
 
 endif()
 
@@ -239,8 +189,10 @@ if((${CMAKE_GENERATOR} MATCHES "Visual Studio") OR
 
   if((${CMAKE_GENERATOR} MATCHES "Win64") OR ("${ARCHITECTURE}" MATCHES "x64"))
     set(CONFIG_TARGET "VC-WIN64A")
+    set(DO_MS "ms\\do_win64a.bat")
   else()
     set(CONFIG_TARGET "VC-WIN32")
+    set(DO_MS "ms\\do_ms.bat")
   endif()
   if(("${CMAKE_BUILD_TYPE}" STREQUAL "Release") OR ("${CMAKE_CONFIGURATION_TYPE}" STREQUAL "Release"))
   else()
@@ -256,7 +208,7 @@ if((${CMAKE_GENERATOR} MATCHES "Visual Studio") OR
   file(TO_NATIVE_PATH ${VCVARS32} VCVARS32_N)
   string(REGEX REPLACE [[^(.*)\\.*$]] [[\1]] PERL_N_PATH ${PERL_N})
   file(APPEND "${SRC_DIR}/build_cmake.bat"
-    "set PATH=${PERL_N_PATH};c:\\windows;c:\\windows\\system32\n"
+    "set PATH=${PERL_N_PATH};%PATH%\n"
     )
   if(${CMAKE_GENERATOR} MATCHES "Visual Studio 8 2005")
     ## Visual Studio 2005 特別処理
@@ -290,8 +242,17 @@ if((${CMAKE_GENERATOR} MATCHES "Visual Studio") OR
       "call \"${VCVARS32_N}\"\n"
       )
   endif()
+  # jomでビルドの高速化を試したが次のエラーが出てしまう
+  # 複数の CL.EXE が同じ .PDB ファイルに書き込む場合、/FS を使用してください。
+  # if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/jom/nmake.exe")
+  #   file(TO_NATIVE_PATH ${CMAKE_CURRENT_SOURCE_DIR} CMAKE_CURRENT_SOURCE_DIR_N)
+  #   file(APPEND "${SRC_DIR}/build_cmake.bat"
+  #     "set PATH=${CMAKE_CURRENT_SOURCE_DIR_N}\\jom;%PATH%\n"
+  #     )
+  # endif()
   file(APPEND "${SRC_DIR}/build_cmake.bat"
-    "perl Configure no-asm no-async no-shared no-capieng no-dso no-engine ${CONFIG_TARGET} -D_WIN32_WINNT=0x0501 --prefix=${INSTALL_DIR_N} --openssldir=${INSTALL_DIR_N}\\SSL\n"
+    "set PATH=%PATH%;${PERL_N_PATH}\n"
+    "perl Configure no-asm no-async no-shared ${CONFIG_TARGET} --prefix=${INSTALL_DIR_N} --openssldir=${INSTALL_DIR_N}\\SSL\n"
     "nmake -f makefile install\n"
     )
   set(BUILD_CMAKE_BAT "${SRC_DIR}/build_cmake.bat")
@@ -316,7 +277,7 @@ else()
       HINTS c:/cygwin/usr/bin
       HINTS c:/cygwin64/usr/bin
       )
-  elseif(("${UNAME_S}" STREQUAL "MINGW32") OR ("${UNAME_S}" STREQUAL "MINGW64") OR ("${CMAKE_COMMAND}" MATCHES "mingw"))
+  elseif(("${UNAME_S}" STREQUAL "MINGW32") OR ("${UNAME_S}" STREQUAL "MINGW64"))
     find_program(
       MAKE make
       )
@@ -328,25 +289,27 @@ else()
     message(FATAL_ERROR "unsported")
   endif()
   set(ENV{PATH} "/usr/bin;/bin")
-  if(("${UNAME_S}" STREQUAL "MINGW32") OR ("${CMAKE_COMMAND}" MATCHES "mingw32"))
+  if("${UNAME_S}" STREQUAL "MINGW32")
     set(CMAKE_C_COMPILER "cc")
     set(PATH "/mingw32/bin:/usr/local/bin:/usr/bin:/bin")
-    set(CONFIG_NAME "mingw")
-  elseif(("${UNAME_S}" STREQUAL "MINGW64") OR ("${CMAKE_COMMAND}" MATCHES "mingw64"))
+  elseif("${UNAME_S}" STREQUAL "MINGW64")
     set(CMAKE_C_COMPILER "cc")
     set(PATH "/mingw64/bin:/usr/local/bin:/usr/bin:/bin")
-    set(CONFIG_NAME "mingw64")
   else()
     include(${CMAKE_SOURCE_DIR}/../mingw.toolchain.cmake)
+    set(ENV{PREFIX} i686-w64-mingw32)
     set(ENV{CC} ${CMAKE_C_COMPILER})
     set(ENV{AR} "i686-w64-mingw32-ar")
     set(ENV{RANLIB} "i686-w64-mingw32-ranlib")
-    set(ENV{RC} "i686-w64-mingw32-windres")
     set(PATH "/usr/bin:/bin")
+  endif()
+  if("${UNAME_S}" STREQUAL "MINGW64")
+    set(CONFIG_NAME "mingw64")
+  else()
     set(CONFIG_NAME "mingw")
   endif()
   execute_process(
-    COMMAND ${CMAKE_COMMAND} -E env "PATH=/usr/bin:/bin" ${PERL} ./Configure no-asm no-async no-shared no-capieng -no-dso -no-engine ${CONFIG_NAME} -D_WIN32_WINNT=0x0501 --prefix=${INSTALL_DIR} --openssldir=${INSTALL_DIR}/SSL
+    COMMAND ${CMAKE_COMMAND} -E env "PATH=/usr/bin:/bin" ${PERL} ./Configure no-async no-shared ${CONFIG_NAME} --prefix=${INSTALL_DIR} --openssldir=${INSTALL_DIR_N}/SSL
     WORKING_DIRECTORY ${SRC_DIR}
     RESULT_VARIABLE rv
     )

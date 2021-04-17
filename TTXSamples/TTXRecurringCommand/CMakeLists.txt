@@ -1,71 +1,52 @@
-﻿set(PACKAGE_NAME "TTXRecurringCommand")
+﻿project(TTXRecurringCommand)
 
-project(${PACKAGE_NAME})
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/")
 
-add_library(
-  ${PACKAGE_NAME} SHARED
+if(USE_UNICODE_API)
+  add_definitions(-DUNICODE -D_UNICODE)
+endif()
+
+set(COMMON_SRC
+  ../../teraterm/common/dlglib.h
+  ../../teraterm/common/dlglib.c
+  ../../teraterm/common/dlglib_cpp.cpp
+  ../../teraterm/common/dlglib_tmpl.cpp
+  ../../teraterm/common/ttlib.c
+  )
+
+source_group(
+  "common"
+  FILES
+  ${COMMON_SRC}
+  )
+
+set(SRC
   TTXRecurringCommand.c
   TTXRecurringCommand.rc
   ReadMe.txt
   ReadMe-ja.txt
-  ../../teraterm/common/dlglib.h
   )
 
-if(SUPPORT_OLD_WINDOWS)
-  if(MSVC)
-    target_sources(
-      ${PACKAGE_NAME}
-      PRIVATE
-      ../../teraterm/common/compat_w95_vs2005.c
-      )
-  endif()
-  if(MINGW)
-    target_sources(
-      ${PACKAGE_NAME}
-      PRIVATE
-      ../../teraterm/libmingw/tlssup.c
-      )
-    target_link_libraries(
-      ${PACKAGE_NAME}
-      PRIVATE
-      -Wl,--whole-archive
-      mingw_msvcrt
-      -Wl,--no-whole-archive
-      )
-  endif()
-endif(SUPPORT_OLD_WINDOWS)
-
-source_group(
-  "common"
-  REGULAR_EXPRESSION
-  "teraterm\/common\/"
-  )
-
-set_target_properties(
-  ${PACKAGE_NAME}
-  PROPERTIES
-  PREFIX ""
-  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/"
-  )
-
-target_include_directories(
-  ${PACKAGE_NAME}
-  PRIVATE
+include_directories(
   ../../teraterm/teraterm
   ../../teraterm/common
   )
 
+add_library(
+  TTXRecurringCommand SHARED
+  ${SRC}
+  ${COMMON_SRC}
+  )
+
+set_target_properties(
+  TTXRecurringCommand
+  PROPERTIES
+  PREFIX ""
+  )
+
 target_link_libraries(
-  ${PACKAGE_NAME}
-  PRIVATE
-  common_static
+  TTXRecurringCommand
   ttpcmn
   #
   gdi32
-  )
-
-install(
-  TARGETS ${PACKAGE_NAME}
-  RUNTIME
-  DESTINATION .
   )

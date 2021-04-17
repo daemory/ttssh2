@@ -36,17 +36,17 @@
 class CErrDlg : public CMacroDlgBase
 {
 public:
-	CErrDlg(const char *Msg, const char *Line, int x, int y, int lineno, int start, int end, const char *FileName);
+	CErrDlg(const char *Msg, PCHAR Line, int x, int y, int lineno, int start, int end, PCHAR FileName);
 	INT_PTR DoModal(HINSTANCE hInst, HWND hWndParent);
 
 private:
 	enum { IDD = IDD_ERRDLG };
 
-	const TCHAR *MsgStr;
-	const TCHAR *LineStr;
+	const char* MsgStr;
+	PCHAR LineStr;
 	int LineNo;
 	int StartPos, EndPos;
-	const TCHAR *MacroFileName;
+	PCHAR MacroFileName;
 
 	virtual BOOL OnInitDialog();
 	BOOL OnCommand(WPARAM wp, LPARAM lp);

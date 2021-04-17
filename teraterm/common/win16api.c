@@ -1,31 +1,3 @@
-/*
- * Copyright (C) 2018- TeraTerm Project
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- * 3. The name of the author may not be used to endorse or promote products
- *    derived from this software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE AUTHORS ``AS IS'' AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
- * IN NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
- * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
- * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- */
-
 #include <windows.h>
 #include <assert.h>
 
@@ -35,24 +7,7 @@
  * FILE_SHARE_READ | FILE_SHARE_WRITE を指定する。
  */
 
-/**
- *	win16_lcreat() の wchar_t版
- *	@param[in]	iAttribute	teratermでは0しか使用しない
- *	@retval 	handle
- *	@retval 	INVALID_HANDLE_VALUE((HANDLE)(LONG_PTR)-1) オープンできなかった
- *				(実際のAPIはHFILE_ERROR((HFILE)-1)を返す)
- */
-HANDLE win16_lcreatW(const wchar_t *FileName, int iAttribute)
-{
-	HANDLE handle;
-	assert(iAttribute == 0);
-	handle = CreateFileW(FileName,
-						 GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL,
-						 CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-	return handle;
-}
-
-/**
+ /**
  *	@param[in]	iAttribute	teratermでは0しか使用しない
  *	@retval 	handle
  *	@retval 	INVALID_HANDLE_VALUE((HANDLE)(LONG_PTR)-1) オープンできなかった
@@ -65,36 +20,6 @@ HANDLE win16_lcreat(const char *FileName, int iAttribute)
 	handle = CreateFileA(FileName,
 						 GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL,
 						 CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-	return handle;
-}
-
-/**
- *	win16_lopen() の wchar_t 版
- *	@retval 	handle
- *	@retval 	INVALID_HANDLE_VALUE((HANDLE)(LONG_PTR)-1) オープンできなかった
- *				(実際のAPIはHFILE_ERROR((HFILE)-1)を返す)
- */
-HANDLE win16_lopenW(const wchar_t *FileName, int iReadWrite)
-{
-	HANDLE handle;
-	switch(iReadWrite) {
-	case OF_READ:
-		// read only
-		handle = CreateFileW(FileName,
-							 GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL,
-							 OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-		break;
-	case OF_WRITE:
-		// write
-		handle = CreateFileW(FileName,
-							 GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL,
-							 OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-		break;
-	default:
-		assert(FALSE);
-		handle = INVALID_HANDLE_VALUE;
-		break;
-	}
 	return handle;
 }
 
@@ -117,6 +42,12 @@ HANDLE win16_lopen(const char *FileName, int iReadWrite)
 		// write
 		handle = CreateFileA(FileName,
 							 GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL,
+							 OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+		break;
+	case OF_READWRITE:
+		// read/write (teratermではttpmacro/ttl.c内の1箇所のみで使用されている
+		handle = CreateFileA(FileName,
+							 GENERIC_WRITE | GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL,
 							 OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
 		break;
 	default:

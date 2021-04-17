@@ -37,13 +37,12 @@
 #include "ttmlib.h"
 #include "tmfc.h"
 #include "tttypes.h"
-#include "ttmacro.h"
 
 #include "statdlg.h"
 
 // CStatDlg dialog
 
-BOOL CStatDlg::Create(HINSTANCE hInst, const wchar_t *Text, const wchar_t *Title, int x, int y)
+BOOL CStatDlg::Create(HINSTANCE hInst, PCHAR Text, PCHAR Title, int x, int y)
 {
 	TextStr = Text;
 	TitleStr = Title;
@@ -52,12 +51,12 @@ BOOL CStatDlg::Create(HINSTANCE hInst, const wchar_t *Text, const wchar_t *Title
 	return TTCDialog::Create(hInst, NULL, CStatDlg::IDD);
 }
 
-void CStatDlg::Update(const wchar_t *Text, const wchar_t *Title, int x, int y)
+void CStatDlg::Update(PCHAR Text, PCHAR Title, int x, int y)
 {
 	RECT R;
 
 	if (Title!=NULL) {
-		SetWindowTextW(Title);
+		SetWindowText(Title);
 		TitleStr = Title;
 	}
 
@@ -70,12 +69,12 @@ void CStatDlg::Update(const wchar_t *Text, const wchar_t *Title, int x, int y)
 	if (Text!=NULL) {
 		SIZE textSize;
 		HWND hWnd = GetDlgItem(IDC_STATTEXT);
-		CalcTextExtentW(hWnd, NULL, Text, &textSize);
+		CalcTextExtent(hWnd, NULL, Text, &textSize);
 		TW = textSize.cx + textSize.cx/10;	// (cx * (1+0.1)) ?
 		TH = textSize.cy;
 		s = textSize;			// TODO s!?
 
-		SetDlgItemTextW(IDC_STATTEXT,Text);
+		SetDlgItemText(IDC_STATTEXT,Text);
 		TextStr = Text;
 	}
 
@@ -214,12 +213,6 @@ void CStatDlg::Bringup()
 	BringupWindow(m_hWnd);
 }
 
-/**
- * MFCÇÃCWndÇÃâBÇÍÉÅÉìÉoä÷êî
- *	Ç±ÇÃä÷êîÇ™FALSEÇï‘Ç∑Ç∆
- *	CDialog::OnInitDialog()å„Ç…
- *	CWnd::CenterWindow() Ç™åƒÇ—èoÇ≥ÇÍÇ»Ç¢
- */
 BOOL CStatDlg::CheckAutoCenter()
 {
 	// CenterWindow() is called when x=0 && y=0

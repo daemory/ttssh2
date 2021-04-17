@@ -14,19 +14,15 @@ end
 
 
 ;;;
-;;; test macrodir
+;;; test folder
 ;;;
 :test_macrodir
 :retry
 getdir macro_dir
-s = "folder (getdir):\n"
+dirnamebox "test_file.ttl folder for test" macro_dir
+s = "folder for test:\n"
 strspecial s
 strconcat s macro_dir
-messagebox s "test_file.ttl"
-dirnamebox "test_file.ttl folder for test" macro_dir
-s = "selected folder:\n"
-strspecial s
-strconcat s inputstr
 yesnobox s "test_file.ttl"
 if result == 0 goto retry
 setdir macro_dir

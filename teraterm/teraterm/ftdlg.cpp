@@ -33,93 +33,45 @@
 #include <stdio.h>
 #include <windows.h>
 #include <commctrl.h>
+#include <tchar.h>
 
 #include "teraterm.h"
 #include "tttypes.h"
+#include "ttftypes.h"
 #include "ttlib.h"
 #include "dlglib.h"
 #include "tt_res.h"
 #include "ftdlg.h"
 #include "teraterml.h"
 #include "helpid.h"
-#include "filesys.h"
-#include "codeconv.h"
 
 /////////////////////////////////////////////////////////////////////////////
 // CFileTransDlg dialog
 
-CFileTransDlg::CFileTransDlg()
-{
-	SmallIcon = NULL;
-	BigIcon = NULL;
-	DlgCaption = NULL;
-	FileName = NULL;
-	FullName = NULL;
-	ProgStat = 0;
-}
-
-CFileTransDlg::~CFileTransDlg()
-{
-	free(DlgCaption);
-	free(FileName);
-	free(FullName);
-}
-
-BOOL CFileTransDlg::Create(HINSTANCE hInstance, CFileTransDlg::Info *info)
+BOOL CFileTransDlg::Create(HINSTANCE hInstance, HWND hParent, PFileVar pfv, PComVar pcv, PTTSet pts)
 {
 	BOOL Ok;
 	int fuLoad = LR_DEFAULTCOLOR;
 	HWND hwnd;
 
-	UILanguageFile = info->UILanguageFile;
-	OpId = info->OpId;	// OpLog or OpSendFile のみ
-	DlgCaption = _wcsdup(info->DlgCaption);
-	FullName = _wcsdup(info->FullName);
-	if (info->FileName != NULL) {
-		FileName = _wcsdup(info->FileName);
-	}
-	else {
-		const wchar_t *fullname = info->FullName;
-		const wchar_t *p = wcsrchr(fullname, L'\\');
-		if (p == NULL) {
-			p = wcsrchr(fullname, L'/');
-		}
-		if (p == NULL) {
-			FileName = _wcsdup(fullname);
-		}
-		else {
-			FileName = _wcsdup(p + 1);
-		}
-	}
-	HideDialog = info->HideDialog;
-	HMainWin = info->HMainWin;
+	fv = pfv;
+	cv = pcv;
+	cv->FilePause &= ~fv->OpId;
+	ts = pts;
 
 	Pause = FALSE;
 	hwnd = GetForegroundWindow();
-	if (OpId == OpLog) { // parent window is desktop
-		Ok = TTCDialog::Create(hInstance, GetDesktopWindow(), IDD_FILETRANSDLG);
+	if (fv->OpId == OpLog) { // parent window is desktop
+		Ok = TTCDialog::Create(hInstance, GetDesktopWindow(), CFileTransDlg::IDD);
 	}
 	else { // parent window is VT window
-		Ok = TTCDialog::Create(hInstance, NULL, IDD_FILETRANSDLG);
-	}
-	if (OpId == OpSendFile) {
-		HWND HProg = ::GetDlgItem(m_hWnd, IDC_TRANSPROGRESS);
-
-		ProgStat = 0;
-
-		::SendMessage(HProg, PBM_SETRANGE, (WPARAM)0, MAKELPARAM(0, 100));
-		::SendMessage(HProg, PBM_SETSTEP, (WPARAM)1, 0);
-		::SendMessage(HProg, PBM_SETPOS, (WPARAM)0, 0);
-
-		::ShowWindow(HProg, SW_SHOW);
-
-		::ShowWindow(GetDlgItem(IDC_TRANS_ELAPSED), SW_SHOW);
+		Ok = TTCDialog::Create(hInstance, NULL, CFileTransDlg::IDD);
 	}
 
-	if (!HideDialog) {
+	if (!fv->HideDialog) {
 		// Visible = False のダイアログを表示する
 		ShowWindow(SW_SHOWNORMAL);
-		if (OpId == OpLog) {
+		if (fv->OpId == OpLog) {
 			ShowWindow(SW_MINIMIZE);
 		}
 	}
@@ -129,30 +81,27 @@ BOOL CFileTransDlg::Create(HINSTANCE hInstance, CFileTransDlg::Info *info)
 		::SetForegroundWindow(hwnd);
 	}
 
+	fv->HWin = GetSafeHwnd();
+
 	return Ok;
 }
 
-/**
- *	テキストの変更のみ
- */
 void CFileTransDlg::ChangeButton(BOOL PauseFlag)
 {
 	Pause = PauseFlag;
 	if (Pause) {
-		static const DlgTextInfo TextInfos[] = {
-			{ IDC_TRANSPAUSESTART, "DLG_FILETRANS_START" },
-		};
-		SetDlgTexts(m_hWnd, TextInfos, _countof(TextInfos), UILanguageFile);
+		get_lang_msg("DLG_FILETRANS_START", ts->UIMsg, sizeof(ts->UIMsg), "&Start", ts->UILanguageFile);
+		SetDlgItemText(IDC_TRANSPAUSESTART, ts->UIMsg);
+		cv->FilePause |= fv->OpId;
 	}
 	else {
-		static const DlgTextInfo TextInfos[] = {
-			{ IDC_TRANSPAUSESTART, "DLG_FILETRANS_PAUSE" },
-		};
-		SetDlgTexts(m_hWnd, TextInfos, _countof(TextInfos), UILanguageFile);
+		get_lang_msg("DLG_FILETRANS_PAUSE", ts->UIMsg, sizeof(ts->UIMsg), "Pau&se", ts->UILanguageFile);
+		SetDlgItemText(IDC_TRANSPAUSESTART, ts->UIMsg);
+		cv->FilePause &= ~fv->OpId;
 	}
 }
 
-void CFileTransDlg::RefreshNum(DWORD StartTime, LONG FileSize, LONG ByteCount)
+void CFileTransDlg::RefreshNum()
 {
 	char NumStr[24];
 	double rate;
@@ -160,15 +109,15 @@ void CFileTransDlg::RefreshNum(DWORD StartTime, LONG FileSize, LONG ByteCount)
 	static DWORD prev_elapsed;
 	DWORD elapsed;
 
-	if (OpId == OpSendFile) {
-		if (StartTime == 0) {
+	if (fv->OpId == OpSendFile) {
+		if (fv->StartTime == 0) {
 			SetDlgItemText(IDC_TRANS_ETIME, "0:00");
 			prev_elapsed = 0;
 		}
 		else {
-			elapsed = (GetTickCount() - StartTime) / 1000;
+			elapsed = (GetTickCount() - fv->StartTime) / 1000;
 			if (elapsed != prev_elapsed && elapsed != 0) {
-				rate2 = ByteCount / elapsed;
+				rate2 = fv->ByteCount / elapsed;
 				if (rate2 < 1200) {
 					_snprintf_s(NumStr, sizeof(NumStr), _TRUNCATE, "%d:%02d (%dBytes/s)", elapsed / 60, elapsed % 60, rate2);
 				}
@@ -182,21 +131,20 @@ void CFileTransDlg::RefreshNum(DWORD StartTime, LONG FileSize, LONG ByteCount)
 				prev_elapsed = elapsed;
 			}
 		}
+	}
 
-		if (FileSize > 0) {
-			rate = 100.0 * (double)ByteCount / (double)FileSize;
-			if (ProgStat < (int)rate) {
-				ProgStat = (int)rate;
-				SendDlgItemMessage(IDC_TRANSPROGRESS, PBM_SETPOS, (WPARAM)ProgStat, 0);
-			}
-			_snprintf_s(NumStr,sizeof(NumStr),_TRUNCATE,"%u (%3.1f%%)",ByteCount, rate);
+	if (fv->OpId == OpSendFile && fv->FileSize > 0) {
+		rate = 100.0 * (double)fv->ByteCount / (double)fv->FileSize;
+		if (fv->ProgStat < (int)rate) {
+			fv->ProgStat = (int)rate;
+			SendDlgItemMessage(IDC_TRANSPROGRESS, PBM_SETPOS, (WPARAM)fv->ProgStat, 0);
 		}
-		SetDlgItemText(IDC_TRANSBYTES, NumStr);
+		_snprintf_s(NumStr,sizeof(NumStr),_TRUNCATE,"%u (%3.1f%%)",fv->ByteCount, rate);
 	}
 	else {
-		_snprintf_s(NumStr,sizeof(NumStr),_TRUNCATE,"%u",ByteCount);
-		SetDlgItemText(IDC_TRANSBYTES, NumStr);
+		_snprintf_s(NumStr,sizeof(NumStr),_TRUNCATE,"%u",fv->ByteCount);
 	}
+	SetDlgItemText(IDC_TRANSBYTES, NumStr);
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -216,7 +164,7 @@ BOOL CFileTransDlg::OnInitDialog()
 
 	int fuLoad = LR_DEFAULTCOLOR;
 
-	if (HideDialog) {
+	if (fv->HideDialog) {
 		// Visible = False でもフォアグラウンドに来てしまうので、そうならない
 		// ように拡張スタイル WS_EX_NOACTIVATE を指定する。
 		// (Windows 2000 以上で有効)
@@ -225,11 +173,13 @@ BOOL CFileTransDlg::OnInitDialog()
 		ModifyStyleEx(0, WS_EX_NOACTIVATE | WS_EX_APPWINDOW);
 	}
 
-	SetWindowTextW(DlgCaption);
-	SetDlgItemTextW(IDC_TRANSFNAME, FileName);
-	SetDlgItemTextW(IDC_EDIT_FULLPATH, FullName);
+	SetWindowText(fv->DlgCaption);
+	SetDlgItemText(IDC_TRANSFNAME, &(fv->FullName[fv->DirLen]));
 
-	SetDlgTexts(m_hWnd, TextInfos, _countof(TextInfos), UILanguageFile);
+	// ログファイルはフルパス表示にする(2004.8.6 yutaka)
+	SetDlgItemText(IDC_EDIT_FULLPATH, &(fv->FullName[0]));
+
+	SetDlgTexts(m_hWnd, TextInfos, _countof(TextInfos), ts->UILanguageFile);
 
 	if (IsWindowsNT4()) {
 		fuLoad = LR_VGACOLOR;
@@ -253,34 +203,21 @@ BOOL CFileTransDlg::OnInitDialog()
 
 BOOL CFileTransDlg::OnCancel( )
 {
-	if (OpId == OpLog) {
-		FLogClose();
-	}
-	else {
-		FileSendEnd();
-	}
+	::PostMessage(fv->HMainWin,WM_USER_FTCANCEL,fv->OpId,0);
 	return TRUE;
 }
 
 BOOL CFileTransDlg::OnCommand(WPARAM wParam, LPARAM lParam)
 {
 	switch (LOWORD(wParam)) {
+		case IDCANCEL:
+			::PostMessage(fv->HMainWin,WM_USER_FTCANCEL,fv->OpId,0);
+			return TRUE;
 		case IDC_TRANSPAUSESTART:
 			ChangeButton(! Pause);
-			if (OpId == OpLog) {
-				FLogPause(Pause);
-			}
-			else {
-				FileSendPause(Pause);
-			}
 			return TRUE;
 		case IDC_TRANSHELP:
-			if (OpId == OpLog) {
-				::PostMessage(HMainWin, WM_USER_DLGHELP2, HlpFileLog, 0);
-			}
-			else {
-				::PostMessage(HMainWin, WM_USER_DLGHELP2, HlpFileSend, 0);
-			}
+			::PostMessage(fv->HMainWin,WM_USER_DLGHELP2,HlpFileSend,0);
 			return TRUE;
 		default:
 			return (TTCDialog::OnCommand(wParam,lParam));

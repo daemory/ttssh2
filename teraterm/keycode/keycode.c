@@ -37,6 +37,8 @@
 #include "kc_res.h"
 #define ClassName _T("KeyCodeWin32")
 
+#include "compat_w95.h"
+
 // Prototypes
 LRESULT WINAPI MainWndProc( HWND, UINT, WPARAM, LPARAM );
 
@@ -46,7 +48,7 @@ static BOOL KeyDown = FALSE;
 static BOOL Short;
 static WORD Scan;
 
-int WINAPI WinMain(HINSTANCE hInstance,
+int PASCAL WinMain(HINSTANCE hInstance,
                    HINSTANCE hPrevInstance,
                    LPSTR lpszCmdLine,
                    int nCmdShow)
@@ -61,23 +63,17 @@ int WINAPI WinMain(HINSTANCE hInstance,
 	pSetDllDir setDllDir;
 	pSetDefDllDir setDefDllDir;
 
-	(void)lpszCmdLine;
+	DoCover_IsDebuggerPresent();
 
 	if ((module = GetModuleHandleA("kernel32.dll")) != NULL) {
-		FARPROC func_ptr = GetProcAddress(module, "SetDefaultDllDirectories");
-		setDefDllDir = (pSetDefDllDir)func_ptr;
-		if (setDefDllDir != NULL) {
+		if ((setDefDllDir = (pSetDefDllDir)GetProcAddress(module, "SetDefaultDllDirectories")) != NULL) {
 			// SetDefaultDllDirectories() が使える場合は、検索パスを %WINDOWS%\system32 のみに設定する
 			(*setDefDllDir)((DWORD)0x00000800); // LOAD_LIBRARY_SEARCH_SYSTEM32
 		}
-		else {
-			func_ptr = GetProcAddress(module, "SetDllDirectoryA");
-			setDllDir = (pSetDllDir)func_ptr;
-			if (setDllDir != NULL) {
-				// SetDefaultDllDirectories() が使えなくても、SetDllDirectory() が使える場合は
-				// カレントディレクトリだけでも検索パスからはずしておく。
-				(*setDllDir)("");
-			}
+		else if ((setDllDir = (pSetDllDir)GetProcAddress(module, "SetDllDirectoryA")) != NULL) {
+			// SetDefaultDllDirectories() が使えなくても、SetDllDirectory() が使える場合は
+			// カレントディレクトリだけでも検索パスからはずしておく。
+			(*setDllDir)("");
 		}
 	}
 
@@ -125,7 +121,7 @@ int WINAPI WinMain(HINSTANCE hInstance,
 		DispatchMessage(&msg);
 	}
 
-	return (int)msg.wParam;
+	return msg.wParam;
 }
 
 void KeyDownProc(HWND hWnd, WPARAM wParam, LPARAM lParam)
@@ -157,8 +153,6 @@ void KeyDownProc(HWND hWnd, WPARAM wParam, LPARAM lParam)
 
 void KeyUpProc(HWND hWnd, WPARAM wParam, LPARAM lParam)
 {
-	(void)wParam;
-	(void)lParam;
 	if (! KeyDown) {
 		return;
 	}
@@ -181,7 +175,7 @@ void PaintProc(HWND hWnd)
 
 	if (KeyDown) {
 		_snprintf_s(OutStr,sizeof(OutStr),_TRUNCATE,"Key code is %u.",Scan);
-		TextOutA(hDC,10,10,OutStr, (int)strlen(OutStr));
+		TextOutA(hDC,10,10,OutStr,strlen(OutStr));
 	}
 	else {
 		TextOutA(hDC,10,10,"Push any key.",13);

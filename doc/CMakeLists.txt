@@ -1,4 +1,12 @@
-﻿if (MSVC OR MINGW)
+﻿if (MSVC OR ("$ENV{MSYSTEM}" MATCHES "MINGW"))
+  find_program(
+    PERL perl.exe
+    HINTS c:/Perl64/bin
+    HINTS c:/Perl/bin
+    HINTS c:/cygwin/usr/bin
+    HINTS c:/cygwin64/usr/bin
+    )
+  file(TO_NATIVE_PATH ${PERL} PERL)
   find_program(
     HHC hhc.exe
     HINTS "C:/Program Files (x86)/HTML Help Workshop"
@@ -9,7 +17,6 @@
 else()
   set(HHC "HHC-NOTFOUND")
 endif()
-message("hhc=${HHC}")
 
 if (NOT("${PERL}" STREQUAL "PERL-NOTFOUND") AND NOT("${HHC}" STREQUAL "HHC-NOTFOUND"))
   file(
@@ -27,7 +34,7 @@ if (NOT("${PERL}" STREQUAL "PERL-NOTFOUND") AND NOT("${HHC}" STREQUAL "HHC-NOTFO
     )
 
   add_custom_target(
-    teraterm_chm
+    teraterm_chm ALL
     DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/en/teraterm.chm
     SOURCES ${SRC_EN}
     SOURCES htmlhelp_index_make.pl
@@ -37,7 +44,7 @@ if (NOT("${PERL}" STREQUAL "PERL-NOTFOUND") AND NOT("${HHC}" STREQUAL "HHC-NOTFO
     )
 
   add_custom_target(
-    teratermj_chm
+    teratermj_chm ALL
     DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/ja/teratermj.chm
     SOURCES htmlhelp_index_make.pl
     SOURCES htmlhelp_update_check.pl
@@ -58,11 +65,9 @@ if (NOT("${PERL}" STREQUAL "PERL-NOTFOUND") AND NOT("${HHC}" STREQUAL "HHC-NOTFO
     COMMAND ${PERL} ../installer/2sjis.pl -i ../libs/SFMT/LICENSE.txt    -o en/html/reference/SFMT-LICENSE.txt      -l unix
     COMMAND ${PERL} ../installer/2sjis.pl -i ../cygterm/COPYING          -o en/html/reference/CygTerm+-LICENSE.txt  -l unix
     COMMAND ${PERL} ../installer/copy-zliblicense.pl -i ../libs/zlib/README -o en/html/reference/zlib-LICENSE.txt   -l unix
-    COMMAND ${PERL} -C0 -pe "s/^\\xef\\xbb\\xbf//" en/html/reference/build_with_cmake.md > en/html/reference/build_with_cmake_no_bom.md
-    COMMAND ${PERL} Markdown_1.0.1/Markdown.pl en/html/reference/build_with_cmake_no_bom.md > en/html/reference/build_with_cmake_utf8.html
+    COMMAND ${PERL} -C0 -pe "s/^\\xef\\xbb\\xbf//" en/html/reference/build_with_cmake.md | ${PERL} Markdown_1.0.1/Markdown.pl > en/html/reference/build_with_cmake_utf8.html
     COMMAND ${PERL} ../installer/2sjis.pl -i en/html/reference/build_with_cmake_utf8.html -o en/html/reference/build_with_cmake.html  -c utf8
-    COMMAND ${PERL} -C0 -pe "s/^\\xef\\xbb\\xbf//" en/html/reference/build_library_with_cmake.md > en/html/reference/build_library_with_cmake_no_bom.md
-    COMMAND ${PERL} Markdown_1.0.1/Markdown.pl en/html/reference/build_library_with_cmake_no_bom.md > en/html/reference/build_library_with_cmake_utf8.html
+    COMMAND ${PERL} -C0 -pe "s/^\\xef\\xbb\\xbf//" en/html/reference/build_library_with_cmake.md | ${PERL} Markdown_1.0.1/Markdown.pl > en/html/reference/build_library_with_cmake_utf8.html
     COMMAND ${PERL} ../installer/2sjis.pl -i en/html/reference/build_library_with_cmake_utf8.html -o en/html/reference/build_library_with_cmake.html  -c utf8
     COMMAND ${PERL} htmlhelp_index_make.pl en html > en/Index.hhk
     COMMAND ${HHC} en/teraterm.hhp || (exit 0)
@@ -79,11 +84,9 @@ if (NOT("${PERL}" STREQUAL "PERL-NOTFOUND") AND NOT("${HHC}" STREQUAL "HHC-NOTFO
     COMMAND ${PERL} ../installer/2sjis.pl -i ../libs/SFMT/LICENSE.txt    -o ja/html/reference/SFMT-LICENSE.txt      -l unix
     COMMAND ${PERL} ../installer/2sjis.pl -i ../cygterm/COPYING          -o ja/html/reference/CygTerm+-LICENSE.txt  -l unix
     COMMAND ${PERL} ../installer/copy-zliblicense.pl -i ../libs/zlib/README -o ja/html/reference/zlib-LICENSE.txt   -l unix
-    COMMAND ${PERL} -C0 -pe "s/^\\xef\\xbb\\xbf//" ja/html/reference/build_with_cmake.md > ja/html/reference/build_with_cmake_no_bom.md
-    COMMAND ${PERL} Markdown_1.0.1/Markdown.pl ja/html/reference/build_with_cmake_no_bom.md > ja/html/reference/build_with_cmake_utf8.html
+    COMMAND ${PERL} -C0 -pe "s/^\\xef\\xbb\\xbf//" ja/html/reference/build_with_cmake.md | ${PERL} Markdown_1.0.1/Markdown.pl > ja/html/reference/build_with_cmake_utf8.html
     COMMAND ${PERL} ../installer/2sjis.pl -i ja/html/reference/build_with_cmake_utf8.html -o ja/html/reference/build_with_cmake.html  -c utf8
-    COMMAND ${PERL} -C0 -pe "s/^\\xef\\xbb\\xbf//" ja/html/reference/build_library_with_cmake.md > ja/html/reference/build_library_with_cmake_no_bom.md
-    COMMAND ${PERL} Markdown_1.0.1/Markdown.pl ja/html/reference/build_library_with_cmake_no_bom.md > ja/html/reference/build_library_with_cmake_utf8.html
+    COMMAND ${PERL} -C0 -pe "s/^\\xef\\xbb\\xbf//" ja/html/reference/build_library_with_cmake.md | ${PERL} Markdown_1.0.1/Markdown.pl > ja/html/reference/build_library_with_cmake_utf8.html
     COMMAND ${PERL} ../installer/2sjis.pl -i ja/html/reference/build_library_with_cmake_utf8.html -o ja/html/reference/build_library_with_cmake.html  -c utf8
     COMMAND ${PERL} htmlhelp_index_make.pl ja html > ja/Index.hhk
     COMMAND ${HHC} ja/teraterm.hhp || (exit 0)
@@ -91,13 +94,6 @@ if (NOT("${PERL}" STREQUAL "PERL-NOTFOUND") AND NOT("${HHC}" STREQUAL "HHC-NOTFO
     COMMENT Generate "${CMAKE_CURRENT_BINARY_DIR}/teratermj.chm"
     )
 
-  set_target_properties(
-    teraterm_chm
-    teratermj_chm
-    PROPERTIES FOLDER doc)
-
-  install(CODE "execute_process(COMMAND \"${CMAKE_COMMAND}\" --build ${CMAKE_BINARY_DIR} --target teraterm_chm)")
-  install(CODE "execute_process(COMMAND \"${CMAKE_COMMAND}\" --build ${CMAKE_BINARY_DIR} --target teratermj_chm)")
   install(
     FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/ja/teratermj.chm
@@ -108,9 +104,9 @@ if (NOT("${PERL}" STREQUAL "PERL-NOTFOUND") AND NOT("${HHC}" STREQUAL "HHC-NOTFO
 else()
 
   # chmが存在したらコピーする
-  if (EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/en/teraterm.chm)
+  if (EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/ja/teraterm.chm)
     install(
-      FILES ${CMAKE_CURRENT_SOURCE_DIR}/en/teraterm.chm
+      FILES ${CMAKE_CURRENT_SOURCE_DIR}/ja/teraterm.chm
       DESTINATION .
       )
   endif()

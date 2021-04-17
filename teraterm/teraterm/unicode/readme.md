@@ -27,19 +27,3 @@
 ## [unisym2decsp.map](../unisym2decsp.map)
 
 - UnicodeからDEC special文字コードに変換するために使用
-
-## [unicode_asian_width.tbl](../unicode_asian_width.tbl)
-
-- East Asian Width 特性テーブル
-  - [東アジアの文字幅(wikiepdia)](https://ja.wikipedia.org/wiki/%E6%9D%B1%E3%82%A2%E3%82%B8%E3%82%A2%E3%81%AE%E6%96%87%E5%AD%97%E5%B9%85)参照
-- [get_f_w_a.md](get_f_w_a.md)
-
-## [unicode_combine.tbl](../unicode_combine.tbl)
-
-- combine (結合)文字かどうかを調べるテーブル
-- [get_combine_table.md](get_combine_table.md)
-
-## [unicode_emoji.tbl](../unicode_emoji.tbl)
-
-- 絵文字判定のためのテーブル
-- [get_emoji_table.md](get_emoji_table.md)

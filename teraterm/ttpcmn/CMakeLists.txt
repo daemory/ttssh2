@@ -1,106 +1,85 @@
-﻿set(PACKAGE_NAME "ttpcmn")
+﻿project(ttpcmn)
 
-project(${PACKAGE_NAME})
+if(USE_UNICODE_API)
+  add_definitions(-DUNICODE -D_UNICODE)
+endif()
 
-add_library(
-  ${PACKAGE_NAME}
-  SHARED
-  language.c
-  language.h
-  ttcmn.c
-  ttcmn_notify.cpp
-  ttcmn_cominfo.c
-  ttpcmn-version.rc
-  ttpcmn.def
-  ${COMMON_SRC}
-  )
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/")
 
-if(SUPPORT_OLD_WINDOWS)
-  if(MSVC)
-    target_sources(
-      ${PACKAGE_NAME}
-      PRIVATE
-      ../../teraterm/common/compat_w95_vs2005.c
-      )
-  endif()
-  if(MINGW)
-    target_sources(
-      ${PACKAGE_NAME}
-      PRIVATE
-      ../../teraterm/libmingw/tlssup.c
-      )
-    target_link_libraries(
-      ${PACKAGE_NAME}
-      PRIVATE
-      -Wl,--whole-archive
-      mingw_msvcrt
-      -Wl,--no-whole-archive
-      )
-  endif()
-endif(SUPPORT_OLD_WINDOWS)
-
-target_sources(
-  ${PACKAGE_NAME}
-  PRIVATE
+set(COMMON_SRC
   ../common/teraterm.h
   ../common/tttypes.h
-  ../common/i18n.h
   ../common/i18n.c
+  ../common/i18n.h
   ../common/ttlib.c
   ../common/ttlib.h
   ../common/servicenames.c
   ../common/servicenames.h
   ../common/tt-version.h
+  ../common/ttftypes.h
   ../common/ttcommon.h
   ../common/tt_res.h
   ../common/codeconv.h
-  ../common/compat_win.h
-  ../common/dllutil.h
+  ../common/codeconv.cpp
   )
 
 source_group(
   "common"
-  REGULAR_EXPRESSION
-  "..\/common\/"
+  FILES
+  ${COMMON_SRC}
   )
 
+set(SRC
+  language.c
+  language.h
+  ttcmn.c
+  comportinfo.cpp
+  comportinfo.h
+  comportinfo.cpp
+  devpkey_teraterm.h
+  ttpcmn-version.rc
+  ttpcmn.def
+  ${COMMON_SRC}
+  )
+
+include_directories(
+  ../common
+  ../ttpfile
+  .
+  )
 
 if (MSVC)
   set(CMAKE_SHARED_LINKER_FLAGS
     "${CMAKE_SHARED_LINKER_FLAGS} /DELAYLOAD:setupapi.dll /DELAYLOAD:user32.dll")
 endif()
 
+add_library(
+  ttpcmn
+  SHARED
+  ${SRC}
+  )
+
 target_compile_definitions(
   ttpcmn
   PRIVATE -DTTPCMN_DLL
   )
-
-set_target_properties(
-  ${PACKAGE_NAME}
-  PROPERTIES
-  PREFIX ""
-  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/"
-  )
-
-target_include_directories(
-  ${PACKAGE_NAME}
-  PRIVATE
-  ../common
-  ../ttpfile
-  .
-  )
+if(MINGW)
+  set_target_properties(
+    ttpcmn
+    PROPERTIES PREFIX ""
+    SUFFIX ".dll"
+    )
+endif()
 
 target_link_libraries(
-  ${PACKAGE_NAME}
-  PRIVATE
-  common_static
+  ttpcmn
   ole32
   setupapi
   delayimp
   )
 
 install(
-  TARGETS ${PACKAGE_NAME}
+  TARGETS ttpcmn
   RUNTIME
   DESTINATION .
   )

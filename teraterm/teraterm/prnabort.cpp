@@ -40,7 +40,7 @@
 LRESULT CALLBACK CPrnAbortDlg::OnDlgProc(HWND hDlgWnd, UINT msg, WPARAM wp, LPARAM lp)
 {
 	static const DlgTextInfo TextInfos[] = {
-		{ IDC_PRNABORT_PRINTING, "DLG_PRNABORT_PRINTING" },
+		{ IDC_PRNABORT_PRINTING, "DLG_PRNABORT_PRINTING" }, 
 		{ IDCANCEL, "BTN_CANCEL" },
 	};
 
@@ -84,9 +84,11 @@ BOOL CPrnAbortDlg::Create(HINSTANCE hInstance, HWND hParent, PBOOL AbortFlag, PT
 
 	SetDialogFont(m_ts->DialogFontName, m_ts->DialogFontPoint, m_ts->DialogFontCharSet,
 				  m_ts->UILanguageFile, "Tera Term", "DLG_SYSTEM_FONT");
-	HWND hWnd = TTCreateDialogParam(
-		hInstance, MAKEINTRESOURCE(IDD_PRNABORTDLG), hParent,
+	DLGTEMPLATE *lpTemplate = TTGetDlgTemplate(hInstance, MAKEINTRESOURCE(IDD_PRNABORTDLG));
+	HWND hWnd = ::CreateDialogIndirectParam(
+		hInstance, lpTemplate, hParent,
 		(DLGPROC)OnDlgProc, (LPARAM)this);
+	free(lpTemplate);
 	if (hWnd == NULL)
 	{
 		return FALSE;

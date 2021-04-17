@@ -29,53 +29,11 @@
 
 /* TERATERM.EXE, scroll buffer routines */
 
-#pragma once
-
-#include "teraprnfile.h"
-
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-  /* Character attribute bit masks */
-#define AttrDefault       0x00
-#define AttrDefaultFG     0x00
-#define AttrDefaultBG     0x00
-#define AttrBold          0x01
-#define AttrUnder         0x02
-#define AttrSpecial       0x04
-#define AttrFontMask      0x07
-#define AttrBlink         0x08
-#define AttrReverse       0x10
-#define AttrLineContinued 0x20 /* valid only at the beggining or end of a line */
-/* begin - ishizaki */
-#define AttrURL           0x40
-/* end - ishizaki */
-#define AttrKanji         0x80		// 1=全角(2cell)/0=半角(1cell)
-#define AttrPadding       0x100		// 1=padding(2cellの次の1cell or 行末)
-
-  /* Color attribute bit masks */
-#define Attr2Fore         0x01
-#define Attr2Back         0x02
-#define AttrSgrMask       (AttrBold | AttrUnder | AttrBlink | AttrReverse)
-#define AttrColorMask     (AttrBold | AttrBlink | AttrReverse)
-#define Attr2ColorMask    (Attr2Fore | Attr2Back)
-
-#define Attr2Protect      0x04
-
-typedef struct {
-	BYTE Attr;
-	BYTE Attr2;
-#if 1 //UNICODE_INTERNAL_BUFF
-	WORD AttrEx;	// アトリビュートを増やすテスト
-#endif
-	BYTE Fore;
-	BYTE Back;
-} TCharAttr;
-
-typedef TCharAttr *PCharAttr;
-
-void InitBuffer(BOOL use_unicode_api);
+void InitBuffer();
 void LockBuffer();
 void UnlockBuffer();
 void FreeBuffer();
@@ -100,12 +58,11 @@ void BuffFillBox(char c, int XStart, int YStart, int XEnd, int YEnd);
 void BuffCopyBox(int SrcXStart, int SrcYStart, int SrcXEnd, int SrcYEnd, int SrcPage, int DstX, int DstY, int DstPage);
 void BuffChangeAttrBox(int XStart, int YStart, int XEnd, int YEnd, PCharAttr attr, PCharAttr mask);
 void BuffChangeAttrStream(int XStart, int YStart, int XEnd, int YEnd, PCharAttr attr, PCharAttr mask);
-wchar_t *BuffCBCopyUnicode(BOOL Table);
+void BuffCBCopy(BOOL Table);
 void BuffPrint(BOOL ScrollRegion);
-void BuffDumpCurrentLine(PrintFile *handle, BYTE TERM);
+void BuffDumpCurrentLine(BYTE TERM);
 void BuffPutChar(BYTE b, TCharAttr Attr, BOOL Insert);
 void BuffPutKanji(WORD w, TCharAttr Attr, BOOL Insert);
-int BuffPutUnicode(unsigned int uc, TCharAttr Attr, BOOL Insert);
 void BuffUpdateRect(int XStart, int YStart, int XEnd, int YEnd);
 void UpdateStr();
 void UpdateStrUnicode(void);
@@ -122,7 +79,7 @@ void BuffTplClk(int Yw);
 void BuffSeveralPagesSelect(int Xw, int Yw);
 void BuffStartSelect(int Xw, int Yw, BOOL Box);
 void BuffChangeSelect(int Xw, int Yw, int NClick);
-wchar_t *BuffEndSelect();
+void BuffEndSelect();
 void BuffChangeWinSize(int Nx, int Ny);
 void BuffChangeTerminalSize(int Nx, int Ny);
 void ChangeWin();
@@ -149,17 +106,8 @@ void BuffSelectiveEraseBox(int XStart, int YStart, int XEnd, int YEnd);
 void BuffScrollLeft(int count);
 void BuffScrollRight(int count);
 int BuffGetCurrentLineData(char *buf, int bufsize);
-wchar_t *BuffGetLineStrW(int Sy, int *cx, size_t *length);
 int BuffGetAnyLineData(int offset_y, char *buf, int bufsize);
-int BuffGetAnyLineDataW(int offset_y, wchar_t *buf, size_t bufsize);
 BOOL BuffCheckMouseOnURL(int Xw, int Yw);
-wchar_t *BuffGetCharInfo(int Xw, int Yw);
-void BuffSetCursorCharAttr(int x, int y, TCharAttr Attr);
-TCharAttr BuffGetCursorCharAttr(int x, int y);
-BOOL BuffIsCombiningCharacter(int x, int y, unsigned int u32);
-void BuffSetDispAPI(BOOL unicode);
-void BuffSetDispCodePage(int CodePage);
-int BuffGetDispCodePage(void);
 
 extern int StatusLine;
 extern int CursorTop, CursorBottom, CursorLeftM, CursorRightM;

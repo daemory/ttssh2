@@ -44,13 +44,11 @@
 #include "tttypes.h"
 #include "compat_win.h"
 
-#include "../teraterm/unicode_test.h"
-
 /* OS version with GetVersionEx(*1)
 
                 dwMajorVersion   dwMinorVersion    dwPlatformId
 Windows95       4                0                 VER_PLATFORM_WIN32_WINDOWS
-Windows98       4                10                VER_PLATFORM_WIN32_WINDOWS
+Windows98       4                10                VER_PLATFORM_WIN32_WINDOWS 
 WindowsMe       4                90                VER_PLATFORM_WIN32_WINDOWS
 WindowsNT4.0    4                0                 VER_PLATFORM_WIN32_NT
 Windows2000     5                0                 VER_PLATFORM_WIN32_NT
@@ -80,7 +78,7 @@ static char *invalidFileNameStrings[] = {
 	"AUX", "CLOCK$", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
 	"CON", "CONFIG$", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
 	"NUL", "PRN",
-	".", "..",
+	".", "..", 
 	NULL
 };
 
@@ -215,29 +213,13 @@ int b64decode(PCHAR dst, int dsize, PCHAR src)
 	return len;
 }
 
-/**
- *	ファイル名(パス名)を解析する
- *	_splitpathのパスとファイル名だけ版
- *
- *	@param[in]	PathName	ファイル名、フルパス
- *	@param[out]	DirLen		末尾のスラッシュを含むディレクトリパス長
- *							NULLのとき値を返さない
- *	@param[out]	FNPos		ファイル名へのindex
- *							&PathName[FNPos] がファイル名
- *							NULLのとき値を返さない
- *	@retval		FALSE		PathNameが不正
- */
-BOOL GetFileNamePos(const char *PathName, int *DirLen, int *FNPos)
+BOOL GetFileNamePos(PCHAR PathName, int far *DirLen, int far *FNPos)
 {
 	BYTE b;
-	const char *Ptr;
-	const char *DirPtr;
-	const char *FNPtr;
-	const char *PtrOld;
+	LPTSTR Ptr, DirPtr, FNPtr, PtrOld;
 
-	if (DirLen != NULL) *DirLen = 0;
-	if (FNPos != NULL) *FNPos = 0;
-
+	*DirLen = 0;
+	*FNPos = 0;
 	if (PathName==NULL)
 		return FALSE;
 
@@ -264,8 +246,8 @@ BOOL GetFileNamePos(const char *PathName, int *DirLen, int *FNPos)
 				break;
 		}
 	}
-	if (DirLen != NULL) *DirLen = DirPtr-PathName;
-	if (FNPos != NULL) *FNPos = FNPtr-PathName;
+	*DirLen = DirPtr-PathName;
+	*FNPos = FNPtr-PathName;
 	return TRUE;
 }
 
@@ -457,7 +439,7 @@ int Hex2Str(PCHAR Hex, PCHAR Str, int MaxLen)
 	return j;
 }
 
-BOOL DoesFileExist(const char *FName)
+BOOL DoesFileExist(PCHAR FName)
 {
 	// check if a file exists or not
 	// フォルダまたはファイルがあれば TRUE を返す
@@ -466,7 +448,7 @@ BOOL DoesFileExist(const char *FName)
 	return (_stat(FName,&st)==0);
 }
 
-BOOL DoesFolderExist(const char *FName)
+BOOL DoesFolderExist(PCHAR FName)
 {
 	// check if a folder exists or not
 	// マクロ互換性のため
@@ -487,7 +469,7 @@ BOOL DoesFolderExist(const char *FName)
 	}
 }
 
-long GetFSize(const char *FName)
+long GetFSize(PCHAR FName)
 {
 	struct _stat st;
 
@@ -497,7 +479,7 @@ long GetFSize(const char *FName)
 	return (long)st.st_size;
 }
 
-long GetFMtime(const char *FName)
+long GetFMtime(PCHAR FName)
 {
 	struct _stat st;
 
@@ -507,7 +489,7 @@ long GetFMtime(const char *FName)
 	return (long)st.st_mtime;
 }
 
-BOOL SetFMtime(const char *FName, DWORD mtime)
+BOOL SetFMtime(PCHAR FName, DWORD mtime)
 {
 	struct _utimbuf filetime;
 
@@ -544,7 +526,7 @@ void QuoteFName(PCHAR FName)
 }
 
 // ファイル名に使用できない文字が含まれているか確かめる (2006.8.28 maya)
-int isInvalidFileNameChar(const char *FName)
+int isInvalidFileNameChar(PCHAR FName)
 {
 	int i, len;
 	char **p, c;
@@ -733,7 +715,7 @@ void ParseStrftimeFileName(PCHAR FName, int destlen)
 	char buf[MAX_PATH];
 	char *c;
 	time_t time_local;
-	struct tm tm_local;
+	struct tm *tm_local;
 
 	// ファイル名部分のみを flename に格納
 	ExtractFileName(FName, filename ,sizeof(filename));
@@ -743,10 +725,10 @@ void ParseStrftimeFileName(PCHAR FName, int destlen)
 
 	// 現在時刻を取得
 	time(&time_local);
-	localtime_s(&tm_local, &time_local);
+	tm_local = localtime(&time_local);
 
 	// 時刻文字列に変換
-	if (strftime(buf, sizeof(buf), filename, &tm_local) == 0) {
+	if (strftime(buf, sizeof(buf), filename, tm_local) == 0) {
 		strncpy_s(buf, sizeof(buf), filename, _TRUNCATE);
 	}
 
@@ -765,7 +747,7 @@ void ParseStrftimeFileName(PCHAR FName, int destlen)
 	}
 }
 
-void ConvFName(const char *HomeDir, PCHAR Temp, int templen, const char *DefExt, PCHAR FName, int destlen)
+void ConvFName(PCHAR HomeDir, PCHAR Temp, int templen, PCHAR DefExt, PCHAR FName, int destlen)
 {
 	// destlen = sizeof FName
 	int DirLen, FNPos;
@@ -823,54 +805,6 @@ void RestoreNewLine(PCHAR Text)
 	memcpy(Text, buf, size);
 }
 
-/**
- *	エスケープ文字を処理する
- *	\\,\n,\t,\0 を置き換える
- *	@return		文字数（L'\0'を含む)
- */
-size_t RestoreNewLineW(wchar_t *Text)
-{
-	size_t i;
-	int j=0;
-	size_t size= wcslen(Text);
-	wchar_t *buf = (wchar_t *)_alloca((size+1) * sizeof(wchar_t));
-
-	memset(buf, 0, (size+1) * sizeof(wchar_t));
-	for (i=0; i<size; i++) {
-		if (Text[i] == L'\\' && i<size ) {
-			switch (Text[i+1]) {
-				case L'\\':
-					buf[j] = L'\\';
-					i++;
-					break;
-				case L'n':
-					buf[j] = L'\n';
-					i++;
-					break;
-				case L't':
-					buf[j] = L'\t';
-					i++;
-					break;
-				case L'0':
-					buf[j] = L'\0';
-					i++;
-					break;
-				default:
-					buf[j] = L'\\';
-			}
-			j++;
-		}
-		else {
-			buf[j] = Text[i];
-			j++;
-		}
-	}
-	/* use memcpy to copy with '\0' */
-	j++;	// 文字列長
-	memcpy(Text, buf, j * sizeof(wchar_t));
-	return j;
-}
-
 BOOL GetNthString(PCHAR Source, int Nth, int Size, PCHAR Dest)
 {
 	int i, j, k;
@@ -900,7 +834,7 @@ void GetNthNum(PCHAR Source, int Nth, int far *Num)
 	char T[15];
 
 	GetNthString(Source,Nth,sizeof(T),T);
-	if (sscanf_s(T, "%d", Num) != 1) {
+	if (sscanf(T, "%d", Num) != 1) {
 		*Num = 0;
 	}
 }
@@ -911,10 +845,10 @@ int GetNthNum2(PCHAR Source, int Nth, int defval)
 	int v;
 
 	GetNthString(Source, Nth, sizeof(T), T);
-	if (sscanf_s(T, "%d", &v) != 1) {
+	if (sscanf(T, "%d", &v) != 1) {
 		v = defval;
 	}
-
+	
 	return v;
 }
 
@@ -1059,7 +993,7 @@ void GetOnOffEntryInifile(char *entry, char *buf, int buflen)
 
 	/* Get SetupFName */
 	GetDefaultSetupFName(HomeDir, SetupFName, sizeof(SetupFName));
-
+	
 	/* Get LanguageFile name */
 	GetPrivateProfileString("Tera Term", entry, "off",
 	                        Temp, sizeof(Temp), SetupFName);
@@ -1067,17 +1001,12 @@ void GetOnOffEntryInifile(char *entry, char *buf, int buflen)
 	strncpy_s(buf, buflen, Temp, _TRUNCATE);
 }
 
-void get_lang_msgW(const char *key, wchar_t *buf, int buf_len, const wchar_t *def, const char *iniFile)
-{
-	GetI18nStrW("Tera Term", key, buf, buf_len, def, iniFile);
-}
-
 void get_lang_msg(const char *key, PCHAR buf, int buf_len, const char *def, const char *iniFile)
 {
 	GetI18nStr("Tera Term", key, buf, buf_len, def, iniFile);
 }
 
-int get_lang_font(const char *key, HWND dlg, PLOGFONT logfont, HFONT *font, const char *iniFile)
+int get_lang_font(PCHAR key, HWND dlg, PLOGFONT logfont, HFONT *font, const char *iniFile)
 {
 	if (GetI18nLogfont("Tera Term", key, logfont,
 	                   GetDeviceCaps(GetDC(dlg),LOGPIXELSY),
@@ -1095,7 +1024,7 @@ int get_lang_font(const char *key, HWND dlg, PLOGFONT logfont, HFONT *font, cons
 //
 // cf. http://homepage2.nifty.com/DSS/VCPP/API/SHBrowseForFolder.htm
 //
-static int CALLBACK setDefaultFolder(HWND hwnd, UINT uMsg, LPARAM lParam, LPARAM lpData)
+int CALLBACK setDefaultFolder(HWND hwnd, UINT uMsg, LPARAM lParam, LPARAM lpData)
 {
 	if(uMsg == BFFM_INITIALIZED) {
 		SendMessage(hwnd, BFFM_SETSELECTION, (WPARAM)TRUE, lpData);
@@ -1129,11 +1058,11 @@ BOOL doSelectFolder(HWND hWnd, char *path, int pathlen, const char *def, const c
 	bi.ulFlags = 0;
 	bi.lpfn = setDefaultFolder;
 	bi.lParam = (LPARAM)def;
-	// フォルダ選択ダイアログの表示
-	pidlBrowse = SHBrowseForFolderA(&bi);
-	if (pidlBrowse != NULL) {
+	// フォルダ選択ダイアログの表示 
+	pidlBrowse = SHBrowseForFolder(&bi);
+	if (pidlBrowse != NULL) {  
 		// PIDL形式の戻り値のファイルシステムのパスに変換
-		if (SHGetPathFromIDListA(pidlBrowse, buf)) {
+		if (SHGetPathFromIDList(pidlBrowse, buf)) {
 			// 取得成功
 			strncpy_s(path, pathlen, buf, _TRUNCATE);
 			ret = TRUE;
@@ -1156,6 +1085,18 @@ void OutputDebugPrintf(const char *fmt, ...)
 	va_end(arg);
 	OutputDebugStringA(tmp);
 }
+
+#if defined(UNICODE)
+void OutputDebugPrintfW(const wchar_t *fmt, ...)
+{
+	wchar_t tmp[1024];
+	va_list arg;
+	va_start(arg, fmt);
+	_vsnwprintf_s(tmp, _countof(tmp), _TRUNCATE, fmt, arg);
+	va_end(arg);
+	OutputDebugStringW(tmp);
+}
+#endif
 
 #if (_MSC_VER < 1800)
 BOOL vercmp(
@@ -1334,9 +1275,6 @@ ULONGLONG _myVerSetConditionMask(ULONGLONG dwlConditionMask, DWORD dwTypeBitMask
 			mask = 0x07 << (7 * 3);
 			result = dwlConditionMask & ~mask;
 			result |= op << (7 * 3);
-			break;
-		default:
-			result = 0;
 			break;
 	}
 
@@ -1535,38 +1473,53 @@ DWORD get_OPENFILENAME_SIZE()
 	return OPENFILENAME_SIZE_VERSION_400A;
 }
 
-// OPENFILENAMEW.lStructSize に代入する値
-DWORD get_OPENFILENAME_SIZEW()
+// convert table for KanjiCodeID and ListID
+// cf. KanjiList,KanjiListSend
+//     KoreanList,KoreanListSend
+//     Utf8List,Utf8ListSend
+//     IdSJIS, IdEUC, IdJIS, IdUTF8, IdUTF8m
+//     IdEnglish, IdJapanese, IdRussian, IdKorean, IdUtf8
+/* KanjiCode2List(Language,KanjiCodeID) returns ListID */
+int KanjiCode2List(int lang, int kcode)
 {
-	if (IsWindows2000OrLater()) {
-		return sizeof(OPENFILENAMEW);
-	}
-//	return OPENFILENAME_SIZE_VERSION_400W;
-	return CDSIZEOF_STRUCT(OPENFILENAMEW,lpTemplateName);
+	int Table[5][5] = {
+		{1, 2, 3, 4, 5}, /* English (dummy) */
+		{1, 2, 3, 4, 5}, /* Japanese(dummy) */
+		{1, 2, 3, 4, 5}, /* Russian (dummy) */
+		{1, 1, 1, 2, 3}, /* Korean */
+		{1, 1, 1, 1, 2}, /* Utf8 */
+	};
+	lang--;
+	kcode--;
+	return Table[lang][kcode];
 }
-
-/**
- *	KanjiCodeTranslate(Language(dest), KanjiCodeID(source)) returns KanjiCodeID
- *	@param[in]	lang (IdEnglish, IdJapanese, IdRussian, ...)
- *	@param[in]	kcode (IdSJIS, IdEUC, ... IdKOI8 ... )
- *	@return		langに存在する漢字コードを返す
- *
- *	langに存在しない漢字コードを使用しないようこの関数を使用する
- *		- iniファイルの読み込み時
- *		- 設定でlangを切り替えた時
- */
+/* List2KanjiCode(Language,ListID) returns KanjiCodeID */
+int List2KanjiCode(int lang, int list)
+{
+	int Table[5][5] = {
+		{1, 2, 3, 4, 5}, /* English (dummy) */
+		{1, 2, 3, 4, 5}, /* Japanese(dummy) */
+		{1, 2, 3, 4, 5}, /* Russian (dummy) */
+		{1, 4, 5, 1, 1}, /* Korean */
+		{4, 5, 4, 4, 4}, /* Utf8 */
+	};
+	lang--;
+	list--;
+	if (list < 0) {
+		list = 0;
+	}
+	return Table[lang][list];
+}
+/* KanjiCodeTranslate(Language(dest), KanjiCodeID(source)) returns KanjiCodeID */
 int KanjiCodeTranslate(int lang, int kcode)
 {
-	static const int Table[][5] = {
+	int Table[5][5] = {
 		{1, 2, 3, 4, 5}, /* to English (dummy) */
 		{1, 2, 3, 4, 5}, /* to Japanese(dummy) */
 		{1, 2, 3, 4, 5}, /* to Russian (dummy) */
 		{1, 1, 1, 4, 5}, /* to Korean */
 		{4, 4, 4, 4, 5}, /* to Utf8 */
-		{1, 2, 2, 2, 2}, /* to Chinese */
 	};
-	if (lang < 1 || lang > IdLangMax) lang = 1;
-	if (kcode < 1 || kcode > 5) kcode = 1;
 	lang--;
 	kcode--;
 	return Table[lang][kcode];
@@ -1804,10 +1757,85 @@ void split_buffer(char *buffer, int delimiter, char **head, char **body)
 }
 
 /**
+ *	ウィンドウ上の位置を取得する
+ *	@Param[in]		hWnd
+ *	@Param[in]		point		位置(x,y)
+ *	@Param[in,out]	InWindow	ウィンドウ上
+ *	@Param[in,out]	InClient	クライアント領域上
+ *	@Param[in,out]	InTitleBar	タイトルバー上
+ *	@retval			FALSE		無効なhWnd
+ */
+BOOL GetPositionOnWindow(
+	HWND hWnd, const POINT *point,
+	BOOL *InWindow, BOOL *InClient, BOOL *InTitleBar)
+{
+	const int x = point->x;
+	const int y = point->y;
+	RECT winRect;
+	RECT clientRect;
+
+	if (InWindow != NULL) *InWindow = FALSE;
+	if (InClient != NULL) *InClient = FALSE;
+	if (InTitleBar != NULL) *InTitleBar = FALSE;
+
+	if (!GetWindowRect(hWnd, &winRect)) {
+		return FALSE;
+	}
+
+	if ((x < winRect.left) || (winRect.right < x) ||
+		(y < winRect.top) || (winRect.bottom < y))
+	{
+		return TRUE;
+	}
+	if (InWindow != NULL) *InWindow = TRUE;
+
+	{
+		POINT pos;
+		GetClientRect(hWnd, &clientRect);
+		pos.x = clientRect.left;
+		pos.y = clientRect.top;
+		ClientToScreen(hWnd, &pos);
+		clientRect.left = pos.x;
+		clientRect.top = pos.y;
+
+		pos.x = clientRect.right;
+		pos.y = clientRect.bottom;
+		ClientToScreen(hWnd, &pos);
+		clientRect.right = pos.x;
+		clientRect.bottom = pos.y;
+	}
+
+	if ((clientRect.left <= x) && (x < clientRect.right) &&
+		(clientRect.top <= y) && (y < clientRect.bottom))
+	{
+		if (InClient != NULL) *InClient = TRUE;
+		if (InTitleBar != NULL) *InTitleBar = FALSE;
+		return TRUE;
+	}
+	if (InClient != NULL) *InClient = FALSE;
+
+	if (InTitleBar != NULL) {
+		*InTitleBar = (y < clientRect.top) ? TRUE : FALSE;
+	}
+
+	return TRUE;
+}
+
+int SetDlgTexts(HWND hDlgWnd, const DlgTextInfo *infos, int infoCount, const char *UILanguageFile)
+{
+	return SetI18DlgStrs("Tera Term", hDlgWnd, infos, infoCount, UILanguageFile);
+}
+
+void SetDlgMenuTexts(HMENU hMenu, const DlgTextInfo *infos, int infoCount, const char *UILanguageFile)
+{
+	SetI18MenuStrs("Tera Term", hMenu, infos, infoCount, UILanguageFile);
+}
+
+/**
  *	ダイアログフォントを取得する
  *	エラーは発生しない
  */
-DllExport void GetMessageboxFont(LOGFONT *logfont)
+void GetMessageboxFont(LOGFONT *logfont)
 {
 	NONCLIENTMETRICS nci;
 	const int st_size = CCSIZEOF_STRUCT(NONCLIENTMETRICS, lfMessageFont);
@@ -1818,4 +1846,169 @@ DllExport void GetMessageboxFont(LOGFONT *logfont)
 	r = SystemParametersInfo(SPI_GETNONCLIENTMETRICS, st_size, &nci, 0);
 	assert(r == TRUE);
 	*logfont = nci.lfStatusFont;
+}
+
+/**
+ *	ウィンドウ表示されているディスプレイのデスクトップの範囲を取得する
+ *	@param[in]		hWnd	ウィンドウのハンドル
+ *	@param[out]		rect	デスクトップ
+ */
+void GetDesktopRect(HWND hWnd, RECT *rect)
+{
+	if (HasMultiMonitorSupport()) {
+		// マルチモニタがサポートされている場合
+		MONITORINFO monitorInfo;
+		HMONITOR hMonitor = MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST);
+		monitorInfo.cbSize = sizeof(MONITORINFO);
+		GetMonitorInfo(hMonitor, &monitorInfo);
+		*rect = monitorInfo.rcWork;
+	} else {
+		// マルチモニタがサポートされていない場合
+		SystemParametersInfo(SPI_GETWORKAREA, 0, rect, 0);
+	}
+}
+
+/**
+ *	ウィンドウをディスプレイからはみ出さないように移動する
+ *	はみ出ていない場合は移動しない
+ *
+ *	@param[in]	hWnd		位置を調整するウィンドウ
+ */
+void MoveWindowToDisplay(HWND hWnd)
+{
+	RECT desktop;
+	RECT win_rect;
+	int win_width;
+	int win_height;
+	int win_x;
+	int win_y;
+	BOOL modify = FALSE;
+
+	GetDesktopRect(hWnd, &desktop);
+
+	GetWindowRect(hWnd, &win_rect);
+	win_x = win_rect.left;
+	win_y = win_rect.top;
+	win_height = win_rect.bottom - win_rect.top;
+	win_width = win_rect.right - win_rect.left;
+	if (win_y < desktop.top) {
+		win_y = desktop.top;
+		modify = TRUE;
+	}
+	else if (win_y + win_height > desktop.bottom) {
+		win_y = desktop.bottom - win_height;
+		modify = TRUE;
+	}
+	if (win_x < desktop.left) {
+		win_x = desktop.left;
+		modify = TRUE;
+	}
+	else if (win_x + win_width > desktop.right) {
+		win_x = desktop.right - win_width;
+		modify = TRUE;
+	}
+
+	if (modify) {
+		SetWindowPos(hWnd, NULL, win_x, win_y, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
+	}
+}
+
+/**
+ *	ウィンドウをディスプレイの中央に配置する
+ *
+ *	@param[in]	hWnd		位置を調整するウィンドウ
+ *	@param[in]	hWndParent	このウィンドウの中央に移動する
+ *							(NULLの場合ディスプレイの中央)
+ *
+ *	hWndParentの指定がある場合
+ *		hWndParentが表示状態の場合
+ *			- hWndParentの中央に配置
+ *			- ただし表示されているディスプレイからはみ出す場合は調整される
+ *		hWndParentが非表示状態の場合
+ *			- hWndが表示されているディスプレイの中央に配置される
+ *	hWndParentがNULLの場合
+ *		- hWndが表示されているディスプレイの中央に配置される
+ */
+void CenterWindow(HWND hWnd, HWND hWndParent)
+{
+	RECT rcWnd;
+	LONG WndWidth;
+	LONG WndHeight;
+	int NewX;
+	int NewY;
+	RECT rcDesktop;
+	BOOL r;
+
+	r = GetWindowRect(hWnd, &rcWnd);
+	assert(r != FALSE); (void)r;
+	WndWidth = rcWnd.right - rcWnd.left;
+	WndHeight = rcWnd.bottom - rcWnd.top;
+
+	if (hWndParent == NULL || !IsWindowVisible(hWndParent) || IsIconic(hWndParent)) {
+		// 親が設定されていない or 表示されていない or icon化されている 場合
+		// ウィンドウの表示されているディスプレイの中央に表示する
+		GetDesktopRect(hWnd, &rcDesktop);
+
+		// デスクトップ(表示されているディスプレイ)の中央
+		NewX = (rcDesktop.left + rcDesktop.right) / 2 - WndWidth / 2;
+		NewY = (rcDesktop.top + rcDesktop.bottom) / 2 - WndHeight / 2;
+	} else {
+		RECT rcParent;
+		r = GetWindowRect(hWndParent, &rcParent);
+		assert(r != FALSE); (void)r;
+
+		// hWndParentの中央
+		NewX = (rcParent.left + rcParent.right) / 2 - WndWidth / 2;
+		NewY = (rcParent.top + rcParent.bottom) / 2 - WndHeight / 2;
+
+		GetDesktopRect(hWndParent, &rcDesktop);
+	}
+
+	// デスクトップからはみ出す場合、調整する
+	if (NewX + WndWidth > rcDesktop.right)
+		NewX = rcDesktop.right - WndWidth;
+	if (NewX < rcDesktop.left)
+		NewX = rcDesktop.left;
+
+	if (NewY + WndHeight > rcDesktop.bottom)
+		NewY = rcDesktop.bottom - WndHeight;
+	if (NewY < rcDesktop.top)
+		NewY = rcDesktop.top;
+
+	// 移動する
+	SetWindowPos(hWnd, NULL, NewX, NewY, 0, 0,
+				 SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+}
+
+/**
+ *	hWndの表示されているモニタのDPIを取得する
+ *	Per-monitor DPI awareness対応
+ *
+ *	@retval	DPI値(通常のDPIは96)
+ */
+int GetMonitorDpiFromWindow(HWND hWnd)
+{
+	static HRESULT (__stdcall  *pGetDpiForMonitor)(HMONITOR hmonitor, int/*enum MONITOR_DPI_TYPE*/ dpiType, UINT *dpiX, UINT *dpiY);
+	static HMODULE hDll;
+	if (hDll == NULL) {
+		hDll = LoadLibraryA("Shcore.dll");
+		if (hDll != NULL) {
+			pGetDpiForMonitor = (void *)GetProcAddress(hDll, "GetDpiForMonitor");
+		}
+	}
+	if (pGetDpiForMonitor == NULL) {
+		// ダイアログ内では自動スケーリングが効いているので
+		// 常に96を返すようだ
+		int dpiY;
+		HDC hDC = GetDC(hWnd);
+		dpiY = GetDeviceCaps(hDC,LOGPIXELSY);
+		ReleaseDC(hWnd, hDC);
+		return dpiY;
+	} else {
+		UINT dpiX;
+		UINT dpiY;
+		HMONITOR hMonitor = MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST);
+		pGetDpiForMonitor(hMonitor, 0 /*0=MDT_EFFECTIVE_DPI*/, &dpiX, &dpiY);
+		return (int)dpiY;
+	}
 }

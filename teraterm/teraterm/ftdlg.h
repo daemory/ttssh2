@@ -37,46 +37,30 @@
 class CFileTransDlg : public TTCDialog
 {
 public:
-	enum Op {
-		OpLog,
-		OpSendFile
-	};
+	CFileTransDlg() {
+		SmallIcon = NULL;
+		BigIcon = NULL;
+	}
 
-	struct Info {
-		const char *UILanguageFile;
-		Op OpId;
-		wchar_t *DlgCaption;
-		wchar_t *FullName;
-		wchar_t *FileName;		// NULLのとき、FullNameからファイル名を作成する
-		BOOL HideDialog;
-		HWND HMainWin;
-	};
-
-	CFileTransDlg();
-	~CFileTransDlg();
-
-	BOOL Create(HINSTANCE hInstance, Info *info);
+	BOOL Create(HINSTANCE hInstance, HWND hParent, PFileVar pfv, PComVar pcv, PTTSet pts);
 	void ChangeButton(BOOL PauseFlag);
-	void RefreshNum(DWORD StartTime, LONG FileSize, LONG ByteCount);
+	void RefreshNum();
 
-private:
+	enum { IDD = IDD_FILETRANSDLG };
+
+protected:
 	virtual BOOL OnCancel();
 	virtual BOOL OnCommand(WPARAM wParam, LPARAM lParam);
 	virtual BOOL PostNcDestroy();
 	virtual BOOL OnInitDialog();
 
 private:
+	PFileVar fv;
+	PComVar cv;
 	BOOL Pause;
+	PTTSet ts;
 	HANDLE SmallIcon;
 	HANDLE BigIcon;
-	const char *UILanguageFile;
-	WORD OpId;
-	int ProgStat;	// プログレスバーの進捗が戻らないよう記憶しておく
-	BOOL HideDialog;
-	wchar_t *DlgCaption;
-	wchar_t *FileName;
-	wchar_t *FullName;
-	HWND HMainWin;
 };
 
 typedef CFileTransDlg *PFileTransDlg;

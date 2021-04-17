@@ -31,7 +31,7 @@
 
 <h2 id="teraterm">Tera Term</h2>
 
-<!--h3 id="teraterm_5.0">202x.xx.xx (Ver 5.0)</h3>
+<h3 id="teraterm_4.106">2021.xx.xx (Ver 4.106)</h3>
 <ul class="history">
   <li>Changes
     <ul>
@@ -45,16 +45,25 @@
 
   <li>Bug fixes
     <ul>
-      <li><a href="../macro/command/filecreate.html">filecreate</a>, <a href="../macro/command/fileopen.html">fileopen</a> マクロコマンドで開いたファイルハンドルがロックしている問題を修正した。</li>
+      <li>MACRO: the <a href="../macro/command/yesnobox.html">yesnobox</a> command shows "OK" instead of "yes" without language file. This bug was introduced in 4.103.</li>
+      <li>Fixed memory leak when tooltip show. This bug was introduced in 4.103.</li>
+      <li>Fixed support for IME feedback back and forth function. This bug was introduced in 4.103.</li>
+      <li>Fixed desktop images can not be displayed on background other than main display. This bug was introduced in 4.103.</li>
+      <li>Fixed an application fault occurs when VT Window and HtmlHelp Windows are closed at same time</li>
+      <li>The elapsed time style timestamp in the log is incorrect.</li>
+      <li>MACRO: The file handle opened by <a href="../macro/command/filecreate.html">filecreate</a>, <a href="../macro/command/fileopen.html">fileopen</a> marco command is locking. </li>
     </ul>
   </li>
 
   <li>Misc
     <ul>
+      <li>upgraded TTSSH to <a href="#ttssh_2.92">2.92</a>.</li>
+      <li>upgraded TTX KanjiMenu Plug-in to <a href="#kanjimenu_0.1.8">0.1.8</a></li>
+      <li>upgraded TeraTerm Menu to <a href="#ttmenu_1.16">1.16</a></li>
       <li>upgraded Oniguruma to 6.9.6.</li>
     </ul>
   </li>
-</ul-->
+</ul>
 
 <h3 id="teraterm_4.105">2019.12.7 (Ver 4.105)</h3>
 <ul class="history">
@@ -3266,24 +3275,31 @@ SYNOPSIS:
 
 <h2 id="ttssh">TTSSH</h2>
 
-<!--h3 id="ttssh_2.92">202x.xx.x (Ver 2.92)</h3>
+<h3 id="ttssh_2.92">2021.xx.xx (Ver 2.92)</h3>
 <ul class="history">
-  <li>Changes
+  <!-- li>Changes
     <ul>
+      <li></li>
     </ul>
-  </li>
+  </li -->
 
   <li>Bug fixes
     <ul>
+      <li>When system memory is insufficient, invalid signature may be used as correct one well with signature verification by the host key at the time of key exchange.</li>
+      <li>Resizing the VT window immediately after user authentication was completed, connection is closed by server.</li>
+      <li>A part of control is always enabled on SSH authentication dialog.</li>
+      <li>When many files are sent in a batch by using D&D's SCP sending, an error occurs.</li>
+      <li>When the Virtual Store is enabled on Windows Vista or later and the Host key rotation is enabled,  the original host key is accidentally deleted from known_hosts file.</li>
+      <li>When the Virtual Store is enabled on Windows Vista or later and the host key type is same but key contents is different,  the host key can not be deleted from known_hosts file.</li>
     </ul>
   </li>
 
   <li>Misc
     <ul>
-      <li>upgraded OpenSSL to 1.1.1j.</li>
+      <li>upgraded OpenSSL from 1.1.1d to 1.1.1k.</li>
     </ul>
   </li>
-</ul-->
+</ul>
 
 <h3 id="ttssh_2.91">2019.12.7 (Ver 2.91)</h3>
 <ul class="history">
@@ -5083,6 +5099,12 @@ SYNOPSIS:
 
 <h2 id="ttmenu">TeraTerm Menu</h2>
 
+<h3 id="ttmenu_1.16">2021.xx.xx (Ver 1.16)</h3>
+<ul class="history">
+      <li>The toolchip text of button for registering to the list is changed to "Register", "Unregister".</li>
+      <li>Bug fix: The extra "\" character is displayed on the version information.</li>
+</ul>
+
 <h3 id="ttmenu_1.15">2017.11.30 (Ver 1.15)</h3>
 <ul class="history">
       <li>When the ttpmenu.ini file is used, the buffer size including whole host setting name is expanded from 2.6KB to 10KB.</li>
@@ -5172,6 +5194,11 @@ SYNOPSIS:
 
 
 <h2 id="kanjimenu">TTX KanjiMenu</h2>
+
+<h3 id="kanjimenu_0.1.8">2021.xx.xx (Ver 0.1.8)</h3>
+<ul class="history">
+      <li>UTF-8m setting does not shown in Korean mode.</li>
+</ul>
 
 <h3 id="kanjimenu_0.1.7">2016.11.30 (Ver 0.1.7)</h3>
 <ul class="history">

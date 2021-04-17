@@ -34,19 +34,19 @@
 #include <string.h>
 #include <ddeml.h>
 #include "ttwinman.h"
+#include "ttftypes.h"
+#include "filesys.h"
+#include "clipboar.h"
 #include "ttsetup.h"
 #include "telnet.h"
 #include "ttlib.h"
 #include "keyboard.h"
+
 #include "ttdde.h"
 #include "ttddecmnd.h"
 #include "commlib.h"
-#include "sendmem.h"
-#include "codeconv.h"
-#include "broadcast.h"
 
-#include "filesys.h"
-#include "sendmem.h"
+#include "vtwin.h"
 
 #define ServiceName "TERATERM"
 #define ItemName "DATA"
@@ -54,9 +54,8 @@
 
 #define MaxStrLen (LONG)512
 
-BOOL DDELog = FALSE;		// macro (DDE) が有効かどうかを示す
 char TopicName[21] = "";
-static HCONV ConvH = 0;
+HCONV ConvH = 0;
 BOOL AdvFlag = FALSE;
 BOOL CloseTT = FALSE;
 
@@ -69,7 +68,7 @@ static HSZ Item = 0;
 static HSZ Item2 = 0;
 static HWND HWndDdeCli = NULL;
 
-static BOOL StartupFlag = FALSE;
+static StartupFlag = FALSE;
 
 // for sync mode
 static BOOL SyncMode = FALSE;
@@ -82,51 +81,6 @@ static WORD ParamXmodemOpt;
 static char ParamSecondFileName[MaxStrLen];
 
 static BOOL AutoLogClose = FALSE;
-
-static char *cv_LogBuf;
-static int cv_LogPtr;
-static int cv_DStart;
-static int cv_DCount;
-
-/**
- *	マクロへの送信バッファへ1byteつみこむ
- *		バッファフルの時は古いものから捨てられる
- */
-void DDEPut1(BYTE b)
-{
-	if (!DDELog) {
-		return;
-	}
-
-	cv_LogBuf[cv_LogPtr] = b;
-	cv_LogPtr++;
-	if (cv_LogPtr >= InBuffSize)
-		cv_LogPtr = cv_LogPtr - InBuffSize;
-
-	if (cv_DCount >= InBuffSize)
-	{
-		cv_DCount = InBuffSize;
-		cv_DStart = cv_LogPtr;
-	}
-}
-
-static BOOL DDECreateBuf(void)
-{
-	cv_LogBuf = (char *)malloc(InBuffSize);
-	if (cv_LogBuf == NULL) {
-		return FALSE;
-	}
-	cv_LogPtr = 0;
-	cv_DStart = 0;
-	cv_DCount = 0;
-	return TRUE;
-}
-
-static void DDEFreeBuf(void)
-{
-	free(cv_LogBuf);
-	cv_LogBuf = NULL;
-}
 
 static void BringupMacroWindow(BOOL flash_flag)
 {
@@ -233,29 +187,29 @@ HDDEDATA WildConnect(HSZ ServiceHsz, HSZ TopicHsz, UINT ClipFmt)
 		return 0;
 }
 
-static BOOL DDEGet1(LPBYTE b)
+BOOL DDEGet1(LPBYTE b)
 {
-	if (cv_DCount <= 0) return FALSE;
-	*b = ((LPSTR)cv_LogBuf)[cv_DStart];
-	cv_DStart++;
-	if (cv_DStart>=InBuffSize)
-		cv_DStart = cv_DStart-InBuffSize;
-	cv_DCount--;
+	if (cv.DCount <= 0) return FALSE;
+	*b = ((LPSTR)cv.LogBuf)[cv.DStart];
+	cv.DStart++;
+	if (cv.DStart>=InBuffSize)
+		cv.DStart = cv.DStart-InBuffSize;
+	cv.DCount--;
 	return TRUE;
 }
 
-static LONG DDEGetDataLen()
+LONG DDEGetDataLen()
 {
 	BYTE b;
 	LONG Len;
 	int Start, Count;
 
-	Len = cv_DCount;
-	Start = cv_DStart;
-	Count = cv_DCount;
+	Len = cv.DCount;
+	Start = cv.DStart;
+	Count = cv.DCount;
 	while (Count>0)
 	{
-		b = ((LPSTR)cv_LogBuf)[Start];
+		b = ((LPSTR)cv.LogBuf)[Start];
 		if ((b==0x00) || (b==0x01)) Len++;
 		Start++;
 		if (Start>=InBuffSize) Start = Start-InBuffSize;
@@ -265,17 +219,10 @@ static LONG DDEGetDataLen()
 	return Len;
 }
 
-/**
- *	送信バッファに残っているデータ数取得
- */
-int DDEGetCount(void)
-{
-	return cv_DCount;
-}
-
-static HDDEDATA AcceptRequest(HSZ ItemHSz)
+HDDEDATA AcceptRequest(HSZ ItemHSz)
 {
 	BYTE b;
+	BOOL Unlock;
 	HDDEDATA DH;
 	LPSTR DP;
 	int i;
@@ -288,6 +235,16 @@ static HDDEDATA AcceptRequest(HSZ ItemHSz)
 		                         Item2,CF_OEMTEXT,0);
 	else if (DdeCmpStringHandles(ItemHSz, Item) == 0) // item "DATA"
 	{
+		if (cv.HLogBuf==0) return 0;
+
+		if (cv.LogBuf==NULL)
+		{
+			Unlock = TRUE;
+			cv.LogBuf = GlobalLock(cv.HLogBuf);
+			if (cv.LogBuf == NULL) return 0;
+		}
+		else Unlock = FALSE;
+
 		Len = DDEGetDataLen();
 		if ((SyncMode) &&
 		    (SyncFreeSpace<Len))
@@ -319,6 +276,12 @@ static HDDEDATA AcceptRequest(HSZ ItemHSz)
 			DP[i] = 0;
 			DdeUnaccessData(DH);
 		}
+
+		if (Unlock)
+		{
+			GlobalUnlock(cv.HLogBuf);
+			cv.LogBuf = NULL;
+		}
 	}
 	else
 		return 0;
@@ -326,12 +289,11 @@ static HDDEDATA AcceptRequest(HSZ ItemHSz)
 	return DH;
 }
 
-static HDDEDATA AcceptPoke(HSZ ItemHSz, UINT ClipFmt,
-						   HDDEDATA Data)
+HDDEDATA AcceptPoke(HSZ ItemHSz, UINT ClipFmt,
+                    HDDEDATA Data)
 {
 	LPSTR DataPtr;
 	DWORD DataSize;
-	HDDEDATA result;
 
 	// 連続してXTYP_POKEがクライアント（マクロ）から送られてくると、サーバ（本体）側がまだ
 	// コマンドの貼り付けを行っていない場合、TalkStatusは IdTalkCB になので、DDE_FNOTPROCESSEDを
@@ -346,29 +308,21 @@ static HDDEDATA AcceptPoke(HSZ ItemHSz, UINT ClipFmt,
 
 	if (DdeCmpStringHandles(ItemHSz, Item) != 0) return DDE_FNOTPROCESSED;
 
-	result = (HDDEDATA)DDE_FNOTPROCESSED;
 	DataPtr = DdeAccessData(Data,&DataSize);
-	if (DataPtr != NULL) {
-		wchar_t *strW = ToWcharU8(DataPtr);
-		if (strW != NULL) {
-			SendMem *sm = SendMemTextW(strW, 0);
-			if (sm != NULL) {
-				SendMemInitEcho(sm, FALSE);
-				SendMemInitDelay(sm, SENDMEM_DELAYTYPE_PER_LINE, 10, 0);
-				SendMemStart(sm);
-				result = (HDDEDATA)DDE_FACK;
-			}
-		}
-	}
+	if (DataPtr==NULL) return DDE_FNOTPROCESSED;
+	CBStartSend(DataPtr, DataSize, FALSE);
 	DdeUnaccessData(Data);
-	return result;
+	if (TalkStatus==IdTalkCB)
+		return (HDDEDATA)DDE_FACK;
+	else
+		return DDE_FNOTPROCESSED;
 }
 
-static WORD HexStr2Word(PCHAR Str)
+WORD HexStr2Word(PCHAR Str)
 {
 	int i;
 	BYTE b;
-	WORD w = 0;
+	WORD w;
 
 	for (i=0; i<=3; i++)
 	{
@@ -381,12 +335,11 @@ static WORD HexStr2Word(PCHAR Str)
 	return w;
 }
 
-static HDDEDATA AcceptExecute(HSZ TopicHSz, HDDEDATA Data)
+HDDEDATA AcceptExecute(HSZ TopicHSz, HDDEDATA Data)
 {
 	char Command[MaxStrLen + 1];
 	int i;
-	wchar_t *ParamFileNameW;
-	BOOL r;
+	WORD w, c;
 
 	memset(Command, 0, sizeof(Command));
 
@@ -421,24 +374,30 @@ static HDDEDATA AcceptExecute(HSZ TopicHSz, HDDEDATA Data)
 		if (ParamXmodemOpt==0) ParamXmodemOpt = 1;
 		break;
 	case CmdSetSync:
-		if (sscanf(&(Command[1]),"%lu",&SyncFreeSpace)!=1)
+		if (sscanf(&(Command[1]),"%u",&SyncFreeSpace)!=1)
 			SyncFreeSpace = 0;
 		SyncMode = (SyncFreeSpace>0);
 		SyncRecv = TRUE;
 		break;
 	case CmdBPlusRecv:
-		if (BPStartReceive(TRUE, FALSE)) {
+		if ((FileVar==NULL) && NewFileVar(&FileVar))
+		{
+			FileVar->NoMsg = TRUE;
 			DdeCmnd = TRUE;
+			BPStart(IdBPReceive);
 		}
 		else
 			return DDE_FNOTPROCESSED;
 		break;
 	case CmdBPlusSend:
-		ParamFileNameW = ToWcharU8(ParamFileName);
-		r = BPStartSend(ParamFileNameW);
-		free(ParamFileNameW);
-		if (r) {
+		if ((FileVar==NULL) && NewFileVar(&FileVar))
+		{
+			FileVar->DirLen = 0;
+			strncpy_s(FileVar->FullName, sizeof(FileVar->FullName),ParamFileName, _TRUNCATE);
+			FileVar->NumFname = 1;
+			FileVar->NoMsg = TRUE;
 			DdeCmnd = TRUE;
+			BPStart(IdBPSend);
 		}
 		else
 			return DDE_FNOTPROCESSED;
@@ -511,36 +470,34 @@ static HDDEDATA AcceptExecute(HSZ TopicHSz, HDDEDATA Data)
 		}
 		break;
 	case CmdKmtFinish:
-		if (KermitFinish(TRUE)) {
-			DdeCmnd = TRUE;
-		}
-		else {
-			return DDE_FNOTPROCESSED;
-		}
-		break;
 	case CmdKmtRecv:
-		if (KermitStartRecive(TRUE)) {
+		if ((FileVar==NULL) && NewFileVar(&FileVar))
+		{
+			FileVar->NoMsg = TRUE;
 			DdeCmnd = TRUE;
+			if (Command[0]==CmdKmtFinish)
+				i = IdKmtFinish;
+			else
+				i = IdKmtReceive;
+			KermitStart(i);
 		}
 		else
 			return DDE_FNOTPROCESSED;
 		break;
 	case CmdKmtGet:
-		ParamFileNameW = ToWcharU8(ParamFileName);
-		r = KermitGet(ParamFileNameW);
-		free(ParamFileNameW);
-		if (r) {
-			DdeCmnd = TRUE;
-		}
-		else
-			return DDE_FNOTPROCESSED;
-		break;
 	case CmdKmtSend:
-		ParamFileNameW = ToWcharU8(ParamFileName);
-		r = KermitStartSend(ParamFileNameW);
-		free(ParamFileNameW);
-		if (r) {
+		if ((FileVar==NULL) && NewFileVar(&FileVar))
+		{
+			FileVar->DirLen = 0;
+			strncpy_s(FileVar->FullName, sizeof(FileVar->FullName),ParamFileName, _TRUNCATE);
+			FileVar->NumFname = 1;
+			FileVar->NoMsg = TRUE;
 			DdeCmnd = TRUE;
+			if (Command[0]==CmdKmtGet)
+				i = IdKmtGet;
+			else
+				i = IdKmtSend;
+			KermitStart(i);
 		}
 		else
 			return DDE_FNOTPROCESSED;
@@ -550,69 +507,89 @@ static HDDEDATA AcceptExecute(HSZ TopicHSz, HDDEDATA Data)
 		PostMessage(HVTWin,WM_USER_ACCELCOMMAND,IdCmdLoadKeyMap,0);
 		break;
 
-	case CmdLogRotate: {
-		char *p = ParamFileName;
-		int s;
+	case CmdLogRotate:
+		if (LogVar != NULL) {
+			char *p = ParamFileName;
+			int s;
 
-		if (strncmp(p, "size", 4) == 0) {
-			s = atoi(&p[5]);
-			FLogRotateSize(s);
+			if (strncmp(p, "size", 4) == 0) {
+				s = atoi(&p[5]);
+				LogVar->RotateMode = ROTATE_SIZE;
+				LogVar->RotateSize = s;
 
-		} else if (strncmp(p, "rotate", 6) == 0) {
-			s = atoi(&p[7]);
-			FLogRotateRotate(s);
+			} else if (strncmp(p, "rotate", 6) == 0) {
+				s = atoi(&p[7]);
+				LogVar->RotateStep = s;
 
-		} else if (strncmp(p, "halt", 4) == 0) {
-			FLogRotateHalt();
+			} else if (strncmp(p, "halt", 4) == 0) {
+				LogVar->RotateMode = ROTATE_NONE;
+				LogVar->RotateSize = 0;
+				LogVar->RotateStep = 0;
+			}
 		}
 		break;
-	}
 
 	case CmdLogAutoClose:
 		AutoLogClose = (ParamBinaryFlag!=0);
 		break;
 
 	case CmdLogClose:
-		FLogClose();
+		if (LogVar != NULL) FileTransEnd(OpLog);
 		break;
 	case CmdLogOpen:
-		if (FLogIsOpend()) {
+		if ((LogVar==NULL) && NewFileVar(&LogVar))
+		{
+			BOOL ret;
+			LogVar->DirLen = 0;
+			LogVar->NoMsg = TRUE;
+			strncpy_s(LogVar->FullName, sizeof(LogVar->FullName),ParamFileName, _TRUNCATE);
+			ParseStrftimeFileName(LogVar->FullName, sizeof(LogVar->FullName));
+			ret = LogStart();
+			if (ret) {
+				strncpy_s(ParamFileName, sizeof(ParamFileName),"1", _TRUNCATE);
+			}
+			else {
+				strncpy_s(ParamFileName, sizeof(ParamFileName),"0", _TRUNCATE);
+			}
+		}
+		else
 			return DDE_FNOTPROCESSED;
-		}
-		else {
-			wchar_t *ParamFileNameW = ToWcharU8(ParamFileName);
-			wchar_t *log_filenameW = FLogGetLogFilename(ParamFileNameW);
-			BOOL ret = FLogOpen(log_filenameW, LOG_UTF8, FALSE);
-			free(log_filenameW);
-			free(ParamFileNameW);
-			strncpy_s(ParamFileName, sizeof(ParamFileName), ret ? "1" : "0", _TRUNCATE);
-		}
 		break;
 	case CmdLogPause:
-		FLogPause(TRUE);
+		FLogChangeButton(TRUE);
 		break;
 	case CmdLogStart:
-		FLogPause(FALSE);
+		FLogChangeButton(FALSE);
 		break;
-	case CmdLogWrite: {
-		wchar_t *ParamFileNameW = ToWcharU8(ParamFileName);
-		FLogWriteStr(ParamFileNameW);
-		free(ParamFileNameW);
+	case CmdLogWrite:
+		if (LogVar != NULL)
+		{
+			DWORD wrote;
+			WriteFile(LogVar->FileHandle, ParamFileName, strlen(ParamFileName), &wrote, NULL);
+			LogVar->ByteCount =
+				LogVar->ByteCount + strlen(ParamFileName);
+			FLogRefreshNum();
+		}
 		break;
-	}
 	case CmdQVRecv:
-		if (QVStartReceive(TRUE)) {
+		if ((FileVar==NULL) && NewFileVar(&FileVar))
+		{
+			FileVar->NoMsg = TRUE;
 			DdeCmnd = TRUE;
+			QVStart(IdQVReceive);
 		}
 		else
 			return DDE_FNOTPROCESSED;
 		break;
 	case CmdQVSend:
-		ParamFileNameW = ToWcharU8(ParamFileName);
-		r = QVStartSend(ParamFileNameW);
-		free(ParamFileNameW);
-		if (r) {
+		if ((FileVar==NULL) && NewFileVar(&FileVar))
+		{
+			FileVar->DirLen = 0;
+			strncpy_s(FileVar->FullName, sizeof(FileVar->FullName),ParamFileName, _TRUNCATE);
+			FileVar->NumFname = 1;
+			FileVar->NoMsg = TRUE;
 			DdeCmnd = TRUE;
+			QVStart(IdQVSend);
 		}
 		else
 			return DDE_FNOTPROCESSED;
@@ -624,29 +601,24 @@ static HDDEDATA AcceptExecute(HSZ TopicHSz, HDDEDATA Data)
 	case CmdSendBreak:
 		PostMessage(HVTWin,WM_USER_ACCELCOMMAND,IdBreak,0);
 		break;
-	case CmdSendFile: {
-		wchar_t *ParamFileNameW = ToWcharU8(ParamFileName);
-#if 0
-		// Tera Term 4 と同じ方法で送信
-		BOOL r = FileSendStart(ParamFileNameW, ParamBinaryFlag);
-#else
-		// 5 で追加した方法で送信
-		BOOL r = SendMemSendFile(ParamFileNameW, ParamBinaryFlag, 0, 0, 0);
-#endif
-		free(ParamFileNameW);
-		if (r) {
+	case CmdSendFile:
+		if ((SendVar==NULL) && NewFileVar(&SendVar))
+		{
+			SendVar->DirLen = 0;
+			strncpy_s(SendVar->FullName, sizeof(SendVar->FullName),ParamFileName, _TRUNCATE);
+			ts.TransBin = ParamBinaryFlag;
+			SendVar->NoMsg = TRUE;
 			DdeCmnd = TRUE;
+			FileSendStart();
 		}
 		else
 			return DDE_FNOTPROCESSED;
 		break;
-	}
-	case CmdSendKCode: {
-		WORD w = HexStr2Word(ParamFileName);
-		WORD c = HexStr2Word(&ParamFileName[4]);
+	case CmdSendKCode:
+		w = HexStr2Word(ParamFileName);
+		c = HexStr2Word(&ParamFileName[4]);
 		PostMessage(HVTWin,WM_USER_KEYCODE,w,(LPARAM)c);
 		break;
-	}
 	case CmdSetEcho:
 		ts.LocalEcho = ParamBinaryFlag;
 		if (cv.Ready && cv.TelFlag && (ts.TelEcho>0))
@@ -676,67 +648,131 @@ static HDDEDATA AcceptExecute(HSZ TopicHSz, HDDEDATA Data)
 			PostMessage(HVTWin,WM_USER_ACCELCOMMAND,IdCmdCtrlCloseTEK,0);
 			break;
 		case '6': //steven add
-			FLogWindow(SW_HIDE);
+			if (HWndLog == NULL)
+				break;
+			else
+				ShowWindow(HWndLog, SW_HIDE);
 			break;
 		case '7': //steven add
-			FLogWindow(SW_MINIMIZE);
+			if (HWndLog == NULL)
+				break;
+			else
+				ShowWindow(HWndLog, SW_MINIMIZE);
 			break;
 		case '8': //steven add
-			FLogWindow(SW_RESTORE);
+			if (HWndLog == NULL)
+				break;
+			else {
+				ShowWindow(HWndLog, SW_RESTORE);
+				// 拡張スタイル WS_EX_NOACTIVATE 状態を解除する
+				SetForegroundWindow(HWndLog);
+			}
 			break;
 		}
 		break;
 	case CmdXmodemRecv:
-		ParamFileNameW = ToWcharU8(ParamFileName);
-		r = XMODEMStartSend(ParamFileNameW, ParamXmodemOpt);
-		free(ParamFileNameW);
-		if (r) {
+		if ((FileVar==NULL) && NewFileVar(&FileVar))
+		{
+			FileVar->DirLen = 0;
+			strncpy_s(FileVar->FullName, sizeof(FileVar->FullName),ParamFileName, _TRUNCATE);
+			if (IsXopt1k(ts.XmodemOpt)) {
+				if (IsXoptCRC(ParamXmodemOpt)) {
+					// CRC
+					ts.XmodemOpt = Xopt1kCRC;
+				}
+				else {	// Checksum
+					ts.XmodemOpt = Xopt1kCksum;
+				}
+			}
+			else {
+				if (IsXoptCRC(ParamXmodemOpt)) {
+					ts.XmodemOpt = XoptCRC;
+				}
+				else {
+					ts.XmodemOpt = XoptCheck;
+				}
+			}
+			ts.XmodemBin = ParamBinaryFlag;
+			FileVar->NoMsg = TRUE;
 			DdeCmnd = TRUE;
+			XMODEMStart(IdXReceive);
 		}
 		else
 			return DDE_FNOTPROCESSED;
 		break;
 	case CmdXmodemSend:
-		ParamFileNameW = ToWcharU8(ParamFileName);
-		r = XMODEMStartReceive(ParamFileNameW, ParamBinaryFlag, ParamXmodemOpt);
-		free(ParamFileNameW);
-		if (r) {
+		if ((FileVar==NULL) && NewFileVar(&FileVar))
+		{
+			FileVar->DirLen = 0;
+			strncpy_s(FileVar->FullName, sizeof(FileVar->FullName),ParamFileName, _TRUNCATE);
+			if (IsXoptCRC(ts.XmodemOpt)) {
+				if (IsXopt1k(ParamXmodemOpt)) {
+					ts.XmodemOpt = Xopt1kCRC;
+				}
+				else {
+					ts.XmodemOpt = XoptCRC;
+				}
+			}
+			else {
+				if (IsXopt1k(ParamXmodemOpt)) {
+					ts.XmodemOpt = Xopt1kCksum;
+				}
+				else {
+					ts.XmodemOpt = XoptCheck;
+				}
+			}
+			FileVar->NoMsg = TRUE;
 			DdeCmnd = TRUE;
+			XMODEMStart(IdXSend);
 		}
 		else
 			return DDE_FNOTPROCESSED;
 		break;
 	case CmdZmodemRecv:
-		if (ZMODEMStartReceive(TRUE, FALSE)) {
+		if ((FileVar==NULL) && NewFileVar(&FileVar))
+		{
+			FileVar->NoMsg = TRUE;
 			DdeCmnd = TRUE;
+			ZMODEMStart(IdZReceive);
 		}
 		else
 			return DDE_FNOTPROCESSED;
 		break;
 	case CmdZmodemSend:
-		ParamFileNameW = ToWcharU8(ParamFileName);
-		r = ZMODEMStartSend(ParamFileNameW, ParamBinaryFlag, FALSE);
-		free(ParamFileNameW);
-		if (r) {
+		if ((FileVar==NULL) && NewFileVar(&FileVar))
+		{
+			FileVar->DirLen = 0;
+			strncpy_s(FileVar->FullName, sizeof(FileVar->FullName),ParamFileName, _TRUNCATE);
+			FileVar->NumFname = 1;
+			ts.XmodemBin = ParamBinaryFlag;
+			FileVar->NoMsg = TRUE;
 			DdeCmnd = TRUE;
+			ZMODEMStart(IdZSend);
 		}
 		else
 			return DDE_FNOTPROCESSED;
 		break;
 
 	case CmdYmodemRecv:
-		if (YMODEMStartReceive(TRUE))
+		if ((FileVar==NULL) && NewFileVar(&FileVar))
 		{
+			FileVar->NoMsg = TRUE;
 			DdeCmnd = TRUE;
+			YMODEMStart(IdYReceive);
 		}
 		else
 			return DDE_FNOTPROCESSED;
 		break;
 	case CmdYmodemSend:
-		ParamFileNameW = ToWcharU8(ParamFileName);
-		r = YMODEMStartSend(ParamFileNameW);
-		if (r) {
+		if ((FileVar==NULL) && NewFileVar(&FileVar))
+		{
+			FileVar->DirLen = 0;
+			strncpy_s(FileVar->FullName, sizeof(FileVar->FullName),ParamFileName, _TRUNCATE);
+			FileVar->NumFname = 1;
+			//ts.XmodemBin = ParamBinaryFlag;
+			FileVar->NoMsg = TRUE;
 			DdeCmnd = TRUE;
+			YMODEMStart(IdYSend);
 		}
 		else
 			return DDE_FNOTPROCESSED;
@@ -848,7 +884,7 @@ scp_rcv_error:
 
 		val = atoi(ParamFileName);
 		switch(val) {
-			case 1: // Xon/Xoff
+			case 1: // Xon/Xoff 
 			case 2: // RTS/CTS
 			case 3: // none
 			case 4: // DSR/DTR
@@ -927,52 +963,36 @@ scp_rcv_error:
 		}
 		break;
 
-	case CmdSendBroadcast: { // 'sendbroadcast'
-		wchar_t *strW = ToWcharU8(ParamFileName);
-		if (strW != NULL) {
-			SendBroadcastMessage(HVTWin, HVTWin, strW);
-			free(strW);
-		}
+	case CmdSendBroadcast: // 'sendbroadcast'
+		SendBroadcastMessage(HVTWin, HVTWin, ParamFileName, strlen(ParamFileName));
 		break;
-	}
 
-	case CmdSendMulticast: {
-		// 'sendmulticast'
-		wchar_t *ParamFileNameW = ToWcharU8(ParamFileName);
-		wchar_t *ParamSecondFileNameW = ToWcharU8(ParamSecondFileName);
-		if (ParamFileNameW != NULL && ParamSecondFileNameW != NULL) {
-			SendMulticastMessage(HVTWin, HVTWin, ParamFileNameW, ParamSecondFileNameW);
-		}
-		free(ParamFileNameW);
-		free(ParamSecondFileNameW);
+	case CmdSendMulticast: // 'sendmulticast'
+		SendMulticastMessage(HVTWin, HVTWin, ParamFileName, ParamSecondFileName, strlen(ParamSecondFileName));
 		break;
-	}
 
-	case CmdSetMulticastName: {
-		// 'setmulticastname'
-		wchar_t *ParamFileNameW = ToWcharU8(ParamFileName);
-		if (ParamFileNameW != NULL) {
-			SetMulticastName(ParamFileNameW);
-			free(ParamFileNameW);
-		}
+	case CmdSetMulticastName: // 'setmulticastname'
+		SetMulticastName(ParamFileName);
 		break;
-	}
 
-	case CmdDispStr: {
-		wchar_t *strW = ToWcharU8(ParamFileName);
-		if (strW != NULL) {
-			SendMem *sm = SendMemTextW(strW, 0);
-			if (sm != NULL) {
-				SendMemInitEcho(sm, TRUE);
-				SendMemInitSend(sm, FALSE);
-				SendMemStart(sm);
-			}
-		}
+	case CmdDispStr:
+		CBStartSend(ParamFileName, sizeof(ParamFileName), TRUE);
 		break;
-	}
 
 	case CmdLogInfo:
-		FLogInfo(ParamFileName, sizeof(ParamFileName) - 1);
+		if (LogVar) {
+			ParamFileName[0] = '0'
+				+ (ts.LogBinary != 0)
+				+ ((ts.Append != 0) << 1)
+				+ ((ts.LogTypePlainText != 0) << 2)
+				+ ((ts.LogTimestamp != 0) << 3)
+				+ ((ts.LogHideDialog != 0) << 4);
+			strncpy_s(ParamFileName+1, sizeof(ParamFileName)-1, LogVar->FullName, _TRUNCATE);
+		}
+		else {
+			ParamFileName[0] = '0' - 1;
+			ParamFileName[1] = 0;
+		}
 		break;
 
 	default:
@@ -981,9 +1001,9 @@ scp_rcv_error:
 	return (HDDEDATA)DDE_FACK;
 }
 
-static HDDEDATA CALLBACK DdeCallbackProc(UINT CallType, UINT Fmt, HCONV Conv,
-										 HSZ HSz1, HSZ HSz2, HDDEDATA Data,
-										 ULONG_PTR Data1, ULONG_PTR Data2)
+HDDEDATA CALLBACK DdeCallbackProc(UINT CallType, UINT Fmt, HCONV Conv,
+                                  HSZ HSz1, HSZ HSz2, HDDEDATA Data,
+                                  DWORD Data1, DWORD Data2)
 {
 	HDDEDATA Result;
 
@@ -1046,7 +1066,7 @@ static HDDEDATA CALLBACK DdeCallbackProc(UINT CallType, UINT Fmt, HCONV Conv,
 		case XTYP_DISCONNECT:
 			// マクロ終了時、ログ採取を自動的に停止する。(2013.6.24 yutaka)
 			if (AutoLogClose) {
-				FLogClose();
+				if (LogVar != NULL) FileTransEnd(OpLog);
 				AutoLogClose = FALSE;
 			}
 			ConvH = 0;
@@ -1067,7 +1087,7 @@ BOOL InitDDE()
 
 	Ok = TRUE;
 
-	if (DdeInitialize(&Inst,DdeCallbackProc,0,0) == DMLERR_NO_ERROR)
+	if (DdeInitialize(&Inst,(PFNCALLBACK)DdeCallbackProc,0,0) == DMLERR_NO_ERROR)
 	{
 		Service= DdeCreateStringHandle(Inst, ServiceName, CP_WINANSI);
 		Topic  = DdeCreateStringHandle(Inst, TopicName, CP_WINANSI);
@@ -1086,7 +1106,7 @@ BOOL InitDDE()
 
 	if (Ok)
 	{
-		Ok = DDECreateBuf();
+		Ok = CreateLogBuf();
 		if (Ok) DDELog = TRUE;
 	}
 
@@ -1138,7 +1158,7 @@ void EndDDE()
 	AdvFlag = FALSE;
 
 	DDELog = FALSE;
-	DDEFreeBuf();
+	FreeLogBuf();
 	cv.NoMsg = 0;
 }
 
@@ -1146,7 +1166,7 @@ void DDEAdv()
 {
 	if ((ConvH==0) ||
 	    (! AdvFlag) ||
-	    (DDEGetCount() == 0))
+	    (cv.DCount==0))
 		return;
 
 	if ((! SyncMode) ||
@@ -1181,6 +1201,7 @@ void RunMacro(PCHAR FName, BOOL Startup)
 //		  made after the link to TT(P)MACRO is established.
 {
 	PROCESS_INFORMATION pi;
+	int i;
 	char Cmnd[MAX_PATH+36]; // "TTPMACRO /D="(12) + TopicName(20) + " "(1) + MAX_PATH + " /S"(3)
 	STARTUPINFO si;
 	DWORD pri = NORMAL_PRIORITY_CLASS;
@@ -1199,7 +1220,6 @@ void RunMacro(PCHAR FName, BOOL Startup)
 	strncat_s(Cmnd,sizeof(Cmnd),TopicName,_TRUNCATE);
 	if (FName!=NULL)
 	{
-		size_t i;
 		strncat_s(Cmnd,sizeof(Cmnd)," ",_TRUNCATE);
 		i = strlen(Cmnd);
 		strncat_s(Cmnd,sizeof(Cmnd),FName,_TRUNCATE);

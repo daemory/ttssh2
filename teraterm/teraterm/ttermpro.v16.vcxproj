@@ -65,7 +65,7 @@
     <ClCompile>
       <AdditionalOptions>/D"_CRT_SECURE_NO_DEPRECATE" %(AdditionalOptions)</AdditionalOptions>
       <Optimization>Disabled</Optimization>
-      <AdditionalIncludeDirectories>$(SolutionDir)..\libs\SFMT;$(SolutionDir)..\libs\oniguruma\src;$(SolutionDir)teraterm;$(SolutionDir)common;$(SolutionDir)ttpfile;$(SolutionDir)ttpdlg;$(SolutionDir)ttpcmn;$(SolutionDir)susie_plugin;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)..\libs\SFMT;$(SolutionDir)..\libs\oniguruma\src;$(SolutionDir)common;$(SolutionDir)ttpfile;$(SolutionDir)ttpdlg;$(SolutionDir)ttpcmn;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>WIN32;_DEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
       <BrowseInformation />
@@ -81,7 +81,7 @@
       <AdditionalIncludeDirectories>$(SolutionDir)common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ResourceCompile>
     <Link>
-      <AdditionalDependencies>onig_sd.lib;comctl32.lib;ws2_32.lib;imagehlp.lib;setupapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>onig_sd.lib;comctl32.lib;ws2_32.lib;imagehlp.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <AdditionalLibraryDirectories>$(SolutionDir)..\libs\oniguruma\src;$(OutDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <DelayLoadDLLs>imagehlp.dll;user32.dll;shell32.dll;%(DelayLoadDLLs)</DelayLoadDLLs>
@@ -92,6 +92,10 @@
     <Manifest>
       <AdditionalManifestFiles>.\teraterm.manifest %(AdditionalManifestFiles)</AdditionalManifestFiles>
     </Manifest>
+    <PreBuildEvent>
+      <Command>"$(OutDir)svnrev.exe" "$(SolutionDir)..\libs\svn\bin\svnversion.exe" "$(SolutionDir).." "$(ProjectDir)..\ttpdlg\svnversion.h"</Command>
+      <Message>creating "$(ProjectDir)..\ttpdlg\svnversion.h"</Message>
+    </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <Midl>
@@ -106,7 +110,7 @@
       <AdditionalOptions>/D"_CRT_SECURE_NO_DEPRECATE" %(AdditionalOptions)</AdditionalOptions>
       <Optimization>MaxSpeed</Optimization>
       <InlineFunctionExpansion>OnlyExplicitInline</InlineFunctionExpansion>
-      <AdditionalIncludeDirectories>$(SolutionDir)..\libs\SFMT;$(SolutionDir)..\libs\oniguruma\src;$(SolutionDir)teraterm;$(SolutionDir)common;$(SolutionDir)ttpfile;$(SolutionDir)ttpdlg;$(SolutionDir)ttpcmn;$(SolutionDir)susie_plugin;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)..\libs\SFMT;$(SolutionDir)..\libs\oniguruma\src;$(SolutionDir)common;$(SolutionDir)ttpfile;$(SolutionDir)ttpdlg;$(SolutionDir)ttpcmn;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
@@ -122,7 +126,7 @@
       <AdditionalIncludeDirectories>$(SolutionDir)common;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ResourceCompile>
     <Link>
-      <AdditionalDependencies>onig_s.lib;comctl32.lib;ws2_32.lib;imagehlp.lib;setupapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>onig_s.lib;comctl32.lib;ws2_32.lib;imagehlp.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <AdditionalLibraryDirectories>$(SolutionDir)..\libs\oniguruma\src;$(OutDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <DelayLoadDLLs>imagehlp.dll;user32.dll;shell32.dll;%(DelayLoadDLLs)</DelayLoadDLLs>
@@ -133,33 +137,31 @@
     <Manifest>
       <AdditionalManifestFiles>.\teraterm.manifest %(AdditionalManifestFiles)</AdditionalManifestFiles>
     </Manifest>
+    <PreBuildEvent>
+      <Message>creating "$(ProjectDir)..\ttpdlg\svnversion.h"</Message>
+      <Command>"$(OutDir)svnrev.exe" "$(SolutionDir)..\libs\svn\bin\svnversion.exe" "$(SolutionDir).." "$(ProjectDir)..\ttpdlg\svnversion.h"</Command>
+    </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="..\common\dlglib.c" />
+    <ClCompile Include="..\common\dlglib_cpp.cpp" />
+    <ClCompile Include="..\common\dlglib_tmpl.cpp" />
+    <ClCompile Include="..\common\tmfc.cpp" />
+    <ClCompile Include="..\common\tmfc_frame.cpp" />
     <ClCompile Include="..\common\ttlib.c" />
-    <ClCompile Include="..\susie_plugin\libsusieplugin.cpp" />
-    <ClCompile Include="..\ttpfile\bplus.c" />
-    <ClCompile Include="..\ttpfile\filesys_win32.cpp" />
-    <ClCompile Include="..\ttpfile\ftlib.c" />
-    <ClCompile Include="..\ttpfile\kermit.c" />
-    <ClCompile Include="..\ttpfile\quickvan.c" />
-    <ClCompile Include="..\ttpfile\xmodem.c" />
-    <ClCompile Include="..\ttpfile\ymodem.c" />
-    <ClCompile Include="..\ttpfile\zmodem.c" />
+    <ClCompile Include="..\common\tipwin.cpp" />
+    <ClCompile Include="..\common\win16api.c" />
+    <ClCompile Include="..\common\codeconv.cpp" />
+    <ClCompile Include="..\common\dllutil.cpp" />
+    <ClCompile Include="..\common\compat_win.cpp" />
     <ClCompile Include="addsetting.cpp" />
-    <ClCompile Include="broadcast.cpp" />
     <ClCompile Include="buffer.c" />
-    <ClCompile Include="checkeol.cpp" />
     <ClCompile Include="clipboar.c" />
-    <ClCompile Include="coding_pp.cpp" />
     <ClCompile Include="commlib.c" />
     <ClCompile Include="dnddlg.cpp" />
     <ClCompile Include="filesys.cpp" />
-    <ClCompile Include="filesys_log.cpp" />
-    <ClCompile Include="filesys_proto.cpp" />
-    <ClCompile Include="font_pp.cpp" />
     <ClCompile Include="ftdlg.cpp" />
     <ClCompile Include="keyboard.c" />
-    <ClCompile Include="sendfiledlg.cpp" />
     <ClCompile Include="sizetip.c" />
     <ClCompile Include="prnabort.cpp" />
     <ClCompile Include="protodlg.cpp" />
@@ -169,7 +171,6 @@
     <ClCompile Include="teraprn.cpp" />
     <ClCompile Include="teraterm.cpp" />
     <ClCompile Include="ttdde.c" />
-    <ClCompile Include="ttdebug.cpp" />
     <ClCompile Include="ttdialog.c" />
     <ClCompile Include="ttfileio.c" />
     <ClCompile Include="ttime.c" />
@@ -182,36 +183,9 @@
     <ClCompile Include="vtwin.cpp" />
     <ClCompile Include="winjump.c" />
     <ClCompile Include="WSAAsyncGetAddrInfo.c" />
-    <ClCompile Include="unicode.cpp" />
     <ClInclude Include="../ttpdlg/dlg_res.h" />
     <ClCompile Include="../ttpdlg/ttdlg.c" />
     <ClInclude Include="../ttpdlg/ttdlg.h" />
-    <ClInclude Include="..\susie_plugin\libsusieplugin.h" />
-    <ClInclude Include="..\ttpfile\bplus.h" />
-    <ClInclude Include="..\ttpfile\filesys_win32.h" />
-    <ClInclude Include="..\ttpfile\file_res.h" />
-    <ClInclude Include="..\ttpfile\ftlib.h" />
-    <ClInclude Include="..\ttpfile\kermit.h" />
-    <ClInclude Include="..\ttpfile\quickvan.h" />
-    <ClInclude Include="..\ttpfile\xmodem.h" />
-    <ClInclude Include="..\ttpfile\ymodem.h" />
-    <ClInclude Include="..\ttpfile\zmodem.h" />
-    <ClInclude Include="broadcast.h" />
-    <ClInclude Include="checkeol.h" />
-    <ClInclude Include="coding_pp.h" />
-    <ClInclude Include="coding_pp_res.h" />
-    <ClInclude Include="filesys_log_res.h" />
-    <ClInclude Include="font_pp.h" />
-    <ClInclude Include="font_pp_res.h" />
-    <ClInclude Include="sendfiledlg.h" />
-    <ClInclude Include="sendmem.h" />
-    <ClCompile Include="sendmem.cpp" />
-    <ClInclude Include="ftdlg_lite.h" />
-    <ClCompile Include="ftdlg_lite.cpp" />
-    <ClInclude Include="clipboarddlg.h" />
-    <ClCompile Include="clipboarddlg.cpp" />
-    <ClInclude Include="debug_pp.h" />
-    <ClCompile Include="debug_pp.cpp" />
   </ItemGroup>
   <ItemGroup>
     <Image Include="..\..\cygterm\cygterm.ico" />
@@ -224,31 +198,25 @@
     <Image Include="..\common\vt_classic.ico" />
   </ItemGroup>
   <ItemGroup>
-    <ResourceCompile Include="../ttpdlg/ttpdlg.rc" />
-    <ResourceCompile Include="coding_pp.rc" />
-    <ResourceCompile Include="debug_pp.rc" />
-    <ResourceCompile Include="filesys_log.rc" />
-    <ResourceCompile Include="font_pp.rc" />
-    <ResourceCompile Include="teraterm_manifest.rc" />
     <ResourceCompile Include="tt-version.rc" />
     <ResourceCompile Include="ttermpro.rc" />
+    <ResourceCompile Include="../ttpdlg/ttpdlg.rc" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\common\codeconv.h" />
-    <ClInclude Include="..\common\compat_win.h" />
+    <ClInclude Include="..\common\compat_w95.h" />
     <ClInclude Include="..\common\dlglib.h" />
-    <ClInclude Include="..\common\layer_for_unicode.h" />
     <ClInclude Include="..\common\tektypes.h" />
     <ClInclude Include="..\common\teraterm.h" />
     <ClInclude Include="..\common\tipwin.h" />
     <ClInclude Include="..\common\tmfc.h" />
     <ClInclude Include="..\common\tt-version.h" />
-    <ClInclude Include="..\common\tt_res.h" />
     <ClInclude Include="..\common\ttcommon.h" />
     <ClInclude Include="..\common\ttddecmnd.h" />
+    <ClInclude Include="..\common\ttftypes.h" />
     <ClInclude Include="..\common\ttlib.h" />
     <ClInclude Include="..\common\ttplugin.h" />
     <ClInclude Include="..\common\tttypes.h" />
+    <ClInclude Include="..\common\tt_res.h" />
     <ClInclude Include="..\common\win16api.h" />
     <ClInclude Include="addsetting.h" />
     <ClInclude Include="buffer.h" />
@@ -266,7 +234,6 @@
     <ClInclude Include="telnet.h" />
     <ClInclude Include="teraprn.h" />
     <ClInclude Include="ttdde.h" />
-    <ClInclude Include="ttdebug.h" />
     <ClInclude Include="ttdialog.h" />
     <ClInclude Include="ttfileio.h" />
     <ClInclude Include="ttime.h" />
@@ -277,17 +244,17 @@
     <ClInclude Include="vtdisp.h" />
     <ClInclude Include="vtterm.h" />
     <ClInclude Include="vtwin.h" />
-    <ClInclude Include="unicode.h" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\svnrev_perl\svnrev_perl.v16.vcxproj">
-      <Project>{53db5f02-7f9e-4e29-9751-b0dac6a8eeba}</Project>
-    </ProjectReference>
-    <ProjectReference Include="..\common\common_static.v16.vcxproj">
-      <Project>{ac42387d-23ec-45db-81f9-8933c7efa52a}</Project>
+    <ProjectReference Include="..\svnrev\svnrev.v16.vcxproj">
+      <Project>{80f1c3f0-a213-4d48-85c8-a265990d19a7}</Project>
     </ProjectReference>
     <ProjectReference Include="..\ttpcmn\ttpcmn.v16.vcxproj">
       <Project>{118e0d32-5553-4f73-9927-e873c1c500e4}</Project>
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+    </ProjectReference>
+    <ProjectReference Include="..\ttpfile\ttpfile.v16.vcxproj">
+      <Project>{311f2b21-aec4-4384-8209-bb83b54749b4}</Project>
       <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
     </ProjectReference>
     <ProjectReference Include="..\ttpmacro\ttpmacro.v16.vcxproj">

@@ -29,23 +29,17 @@
 
 /* TTFILE.DLL, Quick-VAN protocol */
 
-#pragma once
-#include "filesys_proto.h"
-
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-  /* Quick-VAN function id */
-#define IdQVReceive 1
-#define IdQVSend    2
-
-enum {
-	QUICKVAN_MODE,
-};
-
 /* prototypes */
-BOOL QVCreate(PFileVarProto fv);
+void QVInit
+  (PFileVar fv, PQVVar qv, PComVar cv, PTTSet ts);
+void QVCancel(PFileVar fv, PQVVar qv, PComVar cv);
+void QVTimeOutProc(PFileVar fv, PQVVar qv, PComVar cv);
+BOOL QVReadPacket(PFileVar fv, PQVVar qv, PComVar cv);
+BOOL QVSendPacket(PFileVar fv, PQVVar qv, PComVar cv);
 
 #ifdef __cplusplus
 }

@@ -31,6 +31,7 @@
 
 #include <windowsx.h>
 #include <stdio.h>
+
 #include "tmfc.h"
 #include "teraterm.h"
 #include "ttlib.h"
@@ -42,23 +43,21 @@
 #include "ttmparse.h"
 #include "htmlhelp.h"
 #include "dlglib.h"
-#include "ttmacro.h"
-#include "codeconv.h"
 
 #include "errdlg.h"
 
 // CErrDlg dialog
 
-CErrDlg::CErrDlg(const char *Msg, const char *Line, int x, int y, int lineno, int start, int end, const char *FileName)
+CErrDlg::CErrDlg(const char *Msg, PCHAR Line, int x, int y, int lineno, int start, int end, PCHAR FileName)
 {
-	MsgStr = _tcsdup((tc)Msg);
-	LineStr = _tcsdup((tc)Line);
+	MsgStr = Msg;
+	LineStr = Line;
 	PosX = x;
 	PosY = y;
 	LineNo = lineno;
 	StartPos = start;
 	EndPos = end;
-	MacroFileName = _tcsdup((tc)FileName);
+	MacroFileName = FileName;
 }
 
 INT_PTR CErrDlg::DoModal(HINSTANCE hInst, HWND hWndParent)

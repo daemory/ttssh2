@@ -48,14 +48,20 @@ public:
 	BOOL EndPaint(LPPAINTSTRUCT lpPaint);
 	LRESULT SendMessage(UINT msg, WPARAM wp, LPARAM lp);
 	void ShowWindow(int nCmdShow);
+	void SetWindowTextT(const TCHAR *str);
+#if defined(UNICODE)
 	void SetWindowTextW(const wchar_t *str);
+#endif
 	void SetWindowTextA(const char *str);
 	LONG_PTR SetWindowLongPtr(int nIndex, LONG_PTR dwNewLong);
 	LONG_PTR GetWindowLongPtr(int nIndex);
 	void ModifyStyle(DWORD dwRemove, DWORD dwAdd, UINT nFlags = 0);
 	void ModifyStyleEx(DWORD dwRemove, DWORD dwAdd, UINT nFlags = 0);
+	int MessageBoxT(LPCTSTR lpText, LPCTSTR lpCaption, UINT uType);
 	int MessageBoxA(const char * lpText, const char *lpCaption, UINT uType);
+#if defined(UNICODE)
 	int MessageBoxW(const wchar_t * lpText, const wchar_t *lpCaption, UINT uType);
+#endif
 	//virtual LRESULT DefWindowProc(UINT message, WPARAM wParam, LPARAM lParam);
 	LRESULT DefWindowProc(UINT message, WPARAM wParam, LPARAM lParam);
 	BOOL GetWindowRect(RECT *R);
@@ -65,11 +71,20 @@ public:
 	BOOL EndDialog(int nResult);
 	// for controls
 	HWND GetDlgItem(int id);
+	LRESULT SendDlgItemMessageT(int id, UINT msg, WPARAM wp, LPARAM lp);
+#if defined(UNICODE)
 	LRESULT SendDlgItemMessageW(int id, UINT msg, WPARAM wp, LPARAM lp);
+#endif
 	LRESULT SendDlgItemMessageA(int id, UINT msg, WPARAM wp, LPARAM lp);
+	void GetDlgItemTextT(int id, TCHAR *buf, size_t size);
+#if defined(UNICODE)
 	void GetDlgItemTextW(int id, wchar_t *buf, size_t size);
+#endif
 	void GetDlgItemTextA(int id, char *buf, size_t size);
+	void SetDlgItemTextT(int id, const TCHAR *str);
+#if defined(UNICODE)
 	void SetDlgItemTextW(int id, const wchar_t *str);
+#endif
 	void SetDlgItemTextA(int id, const char *str);
 	void SetDlgItemNum(int id, LONG Num);
 	void SetCheck(int id, int nCheck);
@@ -79,8 +94,6 @@ public:
 	void SetDlgItemInt(int id, UINT val, BOOL bSigned = TRUE);
 	UINT GetDlgItemInt(int id, BOOL* lpTrans = NULL, BOOL bSigned = TRUE) const;
 	void EnableDlgItem(int id, BOOL enable);
-protected:
-	BOOL m_WindowUnicode;
 private:
 	void ModifyStyleCom(int nStyleOffset, DWORD dwRemove, DWORD dwAdd, UINT nFlags = 0);
 };
@@ -92,28 +105,22 @@ public:
 	virtual ~TTCFrameWnd();
 	static TTCFrameWnd *pseudoPtr;
 	static LRESULT CALLBACK ProcStub(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp);
-	BOOL CreateA(HINSTANCE hInstance,
-				 LPCSTR lpszClassName,
-				 LPCSTR lpszWindowName,
-				 DWORD dwStyle = WS_OVERLAPPEDWINDOW,
-				 const RECT& rect = rectDefault,
-				 HWND pParentWnd = NULL,
-				 LPCTSTR lpszMenuName = NULL,
-				 DWORD dwExStyle = 0);
-	BOOL CreateW(HINSTANCE hInstance,
-				 LPCWSTR lpszClassName,
-				 LPCWSTR lpszWindowName,
-				 DWORD dwStyle = WS_OVERLAPPEDWINDOW,
-				 const RECT& rect = rectDefault,
-				 HWND pParentWnd = NULL,
-				 LPCTSTR lpszMenuName = NULL,
-				 DWORD dwExStyle = 0);
+	virtual BOOL Create(HINSTANCE hInstance,
+						LPCTSTR lpszClassName,
+						LPCTSTR lpszWindowName,
+						DWORD dwStyle = WS_OVERLAPPEDWINDOW,
+						const RECT& rect = rectDefault,
+						HWND pParentWnd = NULL,        // != NULL for popups
+						LPCTSTR lpszMenuName = NULL,
+						DWORD dwExStyle = 0);//,
+						//CCreateContext* pContext = NULL);
 	virtual LRESULT Proc(UINT msg, WPARAM wp, LPARAM lp) = 0;
 	static const RECT rectDefault;
 	///
 	virtual BOOL OnCommand(WPARAM wParam, LPARAM lParam);
 	///
 	void OnKillFocus(HWND hNewWnd);
+	void OnDestroy();
 	void OnSetFocus(HWND hOldWnd);
 	void OnSysCommand(WPARAM nID, LPARAM lParam);
 	void OnClose();
@@ -146,10 +153,24 @@ private:
 	static TTCDialog *pseudoPtr;
 };
 
+class TTCPropertySheet
+{
+public:
+	TTCPropertySheet(HINSTANCE hInstance, LPCTSTR pszCaption, HWND hParentWnd);
+	virtual ~TTCPropertySheet();
+	virtual void OnInitDialog();
+	INT_PTR DoModal();
+	PROPSHEETHEADER m_psh;
+	HWND m_hWnd;
+	HWND m_hParentWnd;
+	static int CALLBACK PropSheetProc(HWND hWnd, UINT msg, LPARAM lParam);
+	HINSTANCE m_hInst;
+};
+
 class TTCPropertyPage : public TTCWnd
 {
 public:
-	TTCPropertyPage(HINSTANCE inst, int id);
+	TTCPropertyPage(HINSTANCE inst, int id, TTCPropertySheet *sheet);
 	virtual ~TTCPropertyPage();
 	virtual void OnInitDialog();
 	virtual void OnOK();
@@ -159,8 +180,10 @@ public:
 	virtual void OnHelp();
 	HPROPSHEETPAGE CreatePropertySheetPage();
 protected:
-	PROPSHEETPAGEW_V1 m_psp;
+	PROPSHEETPAGE_V1 m_psp;
 private:
 	static INT_PTR CALLBACK Proc(HWND hDlgWnd, UINT msg, WPARAM wp, LPARAM lp);
+	static UINT CALLBACK PropSheetPageProc(HWND hwnd, UINT uMsg, LPPROPSHEETPAGE ppsp);
+	TTCPropertySheet *m_pSheet;
 };
 

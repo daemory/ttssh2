@@ -41,39 +41,32 @@ extern "C" {
 #define DllExport __declspec(dllexport)
 #endif
 
-BOOL GetFileNamePos(const char *PathName, int *DirLen, int *FNPos);
-BOOL GetFileNamePosU8(const char *PathName, int *DirLen, int *FNPos);
-BOOL GetFileNamePosW(const wchar_t *PathName, size_t *DirLen, size_t *FNPos);
+BOOL GetFileNamePos(PCHAR PathName, int far *DirLen, int far *FNPos);
 DllExport BOOL ExtractFileName(PCHAR PathName, PCHAR FileName, int destlen);
 DllExport BOOL ExtractDirName(PCHAR PathName, PCHAR DirName);
 void FitFileName(PCHAR FileName, int destlen, const char *DefExt);
 void AppendSlash(PCHAR Path, int destlen);
-void AppendSlashW(wchar_t *Path, size_t destlen);
 void DeleteSlash(PCHAR Path);
 void Str2Hex(PCHAR Str, PCHAR Hex, int Len, int MaxHexLen, BOOL ConvSP);
 BYTE ConvHexChar(BYTE b);
 int Hex2Str(PCHAR Hex, PCHAR Str, int MaxLen);
-BOOL DoesFileExist(const char *FName);
-BOOL DoesFolderExist(const char *FName);
-long GetFSize(const char *FName);
-unsigned long long GetFSize64H(HANDLE hFile);
-unsigned long long GetFSize64W(const wchar_t *FName);
-unsigned long long GetFSize64A(const char *FName);
-long GetFMtime(const char *FName);
-BOOL SetFMtime(const char *FName, DWORD mtime);
+BOOL DoesFileExist(PCHAR FName);
+BOOL DoesFolderExist(PCHAR FName);
+long GetFSize(PCHAR FName);
+long GetFMtime(PCHAR FName);
+BOOL SetFMtime(PCHAR FName, DWORD mtime);
 void uint2str(UINT i, PCHAR Str, int destlen, int len);
 #ifdef WIN32
 void QuoteFName(PCHAR FName);
 #endif
-int isInvalidFileNameChar(const char *FName);
+int isInvalidFileNameChar(PCHAR FName);
 #define deleteInvalidFileNameChar(name) replaceInvalidFileNameChar(name, 0)
 DllExport void replaceInvalidFileNameChar(PCHAR FName, unsigned char c);
 int isInvalidStrftimeChar(PCHAR FName);
 void deleteInvalidStrftimeChar(PCHAR FName);
 void ParseStrftimeFileName(PCHAR FName, int destlen);
-void ConvFName(const char *HomeDir, PCHAR Temp, int templen, const char *DefExt, PCHAR FName, int destlen);
+void ConvFName(PCHAR HomeDir, PCHAR Temp, int templen, PCHAR DefExt, PCHAR FName, int destlen);
 void RestoreNewLine(PCHAR Text);
-size_t RestoreNewLineW(wchar_t *Text);
 BOOL GetNthString(PCHAR Source, int Nth, int Size, PCHAR Dest);
 void GetNthNum(PCHAR Source, int Nth, int far *Num);
 int GetNthNum2(PCHAR Source, int Nth, int defval);
@@ -86,13 +79,12 @@ void GetUILanguageFileFull(const char *HomeDir, const char *UILanguageFileRel,
 						   char *UILanguageFileFull, size_t UILanguageFileFullLen);
 void GetOnOffEntryInifile(char *entry, char *buf, int buflen);
 void get_lang_msg(const char *key, PCHAR buf, int buf_len, const char *def, const char *iniFile);
+#if defined(UNICODE)
 void get_lang_msgW(const char *key, wchar_t *buf, int buf_len, const wchar_t *def, const char *iniFile);
-int get_lang_font(const char *key, HWND dlg, PLOGFONT logfont, HFONT *font, const char *iniFile);
+#endif
+int get_lang_font(PCHAR key, HWND dlg, PLOGFONT logfont, HFONT *font, const char *iniFile);
 DllExport BOOL doSelectFolder(HWND hWnd, char *path, int pathlen, const char *def, const char *msg);
-BOOL doSelectFolderW(HWND hWnd, wchar_t *path, int pathlen, const wchar_t *def, const wchar_t *msg);
 DllExport void OutputDebugPrintf(const char *fmt, ...);
-void OutputDebugPrintfW(const wchar_t *fmt, ...);
-void OutputDebugHexDump(const void *data, size_t len);
 DllExport DWORD get_OPENFILENAME_SIZEA();
 DllExport DWORD get_OPENFILENAME_SIZEW();
 DllExport BOOL IsWindows95();
@@ -107,6 +99,8 @@ DllExport BOOL HasMultiMonitorSupport();
 DllExport BOOL HasGetAdaptersAddresses();
 DllExport BOOL HasDnsQuery();
 DllExport BOOL HasBalloonTipSupport();
+int KanjiCode2List(int lang, int kcode);
+int List2KanjiCode(int lang, int kcode);
 int KanjiCodeTranslate(int lang, int kcode);
 DllExport char *mctimelocal(char *format, BOOL utc_flag);
 char *strelapsed(DWORD start_time);
@@ -133,44 +127,25 @@ int SetDlgTexts(HWND hDlgWnd, const DlgTextInfo *infos, int infoCount, const cha
 void SetDlgMenuTexts(HMENU hMenu, const DlgTextInfo *infos, int infoCount, const char *UILanguageFile);
 int GetMonitorDpiFromWindow(HWND hWnd);
 
-#define	get_OPENFILENAME_SIZE() get_OPENFILENAME_SIZEA()
-
 #if defined(_UNICODE)
+#define	doSelectFolderT(p1, p2, p3, p4, p5) doSelectFolderW(p1, p2, p3, p4, p5)
 #define	get_lang_msgT(p1, p2, p3, p4, p5) get_lang_msgW(p1, p2, p3, p4, p5)
+#define	get_OPENFILENAME_SIZE() get_OPENFILENAME_SIZEW()
 #else
+#define	doSelectFolderT(p1, p2, p3, p4, p5) doSelectFolder(p1, p2, p3, p4, p5)
 #define	get_lang_msgT(p1, p2, p3, p4, p5) get_lang_msg(p1, p2, p3, p4, p5)
+#define	get_OPENFILENAME_SIZE() get_OPENFILENAME_SIZEA()
 #endif
 
 /*
  * シリアルポート関連の設定定義
  */
 enum serial_port_conf {
-	COM_DATABIT,
+	COM_DATABIT, 
 	COM_PARITY,
 	COM_STOPBIT,
 	COM_FLOWCTRL,
 };
-
-/*
- *	ttlib_static
- */
-typedef struct {
-	const char *section;			// セクション名
-	const char *title_key;			// タイトル(NULLのとき、title_default を常に使用)
-	const wchar_t *title_default;	//   lng ファイルに見つからなかったとき使用
-	const char *message_key;		// メッセージ
-	const wchar_t *message_default;	//   lng ファイルに見つからなかったとき使用
-} TTMessageBoxInfoW;
-
-int TTMessageBoxW(HWND hWnd, const TTMessageBoxInfoW *info, UINT uType, const char *UILanguageFile, ...);
-wchar_t *TTGetLangStrW(const char *section, const char *key, const wchar_t *def, const char *UILanguageFile);
-wchar_t *GetClipboardTextW(HWND hWnd, BOOL empty);
-char *GetClipboardTextA(HWND hWnd, BOOL empty);
-BOOL CBSetTextW(HWND hWnd, const wchar_t *str_w, size_t str_len);
-void TTInsertMenuItemA(HMENU hMenu, UINT targetItemID, UINT flags, UINT newItemID, const char *text, BOOL before);
-BOOL IsTextW(const wchar_t *str, size_t len);
-wchar_t *NormalizeLineBreakCR(const wchar_t *src, size_t *len);
-wchar_t *NormalizeLineBreakCRLF(const wchar_t *src_);
 
 #ifdef __cplusplus
 }

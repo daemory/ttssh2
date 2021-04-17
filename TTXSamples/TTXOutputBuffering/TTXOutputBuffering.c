@@ -4,6 +4,8 @@
 #include "ttlib.h"
 //#include "tt_res.h"
 
+#include "compat_w95.h"
+
 #define ORDER 4000
 #define BUFF_SIZE 4096
 
@@ -180,6 +182,7 @@ BOOL WINAPI DllMain(HANDLE hInstance,
 		break;
 	  case DLL_PROCESS_ATTACH:
 		/* do process initialization */
+		DoCover_IsDebuggerPresent();
 		hInst = hInstance;
 		pvar = &InstVar;
 		break;

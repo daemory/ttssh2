@@ -29,6 +29,7 @@
 
 // TTCMN.DLL character code conversion
 
+#include <mbstring.h>
 #include <locale.h>
 #include "teraterm.h"
 #include "tttypes.h"
@@ -423,15 +424,6 @@ static const BYTE cpconv[4][4][128] =
 	}
 };
 
-static int RussIdToIndex(int id)
-{
-	return
-		id == IdWindows ? 0:
-		id == IdKOI8 ? 1:
-		id == Id866 ? 2:
-		/*id == IdISO ? */ 3;
-}
-
 // Russian character set conversion
 DllExport BYTE PASCAL RussConv(int cin, int cout, BYTE b)
 // cin: input character set (IdWindows/IdKOI8/Id866/IdISO)
@@ -440,9 +432,7 @@ DllExport BYTE PASCAL RussConv(int cin, int cout, BYTE b)
 	if (b<128) {
 		return b;
 	}
-	cin = RussIdToIndex(cin);
-	cout = RussIdToIndex(cout);
-	return cpconv[cin][cout][b-128];
+	return cpconv[cin-1][cout-1][b-128];
 }
 
 // Russian character set conversion for a character string

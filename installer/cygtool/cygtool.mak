@@ -8,10 +8,10 @@ all: cygtool.dll cygtool.exe
 
 cygtool.dll: cygtool.c
 	$(CPP) $(CFLAG) /MT /c cygtool.c
-	$(LINK32) $(LDFLAG) /DEF:cygtool.def cygtool.obj version.lib
+	$(LINK32) $(LDFLAG) /DEF:cygtool.def cygtool.obj
 
 cygtool.exe: cygtool.c
-	$(CPP) $(CFLAG) /D "EXE" cygtool.c version.lib
+	$(CPP) $(CFLAG) /D "EXE" cygtool.c
 
 clean:
 	del *.exe *.dll *.obj *.exp *.lib

@@ -38,6 +38,8 @@ extern "C" {
 #define DllExport __declspec(dllimport)
 #endif
 
+DllExport int PASCAL DetectComPorts(LPWORD ComPortTable, int ComPortMax, char **ComPortDesc);
+DllExport int PASCAL CheckComPort(WORD ComPort);
 DllExport void PASCAL CopyShmemToTTSet(PTTSet ts);
 DllExport void PASCAL CopyTTSetToShmem(PTTSet ts);
 DllExport BOOL PASCAL StartTeraTerm(PTTSet ts);
@@ -85,8 +87,7 @@ DllExport int PASCAL CommTextEchoW(PComVar cv, const wchar_t *B, int C);
 
 DllExport void PASCAL CreateNotifyIcon(PComVar cv);
 DllExport void PASCAL DeleteNotifyIcon(PComVar cv);
-DllExport void PASCAL NotifyMessageW(PComVar cv, const wchar_t *message, const wchar_t *title, DWORD flag);
-DllExport void PASCAL NotifyMessage(PComVar cv, const char *message, const char *title, DWORD flag);
+DllExport void PASCAL NotifyMessage(PComVar cv, PCHAR message, PCHAR title, DWORD flag);
 DllExport void PASCAL ShowNotifyIcon(PComVar cv);
 DllExport void PASCAL HideNotifyIcon(PComVar cv);
 DllExport void PASCAL SetVerNotifyIcon(PComVar cv, unsigned int ver);
@@ -96,13 +97,10 @@ DllExport HICON PASCAL GetCustomNotifyIcon(void);
 #define NotifyInfoMessage(cv, msg, title) NotifyMessage(cv, msg, title, 1)
 #define NotifyWarnMessage(cv, msg, title) NotifyMessage(cv, msg, title, 2)
 #define NotifyErrorMessage(cv, msg, title) NotifyMessage(cv, msg, title, 3)
-#define NotifyInfoMessageW(cv, msg, title) NotifyMessageW(cv, msg, title, 1)
-#define NotifyWarnMessageW(cv, msg, title) NotifyMessageW(cv, msg, title, 2)
-#define NotifyErrorMessageW(cv, msg, title) NotifyMessageW(cv, msg, title, 3)
+
+#include "../ttpcmn/language.h"
 
 #ifdef __cplusplus
 }
 #endif
 
-#include "../ttpcmn/language.h"
-#include "../ttpcmn/ttcmn_cominfo.h"

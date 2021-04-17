@@ -42,6 +42,8 @@
 #include "tt_res.h"
 #include "servicenames.h"
 
+#include "compat_w95.h"
+
 #define DllExport __declspec(dllexport)
 #include "ttset.h"
 
@@ -2143,6 +2145,10 @@ void PASCAL ReadIniFile(PCHAR FName, PTTSet ts)
 	if (GetOnOff(Section, "TrimTrailingNLonPaste", FName, FALSE))
 		ts->PasteFlag |= CPF_TRIM_TRAILING_NL;
 
+	// Normalize line break when pasting
+	if (GetOnOff(Section, "NormalizeLineBreakOnPaste", FName, FALSE))
+		ts->PasteFlag |= CPF_NORMALIZE_LINEBREAK;
+
 	// List Inactive Font
 	ts->ListHiddenFonts = GetOnOff(Section, "ListHiddenFonts", FName, FALSE);
 
@@ -2238,17 +2244,6 @@ void PASCAL ReadIniFile(PCHAR FName, PTTSet ts)
 	ReadFont3("Tera Term", "DlgFont", NULL, FName,
 			  ts->DialogFontName, sizeof(ts->DialogFontName),
 			  &ts->DialogFontPoint, &ts->DialogFontCharSet);
-
-	// UnicodeÝ’è
-	ts->UnicodeAmbiguousWidth = GetPrivateProfileInt(Section, "UnicodeAmbiguousWidth", 1, FName);
-	if (ts->UnicodeAmbiguousWidth < 1 || 2 < ts->UnicodeAmbiguousWidth) {
-		ts->UnicodeAmbiguousWidth = 1;
-	}
-	ts->UnicodeEmojiOverride = GetOnOff(Section, "UnicodeEmojiOverride", FName, FALSE);
-	ts->UnicodeEmojiWidth = GetPrivateProfileInt(Section, "UnicodeEmojiWidth", 1, FName);
-	if (ts->UnicodeEmojiWidth < 1 || 2 < ts->UnicodeEmojiWidth) {
-		ts->UnicodeEmojiWidth = 1;
-	}
 }
 
 void PASCAL WriteIniFile(PCHAR FName, PTTSet ts)
@@ -3178,7 +3173,7 @@ void PASCAL WriteIniFile(PCHAR FName, PTTSet ts)
 	WriteInt(BG_SECTION, BG_THEME_IMAGE_BRIGHTNESS1, Temp, ts->BGImgBrightness);
 	WriteInt(BG_SECTION, BG_THEME_IMAGE_BRIGHTNESS2, Temp, ts->BGImgBrightness);
 	WriteOnOff(ETERM_SECTION, "BGIgnoreThemeFile", FName,
-		ts->EtermLookfeel.BGIgnoreThemeFile);
+		ts->EtermLookfeel_BGIgnoreThemeFile);
 
 #ifdef USE_NORMAL_BGCOLOR
 	// UseNormalBGColor
@@ -3499,6 +3494,10 @@ void PASCAL WriteIniFile(PCHAR FName, PTTSet ts)
 	WriteOnOff(Section, "TrimTrailingNLonPaste", FName,
 		(WORD) (ts->PasteFlag & CPF_TRIM_TRAILING_NL));
 
+	// Normalize line break when pasting
+	WriteOnOff(Section, "NormalizeLineBreakOnPaste", FName,
+		(WORD) (ts->PasteFlag & CPF_NORMALIZE_LINEBREAK));
+
 	// List Inactive Font
 	WriteOnOff(Section, "ListHiddenFonts", FName, ts->ListHiddenFonts);
 
@@ -3571,11 +3570,6 @@ void PASCAL WriteIniFile(PCHAR FName, PTTSet ts)
 				ts->DialogFontPoint,
 				ts->DialogFontCharSet);
 	WritePrivateProfileStringA("Tera Term", "DlgFont", Temp, FName);
-
-	// UnicodeÝ’è
-	WriteInt(Section, "UnicodeAmbiguousWidth", FName, ts->UnicodeAmbiguousWidth);
-	WriteOnOff(Section, "UnicodeEmojiOverride", FName, ts->UnicodeEmojiOverride);
-	WriteInt(Section, "UnicodeEmojiWidth", FName, ts->UnicodeEmojiWidth);
 }
 
 #define VTEditor "VT editor keypad"
@@ -3584,7 +3578,7 @@ void PASCAL WriteIniFile(PCHAR FName, PTTSet ts)
 #define XFunction "X function keys"
 #define ShortCut "Shortcut keys"
 
-static void GetInt(PKeyMap KeyMap, int KeyId, const char *Sect, const char *Key, const char *FName)
+void GetInt(PKeyMap KeyMap, int KeyId, PCHAR Sect, PCHAR Key, PCHAR FName)
 {
 	char Temp[11];
 	WORD Num;
@@ -4476,6 +4470,7 @@ BOOL WINAPI DllMain(HANDLE hInst,
 		break;
 	case DLL_PROCESS_ATTACH:
 		/* do process initialization */
+		DoCover_IsDebuggerPresent();
 		break;
 	case DLL_PROCESS_DETACH:
 		/* do process cleanup */

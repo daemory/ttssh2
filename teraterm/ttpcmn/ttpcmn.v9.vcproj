@@ -233,14 +233,6 @@
 				RelativePath="..\common\ttlib.c"
 				>
 			</File>
-			<File
-				RelativePath="..\common\compat_win.cpp"
-				>
-			</File>
-			<File
-				RelativePath="..\common\dllutil.cpp"
-				>
-			</File>
 		</Filter>
 		<Filter
 			Name="Header Files"
@@ -268,14 +260,6 @@
 			</File>
 			<File
 				RelativePath="..\common\ttlib.h"
-				>
-			</File>
-			<File
-				RelativePath="..\common\compat_win.h"
-				>
-			</File>
-			<File
-				RelativePath="..\common\dllutil.h"
 				>
 			</File>
 		</Filter>

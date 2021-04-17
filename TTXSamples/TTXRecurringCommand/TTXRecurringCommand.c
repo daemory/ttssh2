@@ -10,6 +10,8 @@
 #include "i18n.h"
 #include "dlglib.h"
 
+#include "compat_w95.h"
+
 #define ORDER 4000
 
 #define MINIMUM_INTERVAL 1
@@ -428,25 +430,24 @@ static void PASCAL TTXGetSetupHooks(TTXSetupHooks *hooks) {
 //	コントロールメニューにRecurringCommandを追加。
 //
 static void PASCAL TTXModifyMenu(HMENU menu) {
-	static const DlgTextInfo MenuTextInfo[] = {
-		{ ID_MENU_SETUP, "MENU_SETUP_RECURRING" },
-		{ ID_MENU_CONTROL, "MENU_CONTROL_RECURRING" },
-	};
 	UINT flag = MF_BYCOMMAND | MF_STRING | MF_ENABLED;
 
 	pvar->SetupMenu = GetSetupMenu(menu);
 	pvar->ControlMenu = GetControlMenu(menu);
 
-	InsertMenu(pvar->SetupMenu, ID_SETUP_ADDITIONALSETTINGS, flag, ID_MENU_SETUP, "Rec&urring command");
+	GetI18nStr(SECTION, "MENU_SETUP_RECURRING", pvar->ts->UIMsg, sizeof(pvar->ts->UIMsg),
+		"Rec&urring command", pvar->ts->UILanguageFile);
+	InsertMenu(pvar->SetupMenu, ID_SETUP_ADDITIONALSETTINGS, flag, ID_MENU_SETUP, pvar->ts->UIMsg);
 
 	if (pvar->enable) {
 		flag |= MF_CHECKED;
 	}
 
-	InsertMenu(pvar->ControlMenu, ID_CONTROL_MACRO, flag, ID_MENU_CONTROL, "Rec&urring command");
-	InsertMenu(pvar->ControlMenu, ID_CONTROL_MACRO, MF_BYCOMMAND | MF_SEPARATOR, 0, NULL);
 
-	SetI18nMenuStrs(SECTION, menu, MenuTextInfo, _countof(MenuTextInfo), pvar->ts->UILanguageFile);
+	GetI18nStr(SECTION, "MENU_CONTROL_RECURRING", pvar->ts->UIMsg, sizeof(pvar->ts->UIMsg),
+		"Rec&urring command", pvar->ts->UILanguageFile);
+	InsertMenu(pvar->ControlMenu, ID_CONTROL_MACRO, flag, ID_MENU_CONTROL, pvar->ts->UIMsg);
+	InsertMenu(pvar->ControlMenu, ID_CONTROL_MACRO, MF_BYCOMMAND | MF_SEPARATOR, 0, NULL);
 }
 
 static void PASCAL TTXModifyPopupMenu(HMENU menu) {
@@ -464,17 +465,53 @@ static void PASCAL TTXModifyPopupMenu(HMENU menu) {
 // RecurringCommand設定ダイアログのコールバック関数。
 //
 static LRESULT CALLBACK RecurringCommandSetting(HWND dlg, UINT msg, WPARAM wParam, LPARAM lParam) {
-	const static DlgTextInfo text_info[] = {
-		{ 0, "DLG_TITLE" },
-		{ IDC_ENABLE, "DLG_ENABLE" },
-		{ IDC_INTERVAL_LABEL, "DLG_INTERVAL" },
-		{ IDC_COMMAND_LABEL, "DLG_COMMAND" },
-		{ IDC_ADD_NL, "DLG_ADD_NEWLINE" },
-	};
+	char uimsg[MAX_UIMSG];
+#if 0
+	static HFONT DlgFont;
+	LOGFONT logfont;
+	HFONT font;
+#endif
 
 	switch (msg) {
 	  case WM_INITDIALOG:
-		SetI18nDlgStrs(SECTION, dlg, text_info, _countof(text_info), pvar->ts->UILanguageFile);
+#if 0
+	  	font = (HFONT)SendMessage(dlg, WM_GETFONT, 0, 0);
+		GetObject(font, sizeof(LOGFONT), &logfont);
+
+		if ((GetI18nLogfont(SECTION, "DLG_TAHOMA_FONT", &logfont, GetDeviceCaps(GetDC(dlg), LOGPIXELSY),
+		                   pvar->ts->UILanguageFile) != FALSE) &&
+		   ((DlgFont = CreateFontIndirect(&logfont)) != NULL)) {
+			SendDlgItemMessage(dlg, IDC_ENABLE, WM_SETFONT, (WPARAM)DlgFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_INTERVAL, WM_SETFONT, (WPARAM)DlgFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_INTERVAL_LABEL, WM_SETFONT, (WPARAM)DlgFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_COMMAND, WM_SETFONT, (WPARAM)DlgFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_COMMAND_LABEL, WM_SETFONT, (WPARAM)DlgFont, MAKELPARAM(TRUE,0));
+			SendDlgItemMessage(dlg, IDC_ADD_NL, WM_SETFONT, (WPARAM)DlgFont, MAKELPARAM(TRUE,0));
+		}
+		else {
+			DlgFont = NULL;
+		}
+#endif
+
+		GetWindowText(dlg, uimsg, sizeof(uimsg));
+		GetI18nStr(SECTION, "DLG_TITLE", pvar->ts->UIMsg, sizeof(pvar->ts->UIMsg), uimsg, pvar->ts->UILanguageFile);
+		SetWindowText(dlg, pvar->ts->UIMsg);
+
+		GetDlgItemText(dlg, IDC_ENABLE, uimsg, sizeof(uimsg));
+		GetI18nStr(SECTION, "DLG_ENABLE", pvar->ts->UIMsg, sizeof(pvar->ts->UIMsg), uimsg, pvar->ts->UILanguageFile);
+		SetDlgItemText(dlg, IDC_ENABLE, pvar->ts->UIMsg);
+
+		GetDlgItemText(dlg, IDC_INTERVAL_LABEL, uimsg, sizeof(uimsg));
+		GetI18nStr(SECTION, "DLG_INTERVAL", pvar->ts->UIMsg, sizeof(pvar->ts->UIMsg), uimsg, pvar->ts->UILanguageFile);
+		SetDlgItemText(dlg, IDC_INTERVAL_LABEL, pvar->ts->UIMsg);
+
+		GetDlgItemText(dlg, IDC_COMMAND_LABEL, uimsg, sizeof(uimsg));
+		GetI18nStr(SECTION, "DLG_COMMAND", pvar->ts->UIMsg, sizeof(pvar->ts->UIMsg), uimsg, pvar->ts->UILanguageFile);
+		SetDlgItemText(dlg, IDC_COMMAND_LABEL, pvar->ts->UIMsg);
+
+		GetDlgItemText(dlg, IDC_ADD_NL, uimsg, sizeof(uimsg));
+		GetI18nStr(SECTION, "DLG_ADD_NEWLINE", pvar->ts->UIMsg, sizeof(pvar->ts->UIMsg), uimsg, pvar->ts->UILanguageFile);
+		SetDlgItemText(dlg, IDC_ADD_NL, pvar->ts->UIMsg);
 
 		SendMessage(GetDlgItem(dlg, IDC_ENABLE), BM_SETCHECK,
 		            pvar->enable?BST_CHECKED:BST_UNCHECKED, 0);
@@ -518,10 +555,20 @@ static LRESULT CALLBACK RecurringCommandSetting(HWND dlg, UINT msg, WPARAM wPara
 			}
 
 			EndDialog(dlg, IDOK);
+#if 0
+			if (DlgFont != NULL) {
+				DeleteObject(DlgFont);
+			}
+#endif
 			return TRUE;
 
 		  case IDCANCEL:
 			EndDialog(dlg, IDCANCEL);
+#if 0
+			if (DlgFont != NULL) {
+				DeleteObject(DlgFont);
+			}
+#endif
 			return TRUE;
 		}
 		break;
@@ -624,6 +671,7 @@ BOOL WINAPI DllMain(HANDLE hInstance,
 		break;
 	  case DLL_PROCESS_ATTACH:
 		/* do process initialization */
+		DoCover_IsDebuggerPresent();
 		hInst = hInstance;
 		pvar = &InstVar;
 		break;

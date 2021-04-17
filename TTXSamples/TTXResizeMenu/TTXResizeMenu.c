@@ -6,7 +6,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "compat_win.h"
+#include "compat_w95.h"
 
 #define ORDER 5900
 #define SECTION "Resize Menu"
@@ -50,9 +50,9 @@ BOOL GetMonitorSizeByChar(int *width, int *height) {
     HMONITOR hm;
     MONITORINFO mi;
 
-    hm = pMonitorFromWindow(pvar->cv->HWin, MONITOR_DEFAULTTONEAREST);
+    hm = MonitorFromWindow(pvar->cv->HWin, MONITOR_DEFAULTTONEAREST);
 	mi.cbSize = sizeof(MONITORINFO);
-    if (! pGetMonitorInfoA(hm, &mi)) {
+    if (! GetMonitorInfo(hm, &mi)) {
       return FALSE;
     }
     rc_dsk = mi.rcWork;
@@ -351,6 +351,7 @@ BOOL WINAPI DllMain(HANDLE hInstance, ULONG ul_reason, LPVOID lpReserved)
       break;
     case DLL_PROCESS_ATTACH:
       /* do process initialization */
+      DoCover_IsDebuggerPresent();
       hInst = hInstance;
       pvar = &InstVar;
       break;

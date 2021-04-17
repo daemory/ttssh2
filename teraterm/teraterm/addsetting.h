@@ -44,7 +44,7 @@ extern const mouse_cursor_t MouseCursor[];
 class CGeneralPropPageDlg : public TTCPropertyPage
 {
 public:
-	CGeneralPropPageDlg(HINSTANCE inst);
+	CGeneralPropPageDlg(HINSTANCE inst, TTCPropertySheet *sheet);
 	virtual ~CGeneralPropPageDlg();
 private:
 	void OnInitDialog();
@@ -57,7 +57,7 @@ private:
 class CSequencePropPageDlg : public TTCPropertyPage
 {
 public:
-	CSequencePropPageDlg(HINSTANCE inst);
+	CSequencePropPageDlg(HINSTANCE inst, TTCPropertySheet *sheet);
 	virtual ~CSequencePropPageDlg();
 private:
 	void OnInitDialog();
@@ -71,7 +71,7 @@ private:
 class CCopypastePropPageDlg : public TTCPropertyPage
 {
 public:
-	CCopypastePropPageDlg(HINSTANCE inst);
+	CCopypastePropPageDlg(HINSTANCE inst, TTCPropertySheet *sheet);
 	virtual ~CCopypastePropPageDlg();
 private:
 	void OnInitDialog();
@@ -85,7 +85,7 @@ private:
 class CVisualPropPageDlg : public TTCPropertyPage
 {
 public:
-	CVisualPropPageDlg(HINSTANCE inst);
+	CVisualPropPageDlg(HINSTANCE inst, TTCPropertySheet *sheet);
 	virtual ~CVisualPropPageDlg();
 private:
 	void OnInitDialog();
@@ -103,7 +103,7 @@ private:
 class CLogPropPageDlg : public TTCPropertyPage
 {
 public:
-	CLogPropPageDlg(HINSTANCE inst);
+	CLogPropPageDlg(HINSTANCE inst, TTCPropertySheet *sheet);
 	virtual ~CLogPropPageDlg();
 private:
 	void OnInitDialog();
@@ -117,7 +117,7 @@ private:
 class CCygwinPropPageDlg : public TTCPropertyPage
 {
 public:
-	CCygwinPropPageDlg(HINSTANCE inst);
+	CCygwinPropPageDlg(HINSTANCE inst, TTCPropertySheet *sheet);
 	virtual ~CCygwinPropPageDlg();
 private:
 	void OnInitDialog();
@@ -129,26 +129,20 @@ private:
 };
 
 // Property Sheet
-class CAddSettingPropSheetDlg
+class CAddSettingPropSheetDlg : public TTCPropertySheet
 {
 public:
-	CAddSettingPropSheetDlg(HINSTANCE hInstance, HWND hParentWnd);
+	CAddSettingPropSheetDlg(HINSTANCE hInstance, LPCTSTR pszCaption, HWND hParentWnd);
 	virtual ~CAddSettingPropSheetDlg();
-	INT_PTR DoModal();
-
 private:
-	static int CALLBACK PropSheetProc(HWND hWnd, UINT msg, LPARAM lParam);
-	static HINSTANCE ghInstance;
-	static class CAddSettingPropSheetDlg *gTTCPS;
+	void OnInitDialog();
 
-	PROPSHEETHEADERW m_psh;
-	HWND m_hWnd;
-	HWND m_hParentWnd;
-	HINSTANCE m_hInst;
+	HPROPSHEETPAGE hPsp[6];
 
-	int m_PageCount;
-	HPROPSHEETPAGE hPsp[9];
-
-	int m_PageCountCPP;
-	TTCPropertyPage *m_Page[7];
+	CGeneralPropPageDlg   *m_GeneralPage;
+	CSequencePropPageDlg  *m_SequencePage;
+	CCopypastePropPageDlg *m_CopypastePage;
+	CVisualPropPageDlg    *m_VisualPage;
+	CLogPropPageDlg       *m_LogPage;
+	CCygwinPropPageDlg    *m_CygwinPage;
 };

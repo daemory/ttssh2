@@ -40,8 +40,6 @@
 #include <setupapi.h>
 #include <locale.h>
 #include <htmlhelp.h>
-#include <assert.h>
-#include <crtdbg.h>
 
 #define DllExport __declspec(dllexport)
 #include "language.h"
@@ -49,38 +47,15 @@
 
 #include "teraterm.h"
 #include "tttypes.h"
+#include "ttftypes.h"
 #include "ttlib.h"
+#include "compat_w95.h"
 #include "tt_res.h"
 #include "codeconv.h"
-#include "compat_win.h"
 
 #define DllExport __declspec(dllexport)
 #include "ttcommon.h"
-#include "layer_for_unicode.h"
 
-/* shared memory */
-typedef struct {
-	size_t size_tmap;		/* sizeof TMap */
-	size_t size_tttset;		/* sizeof TTTSet */
-	/* Setup information from "teraterm.ini" */
-	TTTSet ts;
-	/* Key code map from "keyboard.def" */
-	TKeyMap km;
-	// Window list
-	int NWin;
-	HWND WinList[MAXNWIN];
-	/* COM port use flag
-	 *           bit 8  7  6  5  4  3  2  1
-	 * char[0] : COM 8  7  6  5  4  3  2  1
-	 * char[1] : COM16 15 14 13 12 11 10  9 ...
-	 */
-	unsigned char ComFlag[(MAXCOMPORT-1)/CHAR_BIT+1];
-	/* Previous window rect (Tera Term 4.78 or later) */
-	WINDOWPLACEMENT WinPrevRect[MAXNWIN];
-	BOOL WinUndoFlag;
-	int WinUndoStyle;
-} TMap;
-typedef TMap *PMap;
 
 // TMap を格納するファイルマッピングオブジェクト(共有メモリ)の名前
 // TMap(とそのメンバ)の更新時は旧バージョンとの同時起動の為に変える必要があるが
@@ -97,6 +72,14 @@ static PMap pm;
 static HANDLE HMap = NULL;
 #define VTCLASSNAME _T("VTWin32")
 #define TEKCLASSNAME _T("TEKWin32")
+
+#ifdef UNICODE
+static HWND(WINAPI *pHtmlHelp)(HWND hwndCaller, LPCWSTR pszFile, UINT uCommand, DWORD_PTR dwData);
+#define HTMLHELP_API_NAME	"HtmlHelpW"
+#else
+static HWND(WINAPI *pHtmlHelp)(HWND hwndCaller, LPCSTR pszFile, UINT uCommand, DWORD_PTR dwData);
+#define HTMLHELP_API_NAME	"HtmlHelpA"
+#endif
 
 enum window_style {
 	WIN_CASCADE,
@@ -161,16 +144,14 @@ void WINAPI RestartTeraTerm(HWND hwnd, PTTSet ts)
 	char path[1024];
 	STARTUPINFO si;
 	PROCESS_INFORMATION pi;
+	char uimsg[MAX_UIMSG];
 	int ret;
 
-	static const TTMessageBoxInfoW info = {
-		"Tera Term",
-		NULL, L"Tera Term: Configuration Warning",
-		"MSG_TT_TAKE_EFFECT",
-		L"This option takes effect the next time a session is started.\n"
-		L"Are you sure that you want to relaunch Tera Term?"
-	};
-	ret = TTMessageBoxW(hwnd, &info, MB_YESNO | MB_ICONEXCLAMATION | MB_DEFBUTTON2, ts->UILanguageFile);
+	get_lang_msg("MSG_TT_TAKE_EFFECT", uimsg, sizeof(uimsg),
+		"This option takes effect the next time a session is started.\n"
+		"Are you sure that you want to relaunch Tera Term?"
+		, ts->UILanguageFile);
+	ret = MessageBox(hwnd, uimsg, "Tera Term: Configuration Warning", MB_YESNO | MB_ICONEXCLAMATION | MB_DEFBUTTON2);
 	if (ret != IDYES)
 		return;
 
@@ -966,7 +947,6 @@ void WINAPI SetWinMenu(HMENU menu, PCHAR buf, int buflen, PCHAR langFile, int VT
 	int i;
 	char Temp[MAXPATHLEN];
 	HWND Hw;
-	wchar_t uimsg[MAX_UIMSG];
 
 	// delete all items in Window menu
 	i = GetMenuItemCount(menu);
@@ -998,40 +978,39 @@ void WINAPI SetWinMenu(HMENU menu, PCHAR buf, int buflen, PCHAR langFile, int VT
 			UnregWin(Hw);
 		}
 	}
+	get_lang_msg("MENU_WINDOW_WINDOW", buf, buflen, "&Window", langFile);
 	if (VTFlag == 1) {
-		static const DlgTextInfo MenuTextInfo[] = {
-			{ ID_WINDOW_WINDOW, "MENU_WINDOW_WINDOW" },
-			{ ID_WINDOW_MINIMIZEALL, "MENU_WINDOW_MINIMIZEALL" },
-			{ ID_WINDOW_RESTOREALL, "MENU_WINDOW_RESTOREALL" },
-			{ ID_WINDOW_CASCADEALL, "MENU_WINDOW_CASCADE" },
-			{ ID_WINDOW_STACKED, "MENU_WINDOW_STACKED" },
-			{ ID_WINDOW_SIDEBYSIDE, "MENU_WINDOW_SIDEBYSIDE" },
-		};
-
 		AppendMenu(menu, MF_SEPARATOR, 0, NULL);
-		AppendMenu(menu, MF_ENABLED | MF_STRING, ID_WINDOW_WINDOW, "&Window");
-		AppendMenu(menu, MF_ENABLED | MF_STRING, ID_WINDOW_MINIMIZEALL, "&Minimize All");
-		AppendMenu(menu, MF_ENABLED | MF_STRING, ID_WINDOW_RESTOREALL, "&Restore All");
-		AppendMenu(menu, MF_ENABLED | MF_STRING, ID_WINDOW_CASCADEALL, "&Cascade");
-		AppendMenu(menu, MF_ENABLED | MF_STRING, ID_WINDOW_STACKED, "&Stacked");
-		AppendMenu(menu, MF_ENABLED | MF_STRING, ID_WINDOW_SIDEBYSIDE, "Side &by Side");
+		AppendMenu(menu,MF_ENABLED | MF_STRING,ID_WINDOW_WINDOW, buf);
 
-		SetI18nMenuStrs("Tera Term", menu, MenuTextInfo, _countof(MenuTextInfo), langFile);
+		get_lang_msg("MENU_WINDOW_MINIMIZEALL", buf, buflen, "&Minimize All", langFile);
+		AppendMenu(menu, MF_ENABLED | MF_STRING, ID_WINDOW_MINIMIZEALL, buf);
+
+		get_lang_msg("MENU_WINDOW_RESTOREALL", buf, buflen, "&Restore All", langFile);
+		AppendMenu(menu, MF_ENABLED | MF_STRING, ID_WINDOW_RESTOREALL, buf);
+
+		get_lang_msg("MENU_WINDOW_CASCADE", buf, buflen, "&Cascade", langFile);
+		AppendMenu(menu, MF_ENABLED | MF_STRING, ID_WINDOW_CASCADEALL, buf);
+
+		get_lang_msg("MENU_WINDOW_STACKED", buf, buflen, "&Stacked", langFile);
+		AppendMenu(menu, MF_ENABLED | MF_STRING, ID_WINDOW_STACKED, buf);
+
+		get_lang_msg("MENU_WINDOW_SIDEBYSIDE", buf, buflen, "Side &by Side", langFile);
+		AppendMenu(menu, MF_ENABLED | MF_STRING, ID_WINDOW_SIDEBYSIDE, buf);
 
 		if (pm->WinUndoFlag) {
 			if (pm->WinUndoStyle == WIN_CASCADE)
-				get_lang_msgW("MENU_WINDOW_CASCADE_UNDO", uimsg, _countof(uimsg), L"&Undo - Cascade", langFile);
+				get_lang_msg("MENU_WINDOW_CASCADE_UNDO", buf, buflen, "&Undo - Cascade", langFile);
 			else if (pm->WinUndoStyle == WIN_STACKED)
-				get_lang_msgW("MENU_WINDOW_STACKED_UNDO", uimsg, _countof(uimsg), L"&Undo - Stacked", langFile);
+				get_lang_msg("MENU_WINDOW_STACKED_UNDO", buf, buflen, "&Undo - Stacked", langFile);
 			else
-				get_lang_msgW("MENU_WINDOW_SIDEBYSIDE_UNDO", uimsg, _countof(uimsg), L"&Undo - Side by Side", langFile);
-			_AppendMenuW(menu, MF_ENABLED | MF_STRING, ID_WINDOW_UNDO, uimsg);		// TODO UNICODE
+				get_lang_msg("MENU_WINDOW_SIDEBYSIDE_UNDO", buf, buflen, "&Undo - Side by Side", langFile);
+			AppendMenu(menu, MF_ENABLED | MF_STRING, ID_WINDOW_UNDO, buf);
 		}
 
 	}
 	else {
-		get_lang_msgW("MENU_WINDOW_WINDOW", uimsg, _countof(uimsg), L"&Window", langFile);
-		_AppendMenuW(menu,MF_ENABLED | MF_STRING,ID_TEKWINDOW_WINDOW, uimsg);
+		AppendMenu(menu,MF_ENABLED | MF_STRING,ID_TEKWINDOW_WINDOW, buf);
 	}
 }
 
@@ -1121,6 +1100,8 @@ void WINAPI UndoAllWin(void) {
 	int i;
 	WINDOWPLACEMENT rc0;
 	RECT rc;
+	HMONITOR hMonitor;
+	MONITORINFO mi;
 	int stat = SW_RESTORE;
 	int multi_mon = 0;
 
@@ -1141,11 +1122,9 @@ void WINAPI UndoAllWin(void) {
 			// NT4.0, 95 はマルチモニタAPIに非対応
 			if (multi_mon) {
 				// 対象モニタの情報を取得
-				HMONITOR hMonitor;
-				MONITORINFO mi;
-				hMonitor = pMonitorFromRect(&rc, MONITOR_DEFAULTTONEAREST);
+				hMonitor = MonitorFromRect(&rc, MONITOR_DEFAULTTONEAREST);
 				mi.cbSize = sizeof(MONITORINFO);
-				pGetMonitorInfoA(hMonitor, &mi);
+				GetMonitorInfo(hMonitor, &mi);
 
 				// 位置補正（復元前後で解像度が変わっている場合への対策）
 				if (rc.right > mi.rcMonitor.right) {
@@ -1189,31 +1168,55 @@ void WINAPI OpenHelp(UINT Command, DWORD Data, char *UILanguageFile)
 	char HomeDir[MAX_PATH];
 	char Temp[MAX_PATH];
 	HWND HWin;
-	wchar_t HelpFN[MAX_PATH];
-	wchar_t uimsg[MAX_UIMSG];
-	wchar_t *HomeDirW;
+	TCHAR HelpFN[MAX_PATH];
+	TCHAR uimsg[MAX_UIMSG];
+	TCHAR dllName[MAX_PATH];
+	const TCHAR *HomeDirT;
+	const TCHAR *errorFile;
+	TCHAR buf[MAX_PATH];
 
-	 /* Get home directory */
+	/* Get home directory */
 	if (GetModuleFileNameA(NULL,Temp,_countof(Temp)) == 0) {
 		return;
 	}
 	ExtractDirName(Temp, HomeDir);
-	HomeDirW = ToWcharA(HomeDir);
-	get_lang_msgW("HELPFILE", uimsg, _countof(uimsg), L"teraterm.chm", UILanguageFile);
-	_snwprintf_s(HelpFN, _countof(HelpFN), _TRUNCATE, L"%s\\%s", HomeDirW, uimsg);
-	free(HomeDirW);
+	HomeDirT = ToTcharA(HomeDir);
 
+	get_lang_msgT("HELPFILE", uimsg, _countof(uimsg),
+				  _T("teraterm.chm"), UILanguageFile);
+
+	if (pHtmlHelp == NULL) {
+		HINSTANCE hDll;
+		GetSystemDirectory(dllName, _countof(dllName));
+		_tcscat_s(dllName, _countof(dllName), _T("\\hhctrl.ocx"));
+		hDll = LoadLibrary(dllName);
+		if (hDll == NULL) {
+			errorFile = dllName;
+			goto error;
+		}
+		pHtmlHelp = (void *)GetProcAddress(hDll, HTMLHELP_API_NAME);
+		if (pHtmlHelp == NULL) {
+			errorFile = dllName;
+			goto error;
+		}
+	}
 	// ヘルプのオーナーは常にデスクトップになる (2007.5.12 maya)
 	HWin = GetDesktopWindow();
-	if (_HtmlHelpW(HWin, HelpFN, Command, Data) == NULL) {
-		// ヘルプが開けなかった
-		static const TTMessageBoxInfoW info = {
-			"Tera Term",
-			NULL, L"Tera Term: HTML help",
-			"MSG_OPENHELP_ERROR", L"Can't open HTML help file(%s)." };
-		TTMessageBoxW(HWin, &info, MB_OK | MB_ICONERROR, UILanguageFile, HelpFN);
-		return;
+	_sntprintf_s(HelpFN, _countof(HelpFN), _TRUNCATE, _T("%s\\%s"), (TCHAR *)HomeDirT, uimsg);
+	if (pHtmlHelp != NULL && pHtmlHelp(HWin, HelpFN, Command, Data) == NULL && Command != HH_CLOSE_ALL) {
+		errorFile = HelpFN;
+		goto error;
 	}
+	goto finish;
+
+error:
+	get_lang_msgT("MSG_OPENHELP_ERROR", uimsg, _countof(uimsg),
+				  _T("Can't open HTML help file(%s)."), UILanguageFile);
+	_sntprintf_s(buf, _countof(buf), _TRUNCATE, uimsg, HelpFN);
+	MessageBox(HWin, buf, _T("Tera Term: HTML help"), MB_OK | MB_ICONERROR);
+
+finish:
+	free((void *)HomeDirT);
 }
 
 HWND WINAPI GetNthWin(int n)
@@ -1344,13 +1347,6 @@ int WINAPI CommReadRawByte(PComVar cv, LPBYTE b)
 	}
 }
 
-static void LogBinSkip(PComVar cv, int add)
-{
-	if (cv->LogBinSkip != NULL) {
-		cv->LogBinSkip(add);
-	}
-}
-
 void WINAPI CommInsert1Byte(PComVar cv, BYTE b)
 {
 	if ( ! cv->Ready ) {
@@ -1366,13 +1362,31 @@ void WINAPI CommInsert1Byte(PComVar cv, BYTE b)
 	cv->InBuff[cv->InPtr] = b;
 	cv->InBuffCount++;
 
-	LogBinSkip(cv, 1);
+	if (cv->HBinBuf!=0 ) {
+		cv->BinSkip++;
+	}
 }
 
-static void Log1Bin(PComVar cv, BYTE b)
+void Log1Bin(PComVar cv, BYTE b)
 {
-	if (cv->Log1Bin != NULL) {
-		cv->Log1Bin(b);
+	if (((cv->FilePause & OpLog)!=0) || cv->ProtoFlag) {
+		return;
+	}
+	if (cv->BinSkip > 0) {
+		cv->BinSkip--;
+		return;
+	}
+	cv->BinBuf[cv->BinPtr] = b;
+	cv->BinPtr++;
+	if (cv->BinPtr>=InBuffSize) {
+		cv->BinPtr = cv->BinPtr-InBuffSize;
+	}
+	if (cv->BCount>=InBuffSize) {
+		cv->BCount = InBuffSize;
+		cv->BStart = cv->BinPtr;
+	}
+	else {
+		cv->BCount++;
 	}
 }
 
@@ -1381,6 +1395,21 @@ int WINAPI CommRead1Byte(PComVar cv, LPBYTE b)
 	int c;
 
 	if ( ! cv->Ready ) {
+		return 0;
+	}
+
+	if ((cv->HLogBuf!=NULL) &&
+	    ((cv->LCount>=InBuffSize-10) ||
+	     (cv->DCount>=InBuffSize-10))) {
+		// 自分のバッファに余裕がない場合は、CPUスケジューリングを他に回し、
+		// CPUがストールするの防ぐ。
+		// (2006.10.13 yutaka)
+		Sleep(1);
+		return 0;
+	}
+
+	if ((cv->HBinBuf!=NULL) &&
+	    (cv->BCount>=InBuffSize-10)) {
 		return 0;
 	}
 
@@ -1404,7 +1433,9 @@ int WINAPI CommRead1Byte(PComVar cv, LPBYTE b)
 			if ( *b != 0xFF ) {
 				cv->TelMode = TRUE;
 				CommInsert1Byte(cv,*b);
-				LogBinSkip(cv, -1);
+				if ( cv->HBinBuf!=0 ) {
+					cv->BinSkip--;
+				}
 				c = 0;
 			}
 		}
@@ -1422,14 +1453,14 @@ int WINAPI CommRead1Byte(PComVar cv, LPBYTE b)
 		}
 	}
 
-	if (c == 1) {
+	if ( (c==1) && (cv->HBinBuf!=0) ) {
 		Log1Bin(cv, *b);
 	}
 
 	return c;
 }
 
-int WINAPI CommRawOut(PComVar cv, /*const*/ PCHAR B, int C)
+int WINAPI CommRawOut(PComVar cv, PCHAR B, int C)
 {
 	int a;
 
@@ -1489,91 +1520,9 @@ int WINAPI CommBinaryOut(PComVar cv, PCHAR B, int C)
 	return i;
 }
 
-/**
- *	データ(文字列)を出力バッファへ書き込む
- *
- *	指定データがすべて書き込めない場合は書き込まない
- *	CommRawOut() は書き込める分だけ書き込む
- *
- *	@retval	TRUE	出力できた
- *	@retval	FALSE	出力できなかった(buffer full)
- */
-static BOOL WriteOutBuff(PComVar cv, const char *TempStr, int TempLen)
-{
-	BOOL output;
-
-	if (TempLen == 0) {
-		// 長さ0で書き込みに来る場合あり
-		return TRUE;
-	}
-
-	output = FALSE;
-	if (cv->TelLineMode) {
-		const BOOL Full = OutBuffSize - cv->LineModeBuffCount - TempLen < 0;
-		if (!Full) {
-			output = TRUE;
-			memcpy(&(cv->LineModeBuff[cv->LineModeBuffCount]), TempStr, TempLen);
-			cv->LineModeBuffCount += TempLen;
-			if (cv->Flush) {
-				cv->FlushLen = cv->LineModeBuffCount;
-			}
-		}
-		if (cv->FlushLen > 0) {
-			const int OutLen = CommRawOut(cv, cv->LineModeBuff, cv->FlushLen);
-			cv->FlushLen -= OutLen;
-			cv->LineModeBuffCount -= OutLen;
-			memmove(cv->LineModeBuff, &(cv->LineModeBuff[OutLen]), cv->LineModeBuffCount);
-		}
-		cv->Flush = FALSE;
-	}
-	else {
-		const BOOL Full = OutBuffSize-cv->OutBuffCount-TempLen < 0;
-		if (! Full) {
-			output = TRUE;
-			CommRawOut(cv, (char *)TempStr, TempLen);
-		}
-	}
-	return output;
-}
-
-/**
- *	データ(文字列)を入力バッファへ書き込む
- *	入力バッファへ入れる -> エコーされる
- *
- *	@retval	TRUE	出力できた
- *	@retval	FALSE	出力できなかった(buffer full)
- */
-static BOOL WriteInBuff(PComVar cv, const char *TempStr, int TempLen)
-{
-	BOOL Full;
-
-	if (TempLen == 0) {
-		return TRUE;
-	}
-
-	Full = InBuffSize-cv->InBuffCount-TempLen < 0;
-	if (! Full) {
-		memcpy(&(cv->InBuff[cv->InBuffCount]),TempStr,TempLen);
-		cv->InBuffCount = cv->InBuffCount + TempLen;
-		return TRUE;
-	}
-	return FALSE;
-}
-
-/**
- *	入力バッファの先頭に空きがあったら詰める
- */
-static void PackInBuff(PComVar cv)
-{
-	if ( (cv->InPtr>0) && (cv->InBuffCount>0) ) {
-		memmove(cv->InBuff,&(cv->InBuff[cv->InPtr]),cv->InBuffCount);
-		cv->InPtr = 0;
-	}
-}
-
 int WINAPI CommBinaryBuffOut(PComVar cv, PCHAR B, int C)
 {
-	int a, i, Len;
+	int a, i, Len, OutLen;
 	char d[3];
 
 	if ( ! cv->Ready ) {
@@ -1600,12 +1549,37 @@ int WINAPI CommBinaryBuffOut(PComVar cv, PCHAR B, int C)
 			d[Len++] = '\xff';
 		}
 
-		if (WriteOutBuff(cv, d, Len)) {
-			a = 1;
-			i++;
-		} else {
-			a = 0;
+		if (cv->TelLineMode) {
+			if (OutBuffSize - cv->LineModeBuffCount - Len >= 0) {
+				memcpy(&(cv->LineModeBuff[cv->LineModeBuffCount]), d, Len);
+				cv->LineModeBuffCount += Len;
+				if (cv->Flush) {
+					cv->FlushLen = cv->LineModeBuffCount;
+				}
+				a = 1;
+			}
+			else {
+				a = 0;
+			}
+			if (cv->FlushLen > 0) {
+				OutLen = CommRawOut(cv, cv->LineModeBuff, cv->FlushLen);
+				cv->FlushLen -= OutLen;
+				cv->LineModeBuffCount -= OutLen;
+				memmove(cv->LineModeBuff, &(cv->LineModeBuff[OutLen]), cv->LineModeBuffCount);
+			}
+			cv->Flush = FALSE;
 		}
+		else {
+			if ( OutBuffSize - cv->OutBuffCount - Len >= 0 ) {
+				CommRawOut(cv, d, Len);
+				a = 1;
+			}
+			else {
+				a = 0;
+			}
+		}
+
+		i += a;
 	}
 	return i;
 }
@@ -1626,24 +1600,17 @@ static int OutputTextUTF8(WORD K, char *TempStr, PComVar cv)
 	return outlen;
 }
 
-static int __isleadbyte_l(int d, PComVar cv)
-{
-	int CodePage = *cv->CodePage;
-	return IsDBCSLeadByteEx(CodePage, d);
-}
-
 //
 // MBCSから各種漢字コードへ変換して出力する。
 //
 static int TextOutMBCS(PComVar cv, PCHAR B, int C)
 {
-	int i, TempLen;
+	int i, TempLen, OutLen;
 	WORD K;
 	char TempStr[12];
+	int SendCodeNew;
 	BYTE d;
-	BOOL Full;
-	int SendCodeNew;	// 送信コード
-	BOOL KanjiFlagNew;	// TRUE=次の文字と合わせて漢字とする
+	BOOL Full, KanjiFlagNew;
 
 	Full = FALSE;
 	i = 0;
@@ -1688,7 +1655,7 @@ static int TextOutMBCS(PComVar cv, PCHAR B, int C)
 				TempStr[TempLen++] = LOBYTE(K);
 			}
 		}
-		else if (__isleadbyte_l(d, cv)) {
+		else if (_isleadbyte_l(d, cv->locale)) {
 			KanjiFlagNew = TRUE;
 			cv->SendKanjiFirst = d;
 			SendCodeNew = IdKanji;
@@ -1801,13 +1768,48 @@ static int TextOutMBCS(PComVar cv, PCHAR B, int C)
 			}
 		} // if (cv->SendKanjiFlag) else if ... else ... end
 
-		if (WriteOutBuff(cv, TempStr, TempLen)) {
-			i++;	// 1文字処理した
-			// 漢字の状態を保存する
-			cv->SendCode = SendCodeNew;
-			cv->SendKanjiFlag = KanjiFlagNew;
-		} else {
-			Full = TRUE;
+		if (cv->TelLineMode) {
+			if (TempLen == 0) {
+				i++;
+				cv->SendCode = SendCodeNew;
+				cv->SendKanjiFlag = KanjiFlagNew;
+			}
+			else {
+				Full = OutBuffSize - cv->LineModeBuffCount - TempLen < 0;
+				if (!Full) {
+					i++;
+					cv->SendCode = SendCodeNew;
+					cv->SendKanjiFlag = KanjiFlagNew;
+					memcpy(&(cv->LineModeBuff[cv->LineModeBuffCount]), TempStr, TempLen);
+					cv->LineModeBuffCount += TempLen;
+					if (cv->Flush) {
+						cv->FlushLen = cv->LineModeBuffCount;
+					}
+				}
+			}
+			if (cv->FlushLen > 0) {
+				OutLen = CommRawOut(cv, cv->LineModeBuff, cv->FlushLen);
+				cv->FlushLen -= OutLen;
+				cv->LineModeBuffCount -= OutLen;
+				memmove(cv->LineModeBuff, &(cv->LineModeBuff[OutLen]), cv->LineModeBuffCount);
+			}
+			cv->Flush = FALSE;
+		}
+		else {
+			if (TempLen == 0) {
+				i++;
+				cv->SendCode = SendCodeNew;
+				cv->SendKanjiFlag = KanjiFlagNew;
+			}
+			else {
+				Full = OutBuffSize-cv->OutBuffCount-TempLen < 0;
+				if (! Full) {
+					i++;
+					cv->SendCode = SendCodeNew;
+					cv->SendKanjiFlag = KanjiFlagNew;
+					CommRawOut(cv,TempStr,TempLen);
+				}
+			}
 		}
 
 	} // end of "while {}"
@@ -1817,7 +1819,7 @@ static int TextOutMBCS(PComVar cv, PCHAR B, int C)
 
 int WINAPI CommTextOut(PComVar cv, PCHAR B, int C)
 {
-	int i, TempLen;
+	int i, TempLen, OutLen;
 	char TempStr[12];
 	BYTE d;
 	BOOL Full;
@@ -1888,400 +1890,66 @@ int WINAPI CommTextOut(PComVar cv, PCHAR B, int C)
 			}
 		}
 
-		if (WriteOutBuff(cv, TempStr, TempLen)) {
-			i++;	// 1文字処理した
-		} else {
-			Full = TRUE;
+		if (cv->TelLineMode) {
+			Full = OutBuffSize - cv->LineModeBuffCount - TempLen < 0;
+			if (!Full) {
+				i++;
+				memcpy(&(cv->LineModeBuff[cv->LineModeBuffCount]), TempStr, TempLen);
+				cv->LineModeBuffCount += TempLen;
+				if (cv->Flush) {
+					cv->FlushLen = cv->LineModeBuffCount;
+				}
+			}
+			if (cv->FlushLen > 0) {
+				OutLen = CommRawOut(cv, cv->LineModeBuff, cv->FlushLen);
+				cv->FlushLen -= OutLen;
+				cv->LineModeBuffCount -= OutLen;
+				memmove(cv->LineModeBuff, &(cv->LineModeBuff[OutLen]), cv->LineModeBuffCount);
+			}
+			cv->Flush = FALSE;
 		}
-
+		else {
+			Full = OutBuffSize - cv->OutBuffCount - TempLen < 0;
+			if (! Full) {
+				i++;
+				CommRawOut(cv,TempStr,TempLen);
+			}
+		}
 	} // end of while {}
 
 	return i;
 }
 
-/**
- *	@retval	true	日本語の半角カタカナ
- *	@retval	false	その他
- */
-static BOOL IsHalfWidthKatakana(unsigned int u32)
-{
-	// Halfwidth CJK punctuation (U+FF61～FF64)
-	// Halfwidth Katakana variants (U+FF65～FF9F)
-	return (0xff61 <= u32 && u32 <= 0xff9f);
-}
-
-/**
- *	出力用、 TODO echo用を作る
- *	@param	cv
- *	@param	u32			入力文字
- *	@param	check_only	TRUEで処理は行わず、
- *	@param	TempStr		出力文字数
- *	@param	StrLen		TempStrへの出力文字数
- *	@retval	処理を行った
- */
-static BOOL OutControl(PComVar cv, unsigned int u32, BOOL check_only, char *TempStr, size_t *StrLen)
-{
-	const wchar_t d = u32;
-	size_t TempLen = 0;
-	BOOL retval = FALSE;
-	if (check_only == TRUE) {
-		/* チェックのみ */
-		if (d == CR || d == BS || d == 0x15/*ctrl-u*/) {
-			return TRUE;
-		} else {
-			return FALSE;
-		}
-	}
-	if (d==CR) {
-		TempStr[TempLen++] = 0x0d;
-		if (cv->CRSend==IdCRLF) {
-			TempStr[TempLen++] = 0x0a;
-		}
-		else if ((cv->CRSend ==IdCR) &&
-				 cv->TelFlag && ! cv->TelBinSend) {
-			TempStr[TempLen++] = 0;
-		}
-		else if (cv->CRSend == IdLF) {
-			TempStr[TempLen-1] = 0x0a;
-		}
-		if (cv->TelLineMode) {
-			cv->Flush = TRUE;
-		}
-		retval = TRUE;
-	}
-	else if (d== BS) {
-		if (cv->TelLineMode) {
-			if (cv->FlushLen < cv->LineModeBuffCount) {
-				cv->LineModeBuffCount--;
-			}
-		}
-		else {
-			TempStr[TempLen++] = BS;
-		}
-		retval = TRUE;
-	}
-	else if (d==0x15) { // ctrl-u
-		if (cv->TelLineMode) {
-			cv->LineModeBuffCount = cv->FlushLen;
-		}
-		else {
-			TempStr[TempLen++] = 0x15;
-		}
-		retval = TRUE;
-	}
-	*StrLen = TempLen;
-	return retval;
-}
-static BOOL ControlEcho(PComVar cv, unsigned int u32, BOOL check_only, char *TempStr, size_t *StrLen)
-{
-	const wchar_t d = u32;
-	size_t TempLen = 0;
-	BOOL retval = FALSE;
-	if (check_only == TRUE) {
-		/* チェックのみ */
-		if (d == CR || (d == 0x15/*ctrl-u*/ && cv->TelLineMode)) {
-			return TRUE;
-		} else {
-			return FALSE;
-		}
-	}
-	if (d==CR) {
-		TempStr[TempLen++] = 0x0d;
-		if (cv->CRSend==IdCRLF) {
-			TempStr[TempLen++] = 0x0a;
-		}
-		else if ((cv->CRSend ==IdCR) && cv->TelFlag && ! cv->TelBinSend) {
-			TempStr[TempLen++] = 0;
-		}
-		else if (cv->CRSend == IdLF) {
-			TempStr[TempLen-1] = 0x0a;
-		}
-		retval = TRUE;
-	}
-	else if (d==0x15/*ctrl-u*/ && cv->TelLineMode) {
-		// Move to top of line (CHA "\033[G") and erase line (EL "\033[K")
-		memcpy(TempStr, "\033[G\033[K", 6);
-		TempLen += 6;
-		retval = TRUE;
-	}
-	*StrLen = TempLen;
-	return retval;
-}
-
-/**
- * 出力用文字列を作成する
- *
- *	@retval	消費した文字数
- */
-typedef struct {
-	int KanjiCode;		// [in]出力文字コード(sjis,jisなど)
-	BOOL (*ControlOut)(PComVar cv, unsigned int u32, BOOL check_only, char *TempStr, size_t *StrLen);
-	// stateを保存する必要がある文字コードで使用
-	BOOL JIS7Katakana;	// [in](Kanji JIS)kana
-	int SendCode;		// [in,out](Kanji JIS)直前の送信コード Ascii/Kana/Kanji
-	BOOL KanjiFlag;		// [in,out](MBCS)直前の1byteが漢字だったか?(2byte文字だったか?)
-	BYTE KanjiFirst;	// [in,out](MBCS)直前の1byte
-} OutputCharState;
-
-/**
- *	unicode(UTF-16)からunicode(UTF-32)を1文字取り出して
- *	出力データ(TempStr)を作成する
- */
-static size_t MakeOutputString(PComVar cv, OutputCharState *states,
-							   const wchar_t *B, int C,
-							   char *TempStr, int *TempLen_)
-{
-	BOOL (*ControlOut)(PComVar cv, unsigned int u32, BOOL check_only, char *TempStr, size_t *StrLen)
-		= states->ControlOut;
-//
-	int TempLen = 0;
-	size_t TempLen2;
-	size_t output_char_count;	// 消費した文字数
-
-	// UTF-32 を1文字取り出す
-	unsigned int u32;
-	size_t u16_len = UTF16ToUTF32(B, C, &u32);
-	if (u16_len == 0) {
-		// デコードできない? あり得ないのでは?
-		assert(FALSE);
-		u32 = '?';
-		u16_len = 1;
-	}
-	output_char_count = u16_len;
-
-	// 各種シフト状態を通常に戻す
-	if (u32 < 0x100 || ControlOut(cv, u32, TRUE, NULL, NULL)) {
-		if (cv->Language == IdJapanese && states->KanjiCode == IdJIS) {
-			// 今のところ、日本語,JISしかない
-			if (cv->SendCode == IdKanji) {
-				// 漢字ではないので、漢字OUT
-				TempStr[TempLen++] = 0x1B;
-				TempStr[TempLen++] = '(';
-				switch (cv->KanjiOut) {
-				case IdKanjiOutJ:
-					TempStr[TempLen++] = 'J';
-					break;
-				case IdKanjiOutH:
-					TempStr[TempLen++] = 'H';
-					break;
-				default:
-					TempStr[TempLen++] = 'B';
-				}
-			}
-
-			if (states->JIS7Katakana == 1) {
-				if (cv->SendCode == IdKatakana) {
-					TempStr[TempLen++] = SO;
-				}
-			}
-
-			states->SendCode = IdASCII;
-		}
-	}
-
-	// 1文字処理する
-	if (ControlOut(cv, u32, FALSE, TempStr, &TempLen2)) {
-		// 特別な文字を処理した
-		TempLen += TempLen2;
-		output_char_count = 1;
-	} else if (cv->Language == IdUtf8 ||
-			   (cv->Language == IdJapanese && states->KanjiCode == IdUTF8) ||
-			   (cv->Language == IdKorean && states->KanjiCode == IdUTF8))
-	{
-		// UTF-8 で出力
-		size_t utf8_len = sizeof(TempStr);
-		utf8_len = UTF32ToUTF8(u32, TempStr, utf8_len);
-		TempLen += utf8_len;
-	} else if (cv->Language == IdJapanese && *cv->CodePage == 932) {
-		// 日本語
-		// まず CP932(SJIS) に変換してから出力
-		char mb_char[2];
-		size_t mb_len = sizeof(mb_char);
-		mb_len = UTF32ToMBCP(u32, 932, mb_char, mb_len);
-		if (mb_len == 0) {
-			// SJISに変換できない
-			TempStr[TempLen++] = '?';
-		} else {
-			switch (states->KanjiCode) {
-			case IdEUC:
-				// TODO 半角カナ
-				if (mb_len == 1) {
-					TempStr[TempLen++] = mb_char[0];
-				} else {
-					WORD K;
-					K = (((WORD)(unsigned char)mb_char[0]) << 8) +
-						(WORD)(unsigned char)mb_char[1];
-					K = SJIS2EUC(K);
-					TempStr[TempLen++] = HIBYTE(K);
-					TempStr[TempLen++] = LOBYTE(K);
-				}
-				break;
-			case IdJIS:
-				if (u32 < 0x100) {
-					// ASCII
-					TempStr[TempLen++] = mb_char[0];
-					states->SendCode = IdASCII;
-				} else if (IsHalfWidthKatakana(u32)) {
-					// 半角カタカナ
-					if (states->JIS7Katakana==1) {
-						if (cv->SendCode != IdKatakana) {
-							TempStr[TempLen++] = SI;
-						}
-						TempStr[TempLen++] = mb_char[0] & 0x7f;
-					} else {
-						TempStr[TempLen++] = mb_char[0];
-					}
-					states->SendCode = IdKatakana;
-				} else {
-					// 漢字
-					WORD K;
-					K = (((WORD)(unsigned char)mb_char[0]) << 8) +
-						(WORD)(unsigned char)mb_char[1];
-					K = SJIS2JIS(K);
-					if (states->SendCode != IdKanji) {
-						// 漢字IN
-						TempStr[TempLen++] = 0x1B;
-						TempStr[TempLen++] = '$';
-						if (cv->KanjiIn == IdKanjiInB) {
-							TempStr[TempLen++] = 'B';
-						}
-						else {
-							TempStr[TempLen++] = '@';
-						}
-						states->SendCode = IdKanji;
-					}
-					TempStr[TempLen++] = HIBYTE(K);
-					TempStr[TempLen++] = LOBYTE(K);
-				}
-				break;
-			case IdSJIS:
-				if (mb_len == 1) {
-					TempStr[TempLen++] = mb_char[0];
-				} else {
-					TempStr[TempLen++] = mb_char[0];
-					TempStr[TempLen++] = mb_char[1];
-				}
-				break;
-			default:
-				assert(FALSE);
-				break;
-			}
-		}
-	} else if (cv->Language == IdRussian) {
-		/* まずCP1251に変換して出力 */
-		char mb_char[2];
-		size_t mb_len = sizeof(mb_char);
-		BYTE b;
-		mb_len = UTF32ToMBCP(u32, 1251, mb_char, mb_len);
-		if (mb_len != 1) {
-			b = '?';
-		} else {
-			b = RussConv(IdWindows, cv->RussHost, mb_char[0]);
-		}
-		TempStr[TempLen++] = b;
-	} else if (cv->Language == IdKorean && *cv->CodePage == 51949) {
-		/* CP51949に変換して出力 */
-		char mb_char[2];
-		size_t mb_len = sizeof(mb_char);
-		mb_len = UTF32ToMBCP(u32, 51949, mb_char, mb_len);
-		if (mb_len == 0) {
-			TempStr[TempLen++] = '?';
-		}
-		else if (mb_len == 1) {
-			TempStr[TempLen++] = mb_char[0];
-		} else  {
-			TempStr[TempLen++] = mb_char[0];
-			TempStr[TempLen++] = mb_char[1];
-		}
-	} else if (cv->Language == IdEnglish) {
-		TempStr[TempLen++] = u32;
-	} else {
-		// CodePageで変換
-		char mb_char[2];
-		size_t mb_len = sizeof(mb_char);
-		mb_len = UTF32ToMBCP(u32, *cv->CodePage, mb_char, mb_len);
-		if (mb_len == 0) {
-			TempStr[TempLen++] = '?';
-		}
-		else if (mb_len == 1) {
-			TempStr[TempLen++] = mb_char[0];
-		} else  {
-			TempStr[TempLen++] = mb_char[0];
-			TempStr[TempLen++] = mb_char[1];
-		}
-	}
-
-	*TempLen_ = TempLen;
-	return output_char_count;
-}
-
-
-/**
- * CommTextOut() の wchar_t 版
- *
- *	@retval		出力文字数(wchar_t単位)
- */
+// TODO: UTF-16から直接変換して出力する
 int WINAPI CommTextOutW(PComVar cv, const wchar_t *B, int C)
 {
-	char TempStr[12];
-	BOOL Full = FALSE;
-	int i = 0;
-	while (! Full && (i < C)) {
-		// 出力用データを作成
-		int TempLen = 0;
-		size_t output_char_count;	// 消費した文字数
-		OutputCharState state;
-		state.KanjiCode = cv->KanjiCodeSend;
-		state.ControlOut = OutControl;
-		state.SendCode = cv->SendCode;
-		state.JIS7Katakana = cv->JIS7KatakanaSend;
-		output_char_count = MakeOutputString(cv, &state, &B[i], C-i, TempStr, &TempLen);
-
-		// データを出力バッファへ
-		if (WriteOutBuff(cv, TempStr, TempLen)) {
-			i += output_char_count;		// output_char_count 文字数 処理した
-			// 漢字の状態を保存する
-			cv->SendCode = state.SendCode;
-		} else {
-			Full = TRUE;
-		}
-	} // end of "while {}"
-	_CrtCheckMemory();
-	return i;
+	int CodePage = *cv->CodePage;
+	size_t mb_len;
+	int r;
+	char *mb_str = _WideCharToMultiByte(B, C, CodePage, &mb_len);
+	if (mb_str == NULL) {
+		r = 0;
+	} else {
+		r = CommTextOut(cv, mb_str, mb_len);
+		free(mb_str);
+	}
+	return r;
 }
 
-/**
- * CommTextEcho() の wchar_t 版
- *
- *	@retval		出力文字数(wchar_t単位)
- */
+// TODO: UTF-16から直接変換して出力する
 int WINAPI CommTextEchoW(PComVar cv, const wchar_t *B, int C)
 {
-	char TempStr[12];
-	BOOL Full = FALSE;
-	int i = 0;
-	while (! Full && (i < C)) {
-		// 出力用データを作成
-		int TempLen = 0;
-		size_t output_char_count;	// 消費した文字数
-		OutputCharState state;
-		state.KanjiCode = cv->KanjiCodeEcho;
-		state.ControlOut = ControlEcho;
-		state.SendCode = cv->EchoCode;
-		state.JIS7Katakana = cv->JIS7KatakanaEcho;
-		output_char_count = MakeOutputString(cv, &state, &B[i], C-i, TempStr, &TempLen);
-
-		// データを出力バッファへ
-		if (WriteInBuff(cv, TempStr, TempLen)) {
-			i += output_char_count;		// output_char_count 文字数 処理した
-			// 漢字の状態を保存する
-			cv->EchoCode = state.SendCode;
-		} else {
-			Full = TRUE;
-		}
-	} // end of "while {}"
-	_CrtCheckMemory();
-	return i;
+	int CodePage = *cv->CodePage;
+	size_t mb_len;
+	int r;
+	char *mb_str = _WideCharToMultiByte(B, C, CodePage, &mb_len);
+	if (mb_str == NULL) {
+		r = 0;
+	} else {
+		r = CommTextEcho(cv, mb_str, mb_len);
+		free(mb_str);
+	}
+	return r;
 }
 
 int WINAPI CommBinaryEcho(PComVar cv, PCHAR B, int C)
@@ -2292,7 +1960,10 @@ int WINAPI CommBinaryEcho(PComVar cv, PCHAR B, int C)
 	if ( ! cv->Ready )
 		return C;
 
-	PackInBuff(cv);
+	if ( (cv->InPtr>0) && (cv->InBuffCount>0) ) {
+		memmove(cv->InBuff,&(cv->InBuff[cv->InPtr]),cv->InBuffCount);
+		cv->InPtr = 0;
+	}
 
 	i = 0;
 	a = 1;
@@ -2313,12 +1984,14 @@ int WINAPI CommBinaryEcho(PComVar cv, PCHAR B, int C)
 			Len++;
 		}
 
-		if (WriteInBuff(cv, d, Len)) {
+		if ( InBuffSize-cv->InBuffCount-Len >=0 ) {
+			memcpy(&(cv->InBuff[cv->InBuffCount]),d,Len);
+			cv->InBuffCount = cv->InBuffCount + Len;
 			a = 1;
-			i++;
-		} else {
-			a = 0;
 		}
+		else
+			a = 0;
+		i = i + a;
 	}
 	return i;
 }
@@ -2375,7 +2048,7 @@ static int WINAPI TextEchoMBCS(PComVar cv, PCHAR B, int C)
 				TempStr[TempLen++] = LOBYTE(K);
 			}
 		}
-		else if (__isleadbyte_l(d, cv)) {
+		else if (_isleadbyte_l(d, cv->locale)) {
 			KanjiFlagNew = TRUE;
 			cv->EchoKanjiFirst = d;
 			EchoCodeNew = IdKanji;
@@ -2477,12 +2150,20 @@ static int WINAPI TextEchoMBCS(PComVar cv, PCHAR B, int C)
 			}
 		} // if (cv->EchoKanjiFlag) else if ... else ... end
 
-		if (WriteInBuff(cv, TempStr, TempLen)) {
+		if (TempLen == 0) {
 			i++;
 			cv->EchoCode = EchoCodeNew;
 			cv->EchoKanjiFlag = KanjiFlagNew;
-		} else {
-			Full = FALSE;
+		}
+		else {
+			Full = InBuffSize-cv->InBuffCount-TempLen < 0;
+			if (! Full) {
+				i++;
+				cv->EchoCode = EchoCodeNew;
+				cv->EchoKanjiFlag = KanjiFlagNew;
+				memcpy(&(cv->InBuff[cv->InBuffCount]),TempStr,TempLen);
+				cv->InBuffCount = cv->InBuffCount + TempLen;
+			}
 		}
 
 	} // end of "while {}"
@@ -2501,7 +2182,10 @@ int WINAPI CommTextEcho(PComVar cv, PCHAR B, int C)
 		return C;
 	}
 
-	PackInBuff(cv);
+	if ( (cv->InPtr>0) && (cv->InBuffCount>0) ) {
+		memmove(cv->InBuff,&(cv->InBuff[cv->InPtr]),cv->InBuffCount);
+		cv->InPtr = 0;
+	}
 
 	switch (cv->Language) {
 	  case IdUtf8:
@@ -2553,14 +2237,390 @@ int WINAPI CommTextEcho(PComVar cv, PCHAR B, int C)
 			}
 		}
 
-		if(WriteInBuff(cv, TempStr,TempLen)) {
+		Full = InBuffSize-cv->InBuffCount-TempLen < 0;
+		if (! Full) {
 			i++;
-		} else {
-			Full = TRUE;
+			memcpy(&(cv->InBuff[cv->InBuffCount]),TempStr,TempLen);
+			cv->InBuffCount = cv->InBuffCount + TempLen;
 		}
 	} // end of while {}
 
 	return i;
+}
+
+// listup serial port driver
+// cf. http://www.codeproject.com/system/setupdi.asp?df=100&forumid=4368&exp=0&select=479661
+// (2007.8.17 yutaka)
+static void ListupSerialPort(LPWORD ComPortTable, int comports, char **ComPortDesc, int ComPortMax)
+{
+	GUID ClassGuid[1];
+	DWORD dwRequiredSize;
+	BOOL bRet;
+	HDEVINFO DeviceInfoSet = NULL;
+	SP_DEVINFO_DATA DeviceInfoData;
+	DWORD dwMemberIndex = 0;
+	int i;
+
+	DeviceInfoData.cbSize = sizeof(SP_DEVINFO_DATA);
+
+	// 以前のメモリをフリーしておく
+	for (i = 0 ; i < ComPortMax ; i++) {
+		free(ComPortDesc[i]);
+		ComPortDesc[i] = NULL;
+	}
+
+// Get ClassGuid from ClassName for PORTS class
+	bRet =
+		SetupDiClassGuidsFromName(_T("PORTS"), (LPGUID) & ClassGuid, 1,
+		                          &dwRequiredSize);
+	if (!bRet) {
+		goto cleanup;
+	}
+
+// Get class devices
+	// COMポート番号を強制付け替えした場合に、現在のものではなく、レジストリに残っている
+	// 古いFriendlyNameが表示されてしまう問題への対処。(2007.11.8 yutaka)
+	DeviceInfoSet =
+		SetupDiGetClassDevs(&ClassGuid[0], NULL, NULL, DIGCF_PRESENT | DIGCF_PROFILE);
+
+	if (DeviceInfoSet) {
+// Enumerate devices
+		dwMemberIndex = 0;
+		while (SetupDiEnumDeviceInfo
+		       (DeviceInfoSet, dwMemberIndex++, &DeviceInfoData)) {
+			TCHAR szFriendlyName[MAX_PATH];
+			TCHAR szPortName[MAX_PATH];
+			//TCHAR szMessage[MAX_PATH];
+			DWORD dwReqSize = 0;
+			DWORD dwPropType;
+			DWORD dwType = REG_SZ;
+			HKEY hKey = NULL;
+
+// Get friendlyname
+			bRet = SetupDiGetDeviceRegistryProperty(DeviceInfoSet,
+			                                        &DeviceInfoData,
+			                                        SPDRP_FRIENDLYNAME,
+			                                        &dwPropType,
+			                                        (LPBYTE)
+			                                        szFriendlyName,
+			                                        sizeof(szFriendlyName),
+			                                        &dwReqSize);
+
+// Open device parameters reg key
+			hKey = SetupDiOpenDevRegKey(DeviceInfoSet,
+			                            &DeviceInfoData,
+			                            DICS_FLAG_GLOBAL,
+			                            0, DIREG_DEV, KEY_READ);
+			if (hKey) {
+// Qurey for portname
+				long lRet;
+				dwReqSize = sizeof(szPortName);
+				lRet = RegQueryValueEx(hKey,
+				                       _T("PortName"),
+				                       0,
+				                       &dwType,
+				                       (LPBYTE) & szPortName,
+				                       &dwReqSize);
+
+// Close reg key
+				RegCloseKey(hKey);
+			}
+
+#if 0
+			sprintf(szMessage, _T("Name: %s\nPort: %s\n"), szFriendlyName,
+			        szPortName);
+			printf("%s\n", szMessage);
+#endif
+
+			if (_strnicmp(szPortName, "COM", 3) == 0) {  // COMポートドライバを発見
+				int port = atoi(&szPortName[3]);
+				int i;
+
+				for (i = 0 ; i < comports ; i++) {
+					if (ComPortTable[i] == port) {  // 接続を確認
+						ComPortDesc[i] = _strdup(szFriendlyName);
+						break;
+					}
+				}
+			}
+
+		}
+	}
+
+cleanup:
+// Destroy device info list
+	SetupDiDestroyDeviceInfoList(DeviceInfoSet);
+}
+
+
+/*
+ * 
+ * [return]
+ *   1以上   アプリが使用可能なCOMポートの総数
+ *   0       アプリが使用可能なCOMポートがない
+ *   -1      ※未使用
+ *
+ */
+int WINAPI DetectComPorts(LPWORD ComPortTable, int ComPortMax, char **ComPortDesc)
+{
+	HMODULE h;
+	TCHAR   devicesBuff[65535];
+	TCHAR   *p;
+	int     comports = 0;
+	int     i, j, min;
+	WORD    s;
+
+	if (((h = GetModuleHandle("kernel32.dll")) != NULL) &&
+	    (GetProcAddress(h, "QueryDosDeviceA") != NULL) &&
+	    (QueryDosDevice(NULL, devicesBuff, 65535) != 0)) {
+		p = devicesBuff;
+		while (*p != '\0') {
+			if (strncmp(p, "COM", 3) == 0 && p[3] != '\0') {
+				ComPortTable[comports++] = atoi(p+3);
+				if (comports >= ComPortMax)
+					break;
+			}
+			p += (strlen(p)+1);
+		}
+
+		for (i=0; i<comports-1; i++) {
+			min = i;
+			for (j=i+1; j<comports; j++) {
+				if (ComPortTable[min] > ComPortTable[j]) {
+					min = j;
+				}
+			}
+			if (min != i) {
+				s = ComPortTable[i];
+				ComPortTable[i] = ComPortTable[min];
+				ComPortTable[min] = s;
+			}
+		}
+	}
+	else {
+#if 1
+		for (i=1; i<=ComPortMax; i++) {
+			FILE *fp;
+			char buf[12]; // \\.\COMxxxx + NULL
+			_snprintf_s(buf, sizeof(buf), _TRUNCATE, "\\\\.\\COM%d", i);
+			if ((fp = fopen(buf, "r")) != NULL) {
+				fclose(fp);
+				ComPortTable[comports++] = i;
+			}
+		}
+#else
+		comports = -1;
+#endif
+	}
+
+	ListupSerialPort(ComPortTable, comports, ComPortDesc, ComPortMax);
+
+	return comports;
+}
+
+int WINAPI CheckComPort(WORD ComPort)
+{
+	HMODULE h;
+	TCHAR   devicesBuff[65535];
+	char    com_str[64];
+	BOOL bRet;
+	GUID ClassGuid[1];
+	DWORD dwRequiredSize;
+	HDEVINFO DeviceInfoSet = NULL;
+	SP_DEVINFO_DATA DeviceInfoData;
+	int found = 0;
+
+	_snprintf_s(com_str, sizeof(com_str), _TRUNCATE, "COM%d", ComPort);
+
+	if (((h = GetModuleHandle("kernel32.dll")) == NULL) | (GetProcAddress(h, "QueryDosDeviceA") == NULL) ) {
+		/* ERROR */
+		return -1;
+	}
+
+	if (QueryDosDevice(com_str, devicesBuff, 65535) == 0) {
+		DWORD err = GetLastError();
+		if (err == ERROR_FILE_NOT_FOUND) {
+			/* NOT FOUND */
+			return 0;
+		}
+		/* ERROR */
+		return -1;
+	}
+
+	/* QueryDosDeviceで切断を検知できない環境があるでさらにチェック */
+	bRet = SetupDiClassGuidsFromName(_T("PORTS"), (LPGUID) & ClassGuid, 1, &dwRequiredSize);
+	if (bRet == FALSE) {
+		return -1;
+	}
+
+	DeviceInfoSet = SetupDiGetClassDevs(&ClassGuid[0], NULL, NULL, DIGCF_PRESENT | DIGCF_PROFILE);
+	if (DeviceInfoSet == NULL) {
+		return -1;
+	}
+
+	if (DeviceInfoSet) {
+		DWORD dwMemberIndex = 0;
+		HKEY hKey = NULL;
+		TCHAR szPortName[MAX_PATH];
+		DWORD dwReqSize;
+		DWORD dwType;
+
+		DeviceInfoData.cbSize = sizeof(SP_DEVINFO_DATA);
+		while (SetupDiEnumDeviceInfo(DeviceInfoSet, dwMemberIndex, &DeviceInfoData)) {
+			hKey = SetupDiOpenDevRegKey(DeviceInfoSet, &DeviceInfoData, DICS_FLAG_GLOBAL, 0, DIREG_DEV, KEY_READ);
+			if (hKey) {
+				long lRet;
+				dwReqSize = sizeof(szPortName);
+				lRet = RegQueryValueEx(hKey, _T("PortName"), 0, &dwType, (LPBYTE)& szPortName, &dwReqSize);
+				RegCloseKey(hKey);
+				if (_stricmp(szPortName, com_str) == 0) {
+					found = TRUE;
+					break;
+				}
+			}
+			dwMemberIndex++;
+		}
+	}
+
+	SetupDiDestroyDeviceInfoList(DeviceInfoSet);
+
+	return found;
+}
+
+// Notify Icon 関連
+static NOTIFYICONDATA notify_icon = {0};
+static int NotifyIconShowCount = 0;
+static HICON CustomIcon = NULL;
+
+void WINAPI SetCustomNotifyIcon(HICON icon)
+{
+	CustomIcon = icon;
+}
+
+HICON WINAPI GetCustomNotifyIcon(void)
+{
+	return CustomIcon;
+}
+
+void WINAPI CreateNotifyIcon(PComVar cv)
+{
+	if (cv->NotifyIcon == NULL) {
+		notify_icon.cbSize = sizeof(notify_icon);
+		notify_icon.hWnd = cv->HWin;
+		notify_icon.uID = 1;
+		notify_icon.uFlags = NIF_ICON | NIF_MESSAGE;
+		notify_icon.uCallbackMessage = WM_USER_NOTIFYICON;
+		if (CustomIcon) {
+			notify_icon.hIcon = CustomIcon;
+		}
+		else {
+			notify_icon.hIcon = (HICON)SendMessage(cv->HWin, WM_GETICON, ICON_SMALL, 0);
+		}
+		notify_icon.szTip[0] = '\0';
+		notify_icon.dwState = 0;
+		notify_icon.dwStateMask = 0;
+		notify_icon.szInfo[0] = '\0';
+		notify_icon.uTimeout = 0;
+		notify_icon.szInfoTitle[0] = '\0';
+		notify_icon.dwInfoFlags = 0;
+
+		cv->NotifyIcon = &notify_icon;
+
+		Shell_NotifyIcon(NIM_ADD, cv->NotifyIcon);
+
+		NotifyIconShowCount = 0;
+	}
+
+	return;
+}
+
+void WINAPI DeleteNotifyIcon(PComVar cv)
+{
+	if (cv->NotifyIcon) {
+		Shell_NotifyIcon(NIM_DELETE, cv->NotifyIcon);
+		cv->NotifyIcon = NULL;
+		NotifyIconShowCount = 0;
+	}
+
+	return;
+}
+
+void WINAPI ShowNotifyIcon(PComVar cv)
+{
+	if (cv->NotifyIcon == NULL) {
+		CreateNotifyIcon(cv);
+	}
+
+	cv->NotifyIcon->uFlags = NIF_STATE;
+	cv->NotifyIcon->dwState = 0;
+	cv->NotifyIcon->dwStateMask = NIS_HIDDEN;
+	Shell_NotifyIcon(NIM_MODIFY, cv->NotifyIcon);
+	NotifyIconShowCount += 1;
+
+	return;
+}
+
+void WINAPI HideNotifyIcon(PComVar cv)
+{
+	if (NotifyIconShowCount > 1) {
+		NotifyIconShowCount -= 1;
+	}
+	else {
+		if (cv->NotifyIcon) {
+			cv->NotifyIcon->uFlags = NIF_STATE;
+			cv->NotifyIcon->dwState = NIS_HIDDEN;
+			cv->NotifyIcon->dwStateMask = NIS_HIDDEN;
+			Shell_NotifyIcon(NIM_MODIFY, cv->NotifyIcon);
+		}
+		NotifyIconShowCount = 0;
+	}
+
+	return;
+}
+
+void WINAPI SetVerNotifyIcon(PComVar cv, unsigned int ver)
+{
+	if (cv->NotifyIcon) {
+		cv->NotifyIcon->uVersion = ver;
+		Shell_NotifyIcon(NIM_SETVERSION, cv->NotifyIcon);
+	}
+	return;
+}
+
+void WINAPI NotifyMessage(PComVar cv, char *msg, char *title, DWORD flag)
+{
+	if (msg == NULL) {
+		return;
+	}
+
+	if (! HasBalloonTipSupport()) {
+		return;
+	}
+
+	if (cv->NotifyIcon == NULL) {
+		CreateNotifyIcon(cv);
+	}
+
+	cv->NotifyIcon->uFlags = NIF_INFO | NIF_STATE;
+	cv->NotifyIcon->dwState = 0;
+	cv->NotifyIcon->dwStateMask = NIS_HIDDEN;
+
+	if (title) {
+		cv->NotifyIcon->dwInfoFlags = flag;
+		strncpy_s(cv->NotifyIcon->szInfoTitle, sizeof(cv->NotifyIcon->szInfoTitle), title, _TRUNCATE);
+	}
+	else {
+		cv->NotifyIcon->dwInfoFlags = NIIF_NONE;
+		cv->NotifyIcon->szInfoTitle[0] = 0;
+	}
+
+	strncpy_s(cv->NotifyIcon->szInfo, sizeof(cv->NotifyIcon->szInfo), msg, _TRUNCATE);
+
+	Shell_NotifyIcon(NIM_MODIFY, cv->NotifyIcon);
+
+	NotifyIconShowCount += 1;
+
+	return;
 }
 
 /*
@@ -2623,12 +2683,12 @@ BOOL WINAPI DllMain(HANDLE hInstance,
 			break;
 		case DLL_PROCESS_ATTACH:
 			/* do process initialization */
+			DoCover_IsDebuggerPresent();
 			hInst = hInstance;
 			if (OpenSharedMemory(&FirstInstance) == FALSE) {
 				// dllロード失敗、teratermが起動しない
 				return FALSE;
 			}
-			WinCompatInit();
 			break;
 		case DLL_PROCESS_DETACH:
 			/* do process cleanup */

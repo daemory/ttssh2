@@ -1,12 +1,47 @@
-﻿set(PACKAGE_NAME "ttpmacro")
-
-project(${PACKAGE_NAME})
+﻿project(ttpmacro)
 
 include(${CMAKE_CURRENT_SOURCE_DIR}/../../libs/lib_oniguruma.cmake)
 include(${CMAKE_CURRENT_SOURCE_DIR}/../../libs/lib_SFMT.cmake)
 
-add_executable(
-  ${PACKAGE_NAME} WIN32
+if(USE_UNICODE_API)
+  add_definitions(-DUNICODE -D_UNICODE)
+endif()
+
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/")
+
+set(COMMON_SRC
+  ../common/teraterm.h
+  ../common/ttcommon.h
+  ../common/ttddecmnd.h
+  ../common/tttypes.h
+  ../common/tt-version.h
+  ../common/i18n.h
+  ../common/ttlib.c
+  ../common/ttlib.h
+  ../common/tmfc.cpp
+  ../common/tmfc.h
+  ../common/tmfc_frame.cpp
+  ../common/dlglib.h
+  ../common/dlglib.c
+  ../common/dlglib_tmpl.cpp
+  ../common/dlglib_cpp.cpp
+  ../common/compat_w95.h
+  ../common/compat_win.h
+  ../common/compat_win.cpp
+  ../common/win16api.h
+  ../common/win16api.c
+  ../common/codeconv.h
+  ../common/codeconv.cpp
+  ../common/dllutil.cpp
+  )
+
+source_group(
+  "common"
+  FILES
+  ${COMMON_SRC}
+  )
+
+set(SRC
   ttm_res.h
   errdlg.cpp
   errdlg.h
@@ -19,10 +54,8 @@ add_executable(
   statdlg.cpp
   statdlg.h
   macrodlgbase.h
-  ttl.cpp
+  ttl.c
   ttl.h
-  ttl_gui.cpp
-  ttl_gui.h
   ttm_res.h
   ttmacro.cpp
   ttmacro.h
@@ -41,76 +74,47 @@ add_executable(
   ttmmain.h
   ttmmsg.h
   ttmonig.h
-  ttmparse.cpp
+  ttmparse.c
   ttmparse.h
   wait4all.c
   wait4all.h
 
   ttpmacro.rc
   ttm-version.rc
-  ttmacro_manifest.rc
+  fileread.h
+  fileread.cpp
+  ${COMMON_SRC}
   )
 
-if(SUPPORT_OLD_WINDOWS)
-  if(MSVC)
-    target_sources(
-      ${PACKAGE_NAME}
-      PRIVATE
-      ../../teraterm/common/compat_w95_vs2005.c
-      )
-  endif()
-endif(SUPPORT_OLD_WINDOWS)
-
-target_sources(
-  ${PACKAGE_NAME}
-  PRIVATE
-  ../common/teraterm.h
-  ../common/ttcommon.h
-  ../common/ttddecmnd.h
-  ../common/tttypes.h
-  ../common/tt-version.h
-  ../common/i18n.h
-  ../common/ttlib.c
-  ../common/ttlib.h
-  ../common/tmfc.h
-  ../common/compat_win.h
-  ../common/win16api.h
-  ../common/codeconv.h
-  ../common/dllutil.h
-  ../common/layer_for_unicode.h
-  )
-
-source_group(
-  "common"
-  REGULAR_EXPRESSION
-  "..\/common\/"
-  )
-
-set_target_properties(
-  ${PACKAGE_NAME}
-  PROPERTIES
-  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/"
-  )
-
-target_include_directories(
-  ${PACKAGE_NAME}
-  PRIVATE
-  ${CMAKE_CURRENT_SOURCE_DIR}/../common
+include_directories(
   ${ONIGURUMA_INCLUDE_DIRS}
   ${SFMT_INCLUDE_DIRS}
+  ${CMAKE_CURRENT_SOURCE_DIR}/../common
+  )
+
+link_directories(
+  ${ONIGURUMA_LIBRARY_DIRS}
+  ${SFMT_LIBRARY_DIRS}
   )
 
 if (MSVC)
-  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /DELAYLOAD:iphlpapi.dll /DELAYLOAD:user32.dll /MANIFEST:NO")
+  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /DELAYLOAD:iphlpapi.dll /DELAYLOAD:user32.dll")
 endif()
 
+add_executable(
+  ttpmacro WIN32
+  ${SRC}
+  )
+
 target_link_libraries(
-  ${PACKAGE_NAME}
-  PRIVATE
-  common_static
+  ttpmacro
   ttpcmn
-  ${ONIGURUMA_LIB}
-  ${SFMT_LIB}
+#  optimized LIBCMT.lib
+#  debug LIBCMTD.lib
+  optimized onig
+  debug onigd
+  optimized sfmt
+  debug sfmtd
   #
   iphlpapi
   delayimp
@@ -120,7 +124,12 @@ target_link_libraries(
   comdlg32
   )
 
+add_dependencies(
+  ttpmacro
+  ttpcmn
+  )
+
 install(
-  TARGETS ${PACKAGE_NAME}
+  TARGETS ttpmacro
   DESTINATION .
   )

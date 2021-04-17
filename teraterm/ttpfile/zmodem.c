@@ -32,19 +32,20 @@
  　"B"の直後の二桁が Header Type を示す。
 
 2A 2A 18 42 30 31 30 30 30 30 30 30 32 33 62 65     **.B0100000023be
-35 30 0D 8A 11
+35 30 0D 8A 11 
    ↓
 2A 2A 18 42 30 31 30 30 30 30 30 30 32 33 62 65     **.B0100000023be
-^^^^^^^^ZPAD+ZPAD+ZDLE
+^^^^^^^^ZPAD+ZPAD+ZDLE 
          ^^ZHEX
             ^^^^ZRINIT（2桁で表す）
-35 30 0D 8A 11
+35 30 0D 8A 11 
 ^^^^^CRC
  */
 
 /* TTFILE.DLL, ZMODEM protocol */
 #include "teraterm.h"
 #include "tttypes.h"
+#include "ttftypes.h"
 #include <stdio.h>
 #include <stdarg.h>
 
@@ -57,57 +58,7 @@
 #include "ftlib.h"
 #include "ttcommon.h"
 #include "ttlib.h"
-
-#include "zmodem.h"
-
-/* ZMODEM */
-typedef struct {
-  BYTE RxHdr[4], TxHdr[4];
-  BYTE RxType, TERM;
-  BYTE PktIn[1032], PktOut[1032];
-  int PktInPtr, PktOutPtr;
-  int PktInCount, PktOutCount;
-  int PktInLen;
-  BOOL BinFlag;
-  BOOL Sending;
-  int ZMode, ZState, ZPktState;
-  int MaxDataLen, TimeOut, CanCount;
-  BOOL CtlEsc, CRC32, HexLo, Quoted, CRRecv;
-  WORD CRC;
-  LONG CRC3, Pos, LastPos, WinSize;
-  BYTE LastSent;
-  int TOutInit;
-  int TOutFin;
-	TProtoLog *log;
-	const char *FullName;		// Windows上のファイル名 UTF-8
-} TZVar;
-typedef TZVar far *PZVar;
-
-#define Z_RecvInit 1
-#define Z_RecvInit2 2
-#define Z_RecvData 3
-#define Z_RecvFIN  4
-#define Z_SendInit 5
-#define Z_SendInitHdr 6
-#define Z_SendInitDat 7
-#define Z_SendFileHdr 8
-#define Z_SendFileDat 9
-#define Z_SendDataHdr 10
-#define Z_SendDataDat 11
-#define Z_SendDataDat2 12
-#define Z_SendEOF  13
-#define Z_SendFIN  14
-#define Z_Cancel   15
-#define Z_End      16
-
-#define Z_PktGetPAD 1
-#define Z_PktGetDLE 2
-#define Z_PktHdrFrm 3
-#define Z_PktGetBin 4
-#define Z_PktGetHex 5
-#define Z_PktGetHexEOL 6
-#define Z_PktGetData 7
-#define Z_PktGetCRC 8
+#include "win16api.h"
 
 #define ZPAD   '*'
 #define ZDLE   0x18
@@ -183,13 +134,13 @@ static void add_recvbuf(char *fmt, ...)
 }
 
 
-static void show_recvbuf(TProtoLog* log)
+static void show_recvbuf(PFileVar fv)
 {
 	char *s;
 
 	s = recvbuf;
 	strncat_s(recvbuf, sizeof(recvbuf), "\015\012", _TRUNCATE);
-	log->WriteRaw(log, s, strlen(s));
+	_lwrite(fv->LogFile, s, strlen(s));
 
 	memset(recvbuf, 0, sizeof(recvbuf));
 }
@@ -205,20 +156,20 @@ static void add_sendbuf(char *fmt, ...)
 	va_end(arg);
 }
 
-static void show_sendbuf(TProtoLog* log)
+static void show_sendbuf(PFileVar fv)
 {
 	char *s;
 
 	s = sendbuf;
 	strncat_s(sendbuf, sizeof(sendbuf), "\015\012", _TRUNCATE);
-	log->WriteRaw(log, s, strlen(s));
+	_lwrite(fv->LogFile, s, strlen(s));
 
 	memset(sendbuf, 0, sizeof(sendbuf));
 }
 
-static const char *hdrtype_name(int type)
+static char *hdrtype_name(int type)
 {
-	static const char *s[] = {
+	static char *s[] = {
 		"ZRQINIT",
 		"ZRINIT",
 		"ZSINIT",
@@ -247,26 +198,28 @@ static const char *hdrtype_name(int type)
 		return NULL;
 }
 
-static int ZRead1Byte(PFileVarProto fv, PZVar zv, PComVar cv, LPBYTE b)
+int ZRead1Byte(PFileVar fv, PZVar zv, PComVar cv, LPBYTE b)
 {
 	char *s;
 
 	if (CommRead1Byte(cv, b) == 0)
 		return 0;
 
-	if (zv->log != NULL) {
-		TProtoLog *log = zv->log;
-		if (log->LogState == 0) {
+	if (fv->LogFlag) {
+		if (fv->LogState == 0) {
 			// 残りのASCII表示を行う
-			log->DumpFlush(log);
+			fv->FlushLogLineBuf = 1;
+			FTLog1Byte(fv, 0);
+			fv->FlushLogLineBuf = 0;
 
-			show_sendbuf(log);
+			show_sendbuf(fv);
 
-			log->LogState = 1;
+			fv->LogState = 1;
+			fv->LogCount = 0;
 			s = "\015\012<<< Received\015\012";
-			log->WriteRaw(log, s, strlen(s));
+			_lwrite(fv->LogFile, s, strlen(s));
 		}
-		log->DumpByte(log, *b);
+		FTLog1Byte(fv, *b);
 	}
 	/* ignore 0x11, 0x13, 0x81 and 0x83 */
 	if (((*b & 0x7F) == 0x11) || ((*b & 0x7F) == 0x13))
@@ -274,32 +227,34 @@ static int ZRead1Byte(PFileVarProto fv, PZVar zv, PComVar cv, LPBYTE b)
 	return 1;
 }
 
-static int ZWrite(PFileVarProto fv, PZVar zv, PComVar cv, PCHAR B, int C)
+int ZWrite(PFileVar fv, PZVar zv, PComVar cv, PCHAR B, int C)
 {
 	int i, j;
 	char *s;
 
 	i = CommBinaryOut(cv, B, C);
 
-	if (zv->log != NULL && (i > 0)) {
-		TProtoLog* log = zv->log;
-		if (log->LogState != 0) {
+	if (fv->LogFlag && (i > 0)) {
+		if (fv->LogState != 0) {
 			// 残りのASCII表示を行う
-			log->DumpFlush(log);
+			fv->FlushLogLineBuf = 1;
+			FTLog1Byte(fv, 0);
+			fv->FlushLogLineBuf = 0;
 
-			show_recvbuf(log);
+			show_recvbuf(fv);
 
-			log->LogState = 0;
+			fv->LogState = 0;
+			fv->LogCount = 0;
 			s = "\015\012Sending >>>\015\012";
-			log->WriteRaw(log, s, strlen(s));
+			_lwrite(fv->LogFile, s, strlen(s));
 		}
 		for (j = 0; j <= i - 1; j++)
-			log->DumpByte(log, B[j]);
+			FTLog1Byte(fv, B[j]);
 	}
 	return i;
 }
 
-static void ZPutHex(PZVar zv, int *i, BYTE b)
+void ZPutHex(PZVar zv, int *i, BYTE b)
 {
 	if (b <= 0x9f)
 		zv->PktOut[*i] = (b >> 4) + 0x30;
@@ -315,7 +270,7 @@ static void ZPutHex(PZVar zv, int *i, BYTE b)
 	(*i)++;
 }
 
-static void ZShHdr(PZVar zv, BYTE HdrType)
+void ZShHdr(PZVar zv, BYTE HdrType)
 {
 	int i;
 
@@ -355,7 +310,7 @@ static void ZShHdr(PZVar zv, BYTE HdrType)
 #endif
 }
 
-static void ZPutBin(PZVar zv, int *i, BYTE b)
+void ZPutBin(PZVar zv, int *i, BYTE b)
 /*
  * lrzsz では ZDLE(CAN), DLE, XON, XOFF, @ の直後の CR, およびこれらの
  * MSB が立った文字がエスケープ対象となっている。
@@ -406,7 +361,7 @@ static void ZPutBin(PZVar zv, int *i, BYTE b)
 	(*i)++;
 }
 
-static void ZSbHdr(PZVar zv, BYTE HdrType)
+void ZSbHdr(PZVar zv, BYTE HdrType)
 {
 	int i;
 
@@ -429,7 +384,7 @@ static void ZSbHdr(PZVar zv, BYTE HdrType)
 	add_sendbuf("%s: %s ", __FUNCTION__, hdrtype_name(HdrType));
 }
 
-static void ZStoHdr(PZVar zv, LONG Pos)
+void ZStoHdr(PZVar zv, LONG Pos)
 {
 	zv->TxHdr[ZP0] = LOBYTE(LOWORD(Pos));
 	zv->TxHdr[ZP1] = HIBYTE(LOWORD(Pos));
@@ -438,7 +393,7 @@ static void ZStoHdr(PZVar zv, LONG Pos)
 }
 
 
-static LONG ZRclHdr(PZVar zv)
+LONG ZRclHdr(PZVar zv)
 {
 	LONG L;
 
@@ -448,7 +403,7 @@ static LONG ZRclHdr(PZVar zv)
 	return ((L << 8) + (BYTE) (zv->RxHdr[ZP0]));
 }
 
-static void ZSendRInit(PFileVarProto fv, PZVar zv)
+void ZSendRInit(PFileVar fv, PZVar zv)
 {
 	zv->Pos = 0;
 	ZStoHdr(zv, 0);
@@ -456,49 +411,49 @@ static void ZSendRInit(PFileVarProto fv, PZVar zv)
 	if (zv->CtlEsc)
 		zv->TxHdr[ZF0] = zv->TxHdr[ZF0] | ESCCTL;
 	ZShHdr(zv, ZRINIT);
-	fv->FTSetTimeOut(fv, zv->TOutInit);
+	FTSetTimeOut(fv, zv->TOutInit);
 }
 
-static void ZSendRQInit(PFileVarProto fv, PZVar zv, PComVar cv)
+void ZSendRQInit(PFileVar fv, PZVar zv, PComVar cv)
 {
 	ZStoHdr(zv, 0);
 	ZShHdr(zv, ZRQINIT);
 }
 
-static void ZSendRPOS(PFileVarProto fv, PZVar zv)
+void ZSendRPOS(PFileVar fv, PZVar zv)
 {
 	ZStoHdr(zv, zv->Pos);
 	ZShHdr(zv, ZRPOS);
-	fv->FTSetTimeOut(fv, zv->TimeOut);
+	FTSetTimeOut(fv, zv->TimeOut);
 }
 
-static void ZSendACK(PFileVarProto fv, PZVar zv)
+void ZSendACK(PFileVar fv, PZVar zv)
 {
 	ZStoHdr(zv, 0);
 	ZShHdr(zv, ZACK);
-	fv->FTSetTimeOut(fv, zv->TimeOut);
+	FTSetTimeOut(fv, zv->TimeOut);
 }
 
-static void ZSendNAK(PZVar zv)
+void ZSendNAK(PZVar zv)
 {
 	ZStoHdr(zv, 0);
 	ZShHdr(zv, ZNAK);
 }
 
-static void ZSendEOF(PZVar zv)
+void ZSendEOF(PZVar zv)
 {
 	ZStoHdr(zv, zv->Pos);
 	ZShHdr(zv, ZEOF);
 	zv->ZState = Z_SendEOF;
 }
 
-static void ZSendFIN(PZVar zv)
+void ZSendFIN(PZVar zv)
 {
 	ZStoHdr(zv, 0);
 	ZShHdr(zv, ZFIN);
 }
 
-static void ZSendCancel(PZVar zv)
+void ZSendCancel(PZVar zv)
 {
 	int i;
 
@@ -514,7 +469,7 @@ static void ZSendCancel(PZVar zv)
 	add_sendbuf("%s: ", __FUNCTION__);
 }
 
-static void ZSendInitHdr(PZVar zv)
+void ZSendInitHdr(PZVar zv)
 {
 	ZStoHdr(zv, 0);
 	if (zv->CtlEsc)
@@ -523,7 +478,7 @@ static void ZSendInitHdr(PZVar zv)
 	zv->ZState = Z_SendInitHdr;
 }
 
-static void ZSendInitDat(PZVar zv)
+void ZSendInitDat(PZVar zv)
 {
 	zv->CRC = 0;
 	zv->PktOutCount = 0;
@@ -546,7 +501,7 @@ static void ZSendInitDat(PZVar zv)
 	add_sendbuf("%s: ", __FUNCTION__);
 }
 
-static void ZSendFileHdr(PZVar zv)
+void ZSendFileHdr(PZVar zv)
 {
 	ZStoHdr(zv, 0);
 	if (zv->BinFlag)
@@ -557,21 +512,20 @@ static void ZSendFileHdr(PZVar zv)
 	zv->ZState = Z_SendFileHdr;
 }
 
-static void ZSendFileDat(PFileVarProto fv, PZVar zv)
+void ZSendFileDat(PFileVar fv, PZVar zv)
 {
 	int i, j;
-	TFileIO *file = fv->file;
-	char *filename;
 
 	if (!fv->FileOpen) {
 		ZSendCancel(zv);
 		return;
 	}
-	fv->SetDlgProtoFileName(fv, zv->FullName);
+	SetDlgItemText(fv->HWin, IDC_PROTOFNAME, &(fv->FullName[fv->DirLen]));
 
 	/* file name */
-	filename = file->GetSendFilename(file, zv->FullName, FALSE, TRUE, FALSE);
-	strncpy_s(zv->PktOut, sizeof(zv->PktOut), filename, _TRUNCATE);
+	strncpy_s(zv->PktOut, sizeof(zv->PktOut), &(fv->FullName[fv->DirLen]),
+			  _TRUNCATE);
+	FTConvFName(zv->PktOut);	// replace ' ' by '_' in FName
 	zv->PktOutCount = strlen(zv->PktOut);
 	zv->CRC = 0;
 	for (i = 0; i <= zv->PktOutCount - 1; i++)
@@ -579,10 +533,10 @@ static void ZSendFileDat(PFileVarProto fv, PZVar zv)
 	ZPutBin(zv, &(zv->PktOutCount), 0);
 	zv->CRC = UpdateCRC(0, zv->CRC);
 	/* file size */
-	fv->FileSize = file->GetFSize(file, zv->FullName);
+	fv->FileSize = GetFSize(fv->FullName);
 
 	/* timestamp */
-	fv->FileMtime = file->GetFMtime(file, zv->FullName);
+	fv->FileMtime = GetFMtime(fv->FullName);
 
 	// ファイルのタイムスタンプとパーミッションも送るようにした。(2007.12.20 maya, yutaka)
 	_snprintf_s(&(zv->PktOut[zv->PktOutCount]),
@@ -621,22 +575,20 @@ static void ZSendFileDat(PFileVarProto fv, PZVar zv)
 	add_sendbuf("%s: ZFILE: ZF0=%x ZF1=%x ZF2=%x file=%s size=%lu",
 		__FUNCTION__,
 		zv->TxHdr[ZF0], zv->TxHdr[ZF1],zv->TxHdr[ZF2],
-		filename, fv->FileSize);
-	free(filename);
+		&(fv->FullName[fv->DirLen]), fv->FileSize);
 }
 
-static void ZSendDataHdr(PZVar zv)
+void ZSendDataHdr(PZVar zv)
 {
 	ZStoHdr(zv, zv->Pos);
 	ZSbHdr(zv, ZDATA);
 	zv->ZState = Z_SendDataHdr;
 }
 
-static void ZSendDataDat(PFileVarProto fv, PZVar zv)
+void ZSendDataDat(PFileVar fv, PZVar zv)
 {
 	int c;
 	BYTE b;
-	TFileIO *file = fv->file;
 
 	if (zv->Pos >= fv->FileSize) {
 		zv->Pos = fv->FileSize;
@@ -647,12 +599,12 @@ static void ZSendDataDat(PFileVarProto fv, PZVar zv)
 	fv->ByteCount = zv->Pos;
 
 	if (fv->FileOpen && (zv->Pos < fv->FileSize))
-		file->Seek(file, zv->Pos);
+		_llseek(fv->FileHandle, zv->Pos, 0);
 
 	zv->CRC = 0;
 	zv->PktOutCount = 0;
 	do {
-		c = file->ReadFile(file, &b, 1);
+		c = _lread(fv->FileHandle, &b, 1);
 		if (c > 0) {
 			ZPutBin(zv, &(zv->PktOutCount), b);
 			zv->CRC = UpdateCRC(b, zv->CRC);
@@ -691,14 +643,14 @@ static void ZSendDataDat(PFileVarProto fv, PZVar zv)
 	add_sendbuf("%s: ", __FUNCTION__);
 }
 
-static BOOL ZInit(PFileVarProto fv, PComVar cv, PTTSet ts)
-{
+void ZInit(PFileVar fv, PZVar zv, PComVar cv, PTTSet ts) {
 	int Max;
-	PZVar zv = fv->data;
+	char uimsg[MAX_UIMSG];
 
 	zv->CtlEsc = ((ts->FTFlag & FT_ZESCCTL) != 0);
 	zv->MaxDataLen = ts->ZmodemDataLen;
 	zv->WinSize = ts->ZmodemWinSize;
+	fv->LogFlag = ((ts->LogFlag & LOG_Z) != 0);
 
 	if (zv->ZMode == IdZAutoR || zv->ZMode == IdZAutoS) {
 		if (zv->ZMode == IdZAutoR) {
@@ -715,6 +667,24 @@ static BOOL ZInit(PFileVarProto fv, PComVar cv, PTTSet ts)
 		CommInsert1Byte(cv, ZPAD);
 	}
 
+	strncpy_s(fv->DlgCaption, sizeof(fv->DlgCaption), "Tera Term: ",
+			  _TRUNCATE);
+	switch (zv->ZMode) {
+	case IdZSend:
+		get_lang_msg("FILEDLG_TRANS_TITLE_ZSEND", uimsg, sizeof(uimsg),
+					 TitZSend, UILanguageFile);
+		strncat_s(fv->DlgCaption, sizeof(fv->DlgCaption), uimsg,
+				  _TRUNCATE);
+		break;
+	case IdZReceive:
+		get_lang_msg("FILEDLG_TRANS_TITLE_ZRCV", uimsg, sizeof(uimsg),
+					 TitZRcv, UILanguageFile);
+		strncat_s(fv->DlgCaption, sizeof(fv->DlgCaption), uimsg,
+				  _TRUNCATE);
+		break;
+	}
+
+	SetWindowText(fv->HWin, fv->DlgCaption);
 	SetDlgItemText(fv->HWin, IDC_PROTOPROT, "ZMODEM");
 
 	InitDlgProgress(fv->HWin, IDC_PROTOPROGRESS, &fv->ProgStat);
@@ -764,12 +734,10 @@ static BOOL ZInit(PFileVarProto fv, PComVar cv, PTTSet ts)
 	if (zv->MaxDataLen > Max)
 		zv->MaxDataLen = Max;
 
-	if ((ts->LogFlag & LOG_Z) != 0) {
-		TProtoLog* log = ProtoLogCreate();
-		zv->log = log;
-		log->Open(log, "ZMODEM.LOG");
-		log->LogState = 0;
-	}
+	if (fv->LogFlag)
+		fv->LogFile = _lcreat("ZMODEM.LOG", 0);
+	fv->LogState = 0;
+	fv->LogCount = 0;
 
 	switch (zv->ZMode) {
 	case IdZReceive:
@@ -789,13 +757,10 @@ static BOOL ZInit(PFileVarProto fv, PComVar cv, PTTSet ts)
 		ZSendRQInit(fv, zv, cv);
 		break;
 	}
-
-	return TRUE;
 }
 
-static void ZTimeOutProc(PFileVarProto fv, PComVar cv)
+void ZTimeOutProc(PFileVar fv, PZVar zv, PComVar cv)
 {
-	PZVar zv = fv->data;
 	switch (zv->ZState) {
 	case Z_RecvInit:
 		ZSendRInit(fv, zv);
@@ -812,7 +777,7 @@ static void ZTimeOutProc(PFileVarProto fv, PComVar cv)
 	}
 }
 
-static BOOL ZCheckHdr(PFileVarProto fv, PZVar zv)
+BOOL ZCheckHdr(PFileVar fv, PZVar zv)
 {
 	int i;
 	BOOL Ok;
@@ -846,36 +811,32 @@ static BOOL ZCheckHdr(PFileVarProto fv, PZVar zv)
 	return Ok;
 }
 
-static void ZParseRInit(PFileVarProto fv, PZVar zv)
+void ZParseRInit(PFileVar fv, PZVar zv)
 {
 	int Max;
-	TFileIO *file = fv->file;
-	char *filename;
 
 	if ((zv->ZState != Z_SendInit) && (zv->ZState != Z_SendEOF))
 		return;
 
 	if (fv->FileOpen)			// close previous file
 	{
-		file->Close(file);
+		_lclose(fv->FileHandle);
 		fv->FileOpen = FALSE;
 
 		if (fv->FileMtime > 0) {
-			file->SetFMtime(file, zv->FullName, fv->FileMtime);
+			SetFMtime(fv->FullName, fv->FileMtime);
 		}
 	}
 
-	filename = fv->GetNextFname(fv);
-	if (filename == NULL) {
+	if (!GetNextFname(fv)) {
 		zv->ZState = Z_SendFIN;
 		ZSendFIN(zv);
 		return;
 	}
-	free((void *)zv->FullName);
-	zv->FullName = filename;
 
 	/* file open */
-	fv->FileOpen = file->OpenRead(file, zv->FullName);
+	fv->FileHandle = _lopen(fv->FullName, OF_READ);
+	fv->FileOpen = fv->FileHandle != INVALID_HANDLE_VALUE;
 
 	if (zv->CtlEsc) {
 		if ((zv->RxHdr[ZF0] & ESCCTL) == 0) {
@@ -896,7 +857,7 @@ static void ZParseRInit(PFileVarProto fv, PZVar zv)
 	ZSendFileHdr(zv);
 }
 
-static BOOL ZParseSInit(PZVar zv)
+BOOL ZParseSInit(PZVar zv)
 {
 	if (zv->ZState != Z_RecvInit)
 		return FALSE;
@@ -905,9 +866,8 @@ static BOOL ZParseSInit(PZVar zv)
 	return TRUE;
 }
 
-static void ZParseHdr(PFileVarProto fv, PZVar zv, PComVar cv)
+void ZParseHdr(PFileVar fv, PZVar zv, PComVar cv)
 {
-	TFileIO *file = fv->file;
 	add_recvbuf("%s: RxType %s ", __FUNCTION__, hdrtype_name(zv->RxType));
 
 	switch (zv->RxType) {
@@ -921,7 +881,7 @@ static void ZParseHdr(PFileVarProto fv, PZVar zv, PComVar cv)
 	case ZSINIT:
 		zv->ZPktState = Z_PktGetData;
 		if (zv->ZState == Z_RecvInit)
-			fv->FTSetTimeOut(fv, zv->TOutInit);
+			FTSetTimeOut(fv, zv->TOutInit);
 		break;
 	case ZACK:
 		switch (zv->ZState) {
@@ -943,12 +903,12 @@ static void ZParseHdr(PFileVarProto fv, PZVar zv, PComVar cv)
 		zv->ZPktState = Z_PktGetData;
 		if ((zv->ZState == Z_RecvInit) || (zv->ZState == Z_RecvInit2)) {
 			zv->BinFlag = zv->RxHdr[ZF0] != ZCNL;
-			fv->FTSetTimeOut(fv, zv->TOutInit);
+			FTSetTimeOut(fv, zv->TOutInit);
 		}
 		break;
 	case ZSKIP:
 		if (fv->FileOpen) {
-			file->Close(file);
+			_lclose(fv->FileHandle);
 			// サーバ側に存在するファイルを送信しようとすると、ZParseRInit()で二重closeになるため、
 			// ここでフラグを落としておく。 (2007.12.20 yutaka)
 			fv->FileOpen = FALSE;
@@ -984,7 +944,7 @@ static void ZParseHdr(PFileVarProto fv, PZVar zv, PComVar cv)
 			zv->ZState = Z_RecvFIN;
 			ZSendFIN(zv);
 			zv->CanCount = 2;
-			fv->FTSetTimeOut(fv, zv->TOutFin);
+			FTSetTimeOut(fv, zv->TOutFin);
 		} else {
 			zv->ZState = Z_End;
 			ZWrite(fv, zv, cv, "OO", 2);
@@ -1009,7 +969,7 @@ static void ZParseHdr(PFileVarProto fv, PZVar zv, PComVar cv)
 			ZSendRPOS(fv, zv);
 			return;
 		} else {
-			fv->FTSetTimeOut(fv, zv->TimeOut);
+			FTSetTimeOut(fv, zv->TimeOut);
 			zv->ZPktState = Z_PktGetData;
 		}
 		break;
@@ -1021,13 +981,13 @@ static void ZParseHdr(PFileVarProto fv, PZVar zv, PComVar cv)
 			if (fv->FileOpen) {
 				if (zv->CRRecv) {
 					zv->CRRecv = FALSE;
-					file->WriteFile(file, "\012", 1);
+					_lwrite(fv->FileHandle, "\012", 1);
 				}
-				file->Close(file);
+				_lclose(fv->FileHandle);
 				fv->FileOpen = FALSE;
 
 				if (fv->FileMtime > 0) {
-					file->SetFMtime(file, zv->FullName, fv->FileMtime);
+					SetFMtime(fv->FullName, fv->FileMtime);
 				}
 			}
 			zv->ZState = Z_RecvInit;
@@ -1042,56 +1002,28 @@ static void ZParseHdr(PFileVarProto fv, PZVar zv, PComVar cv)
 	zv->PktInCount = 0;
 }
 
-static BOOL FTCreateFile(PFileVarProto fv)
-{
-	TFileIO *file = fv->file;
-	PZVar zv = fv->data;
-
-	fv->SetDlgProtoFileName(fv, zv->FullName);
-	fv->FileOpen = file->OpenWrite(file, zv->FullName);
-	if (! fv->FileOpen) {
-		if (fv->NoMsg) {
-			MessageBox(fv->HMainWin,"Cannot create file",
-					   "Tera Term: Error",MB_ICONEXCLAMATION);
-		}
-		return FALSE;
-	}
-
-	fv->ByteCount = 0;
-	fv->FileSize = 0;
-	if (fv->ProgStat != -1) {
-		fv->ProgStat = 0;
-	}
-	fv->StartTime = GetTickCount();
-
-	return TRUE;
-}
-
-static BOOL ZParseFile(PFileVarProto fv, PZVar zv)
+BOOL ZParseFile(PFileVar fv, PZVar zv)
 {
 	BYTE b;
-	int i;
+	int i, j;
 	char *p;
 	long modtime;
 	int mode;
 	int ret;
-	TFileIO* file = fv->file;
-	char *RecievePath;
 
 	if ((zv->ZState != Z_RecvInit) && (zv->ZState != Z_RecvInit2))
 		return FALSE;
 	/* kill timer */
-	fv->FTSetTimeOut(fv, 0);
+	FTSetTimeOut(fv, 0);
 	zv->CRRecv = FALSE;
 
 	/* file name */
 	zv->PktIn[zv->PktInPtr] = 0;	/* for safety */
 
-	RecievePath = fv->GetRecievePath(fv);
-	free((void *)zv->FullName);
-	zv->FullName = file->GetRecieveFilename(file, zv->PktIn, FALSE, RecievePath, !fv->OverWrite);
-	free(RecievePath);
-
+	GetFileNamePos(zv->PktIn, &i, &j);
+	strncpy_s(&(fv->FullName[fv->DirLen]),
+			  sizeof(fv->FullName) - fv->DirLen, &(zv->PktIn[j]),
+			  _TRUNCATE);
 	/* file open */
 	if (!FTCreateFile(fv))
 		return FALSE;
@@ -1108,7 +1040,7 @@ static BOOL ZParseFile(PFileVarProto fv, PZVar zv)
 	/* file mtime */
 	p = zv->PktIn + i;
 	if (*p) {
-		ret = sscanf_s(p, "%lo%o", &modtime, &mode);
+		ret = sscanf(p, "%lo%o", &modtime, &mode);
 		if (ret >= 1) {
 			fv->FileMtime = modtime;
 		}
@@ -1126,32 +1058,31 @@ static BOOL ZParseFile(PFileVarProto fv, PZVar zv)
 	SetDlgTime(fv->HWin, IDC_PROTOELAPSEDTIME, GetTickCount(), fv->ByteCount);
 
 	/* set timeout for data */
-	fv->FTSetTimeOut(fv, zv->TimeOut);
+	FTSetTimeOut(fv, zv->TimeOut);
 	return TRUE;
 }
 
-static BOOL ZWriteData(PFileVarProto fv, PZVar zv)
+BOOL ZWriteData(PFileVar fv, PZVar zv)
 {
-	TFileIO *file = fv->file;
 	int i;
 	BYTE b;
 
 	if (zv->ZState != Z_RecvData)
 		return FALSE;
 	/* kill timer */
-	fv->FTSetTimeOut(fv, 0);
+	FTSetTimeOut(fv, 0);
 
 	if (zv->BinFlag)
-		file->WriteFile(file, zv->PktIn, zv->PktInPtr);
+		_lwrite(fv->FileHandle, zv->PktIn, zv->PktInPtr);
 	else
 		for (i = 0; i <= zv->PktInPtr - 1; i++) {
 			b = zv->PktIn[i];
 			if ((b == 0x0A) && (!zv->CRRecv))
-				file->WriteFile(file, "\015", 1);
+				_lwrite(fv->FileHandle, "\015", 1);
 			if (zv->CRRecv && (b != 0x0A))
-				file->WriteFile(file, "\012", 1);
+				_lwrite(fv->FileHandle, "\012", 1);
 			zv->CRRecv = b == 0x0D;
-			file->WriteFile(file, &b, 1);
+			_lwrite(fv->FileHandle, &b, 1);
 		}
 
 	fv->ByteCount = fv->ByteCount + zv->PktInPtr;
@@ -1164,11 +1095,11 @@ static BOOL ZWriteData(PFileVarProto fv, PZVar zv)
 	SetDlgTime(fv->HWin, IDC_PROTOELAPSEDTIME, fv->StartTime, fv->ByteCount);
 
 	/* set timeout for data */
-	fv->FTSetTimeOut(fv, zv->TimeOut);
+	FTSetTimeOut(fv, zv->TimeOut);
 	return TRUE;
 }
 
-static void ZCheckData(PFileVarProto fv, PZVar zv)
+void ZCheckData(PFileVar fv, PZVar zv)
 {
 	BOOL Ok;
 
@@ -1240,9 +1171,8 @@ static void ZCheckData(PFileVarProto fv, PZVar zv)
 	}
 }
 
-static BOOL ZParse(PFileVarProto fv, PComVar cv)
+BOOL ZParse(PFileVar fv, PZVar zv, PComVar cv)
 {
-	PZVar zv = fv->data;
 	BYTE b;
 	int c;
 
@@ -1489,61 +1419,7 @@ static BOOL ZParse(PFileVarProto fv, PComVar cv)
 	return TRUE;
 }
 
-static void ZCancel(PFileVarProto fv, PComVar cv)
+void ZCancel(PZVar zv)
 {
-	PZVar zv = fv->data;
-	(void)cv;
 	ZSendCancel(zv);
-}
-
-static int SetOptV(PFileVarProto fv, int request, va_list ap)
-{
-	PZVar zv = fv->data;
-	switch(request) {
-	case ZMODEM_MODE: {
-		int Mode = va_arg(ap, int);
-		zv->ZMode = Mode;
-		return 0;
-	}
-	case ZMODEM_BINFLAG: {
-		BOOL BinFlag = va_arg(ap, BOOL);
-		zv->BinFlag = BinFlag;
-		return 0;
-	}
-	}
-	return -1;
-}
-
-static void Destroy(PFileVarProto fv)
-{
-	PZVar zv = fv->data;
-	if (zv->log != NULL) {
-		TProtoLog* log = zv->log;
-		log->Destory(log);
-		zv->log = NULL;
-	}
-	free((void *)zv->FullName);
-	zv->FullName = NULL;
-	free(zv);
-	fv->data = NULL;
-}
-
-BOOL ZCreate(PFileVarProto fv)
-{
-	PZVar zv;
-	zv = malloc(sizeof(TZVar));
-	if (zv == NULL) {
-		return FALSE;
-	}
-	memset(zv, 0, sizeof(*zv));
-	fv->data = zv;
-
-	fv->Destroy = Destroy;
-	fv->Init = ZInit;
-	fv->Parse = ZParse;
-	fv->TimeOutProc = ZTimeOutProc;
-	fv->Cancel = ZCancel;
-	fv->SetOptV = SetOptV;
-
-	return TRUE;
 }

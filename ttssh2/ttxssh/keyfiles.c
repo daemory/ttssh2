@@ -52,23 +52,6 @@ See LICENSE.TXT for the license.
 
 static char ID_string[] = "SSH PRIVATE KEY FILE FORMAT 1.1\n";
 
-typedef struct keyfile_header {
-	ssh2_keyfile_type type;
-	char *header;
-} keyfile_header_t;
-
-static keyfile_header_t keyfile_headers[] = {
-	{SSH2_KEYFILE_TYPE_OPENSSH, "-----BEGIN RSA PRIVATE KEY-----"},
-	{SSH2_KEYFILE_TYPE_OPENSSH, "-----BEGIN DSA PRIVATE KEY-----"},
-	{SSH2_KEYFILE_TYPE_OPENSSH, "-----BEGIN EC PRIVATE KEY-----"},
-	{SSH2_KEYFILE_TYPE_OPENSSH, "-----BEGIN ENCRYPTED PRIVATE KEY-----"},
-	{SSH2_KEYFILE_TYPE_OPENSSH, "-----BEGIN PRIVATE KEY-----"},
-	{SSH2_KEYFILE_TYPE_OPENSSH, "-----BEGIN OPENSSH PRIVATE KEY-----"},	
-	{SSH2_KEYFILE_TYPE_PUTTY,   "PuTTY-User-Key-File-2"},
-	{SSH2_KEYFILE_TYPE_SECSH,   "---- BEGIN SSH2 ENCRYPTED PRIVATE KEY ----"},
-	{SSH2_KEYFILE_TYPE_NONE,    NULL},
-};
-
 static BIGNUM *get_bignum(unsigned char *bytes)
 {
 	int bits = get_ushort16_MSBfirst(bytes);
@@ -396,7 +379,7 @@ static Key *read_SSH2_private2_key(PTInstVar pvar,
 	unsigned int len, klen, nkeys, blocksize, keylen, ivlen, slen, rounds;
 	unsigned int check1, check2, m1len, m2len; 
 	int dlen, i;
-	const SSH2Cipher *cipher;
+	SSH2Cipher *cipher;
 	size_t authlen;
 	EVP_CIPHER_CTX *cipher_ctx = NULL;
 	int ret;

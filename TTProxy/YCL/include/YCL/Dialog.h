@@ -5,11 +5,14 @@
 #ifndef _YCL_DIALOG_H_
 #define _YCL_DIALOG_H_
 
+#if _MSC_VER >= 1000
 #pragma once
+#endif // _MSC_VER >= 1000
 
 #include <YCL/common.h>
 
 #include <YCL/Window.h>
+#include <YCL/Hashtable.h>
 
 #include "dlglib.h"
 
@@ -17,6 +20,11 @@ namespace yebisuya {
 
 class Dialog : virtual public Window {
 protected:
+	typedef Hashtable<HWND, Dialog*> Map;
+	static Map& getMap() {
+		static Map map;
+		return map;
+	}
 	static Dialog* prepareOpen(Dialog* next) {
 		static Dialog* initializeing = NULL;
 		Dialog* prev = initializeing;
@@ -24,16 +32,18 @@ protected:
 		return prev;
 	}
 	static INT_PTR CALLBACK DialogProc(HWND dialog, UINT message, WPARAM wParam, LPARAM lParam) {
-		Dialog* target = (Dialog *)::GetWindowLongPtr(dialog, GWLP_USERDATA);
+		Map& map = getMap();
+		Dialog* target = map.get(dialog);
 		if (target == NULL) {
 			target = prepareOpen(NULL);
 			if (target != NULL) {
 				*target <<= dialog;
-				::SetWindowLongPtr(dialog, GWLP_USERDATA, (LONG_PTR)target);
+				map.put(dialog, target);
 			}
 		}
 		BOOL result = target != NULL ? target->dispatch(message, wParam, lParam) : FALSE;
 		if (message == WM_NCDESTROY) {
+			map.remove(dialog);
 			if (target != NULL)
 				*target <<= NULL;
 		}

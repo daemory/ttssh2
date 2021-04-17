@@ -29,18 +29,19 @@
 
 /* TERATERM.EXE, Clipboard routines */
 
-#include "unicode_test.h"
-
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 /* prototypes */
-
-
+PCHAR CBOpen(LONG MemSize);
+void CBClose();
+void CBStartSend(PCHAR DataPtr, int DataSize, BOOL EchoOnly);
 void CBStartPaste(HWND HWin, BOOL AddCR, BOOL Bracketed);
 void CBStartPasteB64(HWND HWin, PCHAR header, PCHAR footer);
-
+void CBSend();
+void CBEcho();
+void CBEndPaste();
 
 #ifdef __cplusplus
 }

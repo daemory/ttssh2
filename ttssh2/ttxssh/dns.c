@@ -32,7 +32,6 @@
 #include "ssh.h"
 #include "key.h"
 #include "dns.h"
-#include "compat_windns.h"	//#include <windns.h>
 
 int is_numeric_hostname(const char *hostname)
 {
@@ -64,7 +63,7 @@ int verify_hostkey_dns(PTInstVar pvar, char *hostname, Key *key)
 	BYTE *hostkey_digest = NULL;
 	int found = DNS_VERIFY_NOTFOUND;
 
-	if (pDnsQuery_A == NULL) {
+	if (!HasDnsQuery()) {
 		// DnsQuery ‚Í Windows 2000 ˆÈã‚Å‚µ‚©“®ì‚µ‚È‚¢‚½‚ß
 		return DNS_VERIFY_NONE;
 	}
@@ -89,7 +88,7 @@ int verify_hostkey_dns(PTInstVar pvar, char *hostname, Key *key)
 	}
 	logprintf(LOG_LEVEL_VERBOSE, "verify_hostkey_dns: key type = %d, SSHFP type = %d", key->type, hostkey_alg);
 
-	status = pDnsQuery_A(hostname, DNS_TYPE_SSHFP, DNS_QUERY_STANDARD, NULL, &rec, NULL);
+	status = DnsQuery(hostname, DNS_TYPE_SSHFP, DNS_QUERY_STANDARD, NULL, &rec, NULL);
 
 	if (status == 0) {
 		for (p=rec; p!=NULL; p=p->pNext) {
@@ -154,7 +153,7 @@ int verify_hostkey_dns(PTInstVar pvar, char *hostname, Key *key)
 				logprintf(LOG_LEVEL_VERBOSE, "verify_hostkey_dns: not SSHFP RR (%d)", p->wType);
 			}
 		}
-		pDnsFree(rec, DnsFreeRecordList);
+		DnsRecordListFree(rec, DnsFreeRecordList);
 	}
 	else {
 		logputs(LOG_LEVEL_VERBOSE, "verify_hostkey_dns: DnsQuery failed.");
