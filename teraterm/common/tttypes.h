@@ -33,7 +33,6 @@
 #include <locale.h>
 #include "teraterm.h"
 #include "tt-version.h"
-#include "../teraterm/unicode_test.h"
 
 #define IdBreakTimer         1
 #define IdDelayTimer         2
@@ -46,24 +45,56 @@
 #define IdPrnProcTimer       9
 #define IdCancelConnectTimer 10  // add (2007.1.10 yutaka)
 #define IdPasteDelayTimer    11
+#define IdScpSendingTimer    12
 
   /* Window Id */
 #define IdVT  1
 #define IdTEK 2
 
   /* Talker mode */
-typedef enum {
-	IdTalkKeyb = 0,
-	IdTalkFile = 2,
-	IdTalkQuiet = 3,
-	IdTalkSendMem,
-} IdTalk;
+#define IdTalkKeyb  0
+#define IdTalkCB    1
+#define IdTalkFile  2
+#define IdTalkQuiet 3
 
   /* Character sets */
 #define IdASCII    0
 #define IdKatakana 1
 #define IdKanji    2
 #define IdSpecial  3
+
+  /* Character attribute bit masks */
+#define AttrDefault       0x00
+#define AttrDefaultFG     0x00
+#define AttrDefaultBG     0x00
+#define AttrBold          0x01
+#define AttrUnder         0x02
+#define AttrSpecial       0x04
+#define AttrFontMask      0x07
+#define AttrBlink         0x08
+#define AttrReverse       0x10
+#define AttrLineContinued 0x20 /* valid only at the beggining or end of a line */
+/* begin - ishizaki */
+#define AttrURL           0x40
+/* end - ishizaki */
+#define AttrKanji         0x80
+  /* Color attribute bit masks */
+#define Attr2Fore         0x01
+#define Attr2Back         0x02
+#define AttrSgrMask       (AttrBold | AttrUnder | AttrBlink | AttrReverse)
+#define AttrColorMask     (AttrBold | AttrBlink | AttrReverse)
+#define Attr2ColorMask    (Attr2Fore | Attr2Back)
+
+#define Attr2Protect      0x04
+
+typedef struct {
+	BYTE Attr;
+	BYTE Attr2;
+	BYTE Fore;
+	BYTE Back;
+} TCharAttr;
+
+typedef TCharAttr *PCharAttr;
 
   /* Color codes */
 #define IdBack    0
@@ -96,6 +127,35 @@ typedef enum {
 #define CS_UNSPEC          0xffffffff
 #define CS_ALL             CS_UNSPEC
 
+  /* Kermit function id */
+#define IdKmtReceive 1
+#define IdKmtGet     2
+#define IdKmtSend    3
+#define IdKmtFinish  4
+
+  /* XMODEM function id */
+#define IdXReceive 1
+#define IdXSend    2
+
+  /* YMODEM function id */
+#define IdYReceive 1
+#define IdYSend    2
+
+  /* ZMODEM function id */
+#define IdZReceive 1
+#define IdZSend    2
+#define IdZAutoR   3
+#define IdZAutoS   4
+
+  /* B-Plus function id */
+#define IdBPReceive 1
+#define IdBPSend    2
+#define IdBPAuto    3
+
+  /* Quick-VAN function id */
+#define IdQVReceive 1
+#define IdQVSend    2
+
 #define HostNameMaxLength 1024
 //#define HostNameMaxLength 80
 #define ProtocolFamilyMaxLength 80
@@ -109,7 +169,7 @@ typedef enum {
 #define WM_USER_COMMSTART    WM_USER+6
 #define WM_USER_DLGHELP2     WM_USER+7
 #define WM_USER_GETHOST      WM_USER+8
-//#define WM_USER_FTCANCEL     WM_USER+9
+#define WM_USER_FTCANCEL     WM_USER+9
 #define WM_USER_PROTOCANCEL  WM_USER+10
 #define WM_USER_CHANGETBAR   WM_USER+11
 #define WM_USER_KEYCODE      WM_USER+12
@@ -159,17 +219,23 @@ typedef enum {
 #define IdRussian  3
 #define IdKorean   4  //HKS
 #define IdUtf8     5
-#define	IdChinese  6
-#define IdLangMax  IdChinese
+#define IdLangMax IdUtf8
 
 // LogDialog Option
 #define LOGDLG_BINARY          1
-
-// log rotate mode
-enum rotate_mode {
-	ROTATE_NONE,
-	ROTATE_SIZE
-};
+#define LOGDLG_APPEND          (1 << 1)
+#define LOGDLG_PLAINTEXT       (1 << 2)
+#define LOGDLG_TIMESTAMP       (1 << 3)
+#define LOGDLG_HIDEDIALOG      (1 << 4)
+#define LOGDLG_INCSCRBUFF      (1 << 5)
+#define LOGDLG_UTC             (1 << 6)
+#define LOGDLG_ELAPSED         (1 << 7)
+/*
+ * ELAPSED TIME の時は LOGDLG_UTC を経過時間の基準を表すフラグとする
+ * LOGDLG_ELAPSEDCON == 0 => ログ開始から
+ * LOGDLG_ELAPSEDCON == 1 => 接続開始から
+ */
+#define LOGDLG_ELAPSEDCON      LOGDLG_UTC
 
 // Log Timestamp Type
 enum LogTimestampType {
@@ -179,7 +245,7 @@ enum LogTimestampType {
     TIMESTAMP_ELAPSED_CONNECTED
 };
 
-// log flags (used in ts.LogFlag)
+// log flags (used in ts.LogFlag) 
 #define LOG_TEL 1
 #define LOG_KMT 2
 #define LOG_X   4
@@ -302,6 +368,7 @@ enum LogTimestampType {
 #define CPF_CONFIRM_CHANGEPASTE    0x0010
 #define CPF_CONFIRM_CHANGEPASTE_CR 0x0020
 #define CPF_TRIM_TRAILING_NL       0x0100
+#define CPF_NORMALIZE_LINEBREAK    0x0200
 
 // Title Reporting Type
 #define IdTitleReportIgnore 0
@@ -339,7 +406,7 @@ typedef struct {
 	int BGNoCopyBits;
 	int BGNoFrame;
 	char BGThemeFile[MAX_PATH];
-	int BGIgnoreThemeFile;
+	// int BGIgnoreThemeFile;	// tttset に移動
 } eterm_lookfeel_t;
 
 typedef struct cygterm {
@@ -642,9 +709,7 @@ struct tttset {
 	int ConfigVersion;
 	int RunningVersion;
 	DWORD SelectStartDelay;
-	BYTE UnicodeAmbiguousWidth;
-	BYTE UnicodeEmojiOverride;
-	BYTE UnicodeEmojiWidth;
+	int EtermLookfeel_BGIgnoreThemeFile;	// eterm_lookfeel_t のメンバーだった
 };
 
 typedef struct tttset TTTSet, *PTTSet;
@@ -670,33 +735,17 @@ typedef struct tttset TTTSet, *PTTSet;
 #define IdVT525  12
 
   /* Kanji Code ID */
-  /*  ts.KanjiCode, ts.KanjiCodeSend の値 */
-
-// ts.Language == IdEnglish
-#define IdCodeEnglish	1
-
-// ts.Language == IdJapanese
 #define IdSJIS  1
 #define IdEUC   2
 #define IdJIS   3
-#define IdUTF8  4		// IdUtf8 (小文字)は ts.Language 用
+#define IdUTF8  4
 #define IdUTF8m 5
 
-// ts.Language == IdRussian
 // Russian code sets
 #define IdWindows 1
 #define IdKOI8    2
 #define Id866     3
 #define IdISO     4
-
-// ts.Language == IdKorean
-// Korean
-#define	IdKoreanCP51949 1	// CP51949, KS5601
-
-// ts.Language == IdChinese
-// China
-#define	IdCnGB2312		1	// 1 CP936, GB2312
-#define	IdCnBig5		2	// 2 CP950, Big5
 
   /* KanjiIn modes */
 #define IdKanjiInA 1
@@ -783,7 +832,7 @@ typedef struct tttset TTTSet, *PTTSet;
 typedef struct {
 	PCHAR SetupFN; // setup file name
 	WORD PortType; // TCPIP/Serial
-	PCHAR HostName; // host name
+	PCHAR HostName; // host name 
 	WORD Telnet; // non-zero: enable telnet
 	WORD TelPort; // default TCP port# for telnet
 	WORD TCPPort; // TCP port #
@@ -792,6 +841,124 @@ typedef struct {
 	WORD MaxComPort; // max serial port #
 } TGetHNRec;
 typedef TGetHNRec *PGetHNRec;
+
+/* Tera Term internal key codes */
+#define IdUp               1
+#define IdDown             2
+#define IdRight            3
+#define IdLeft             4
+#define Id0                5
+#define Id1                6
+#define Id2                7
+#define Id3                8
+#define Id4                9
+#define Id5               10
+#define Id6               11
+#define Id7               12
+#define Id8               13
+#define Id9               14
+#define IdMinus           15
+#define IdComma           16
+#define IdPeriod          17
+#define IdSlash           18
+#define IdAsterisk        19
+#define IdPlus            20
+#define IdEnter           21
+#define IdPF1             22
+#define IdPF2             23
+#define IdPF3             24
+#define IdPF4             25
+#define IdFind            26
+#define IdInsert          27
+#define IdRemove          28
+#define IdSelect          29
+#define IdPrev            30
+#define IdNext            31
+#define IdF6              32
+#define IdF7              33
+#define IdF8              34
+#define IdF9              35
+#define IdF10             36
+#define IdF11             37
+#define IdF12             38
+#define IdF13             39
+#define IdF14             40
+#define IdHelp            41
+#define IdDo              42
+#define IdF17             43
+#define IdF18             44
+#define IdF19             45
+#define IdF20             46
+#define IdXF1             47
+#define IdXF2             48
+#define IdXF3             49
+#define IdXF4             50
+#define IdXF5             51
+#define IdUDK6            52
+#define IdUDK7            53
+#define IdUDK8            54
+#define IdUDK9            55
+#define IdUDK10           56
+#define IdUDK11           57
+#define IdUDK12           58
+#define IdUDK13           59
+#define IdUDK14           60
+#define IdUDK15           61
+#define IdUDK16           62
+#define IdUDK17           63
+#define IdUDK18           64
+#define IdUDK19           65
+#define IdUDK20           66
+#define IdHold            67
+#define IdPrint           68
+#define IdBreak           69
+#define IdXBackTab        70
+#define IdCmdEditCopy     71
+#define IdCmdEditPaste    72
+#define IdCmdEditPasteCR  73
+#define IdCmdEditCLS      74
+#define IdCmdEditCLB      75
+#define IdCmdCtrlOpenTEK  76
+#define IdCmdCtrlCloseTEK 77
+#define IdCmdLineUp       78
+#define IdCmdLineDown     79
+#define IdCmdPageUp       80
+#define IdCmdPageDown     81
+#define IdCmdBuffTop      82
+#define IdCmdBuffBottom   83
+#define IdCmdNextWin      84
+#define IdCmdPrevWin      85
+#define IdCmdNextSWin     86
+#define IdCmdPrevSWin     87
+#define IdCmdLocalEcho    88
+#define IdCmdScrollLock   89
+#define IdUser1           90
+#define NumOfUDK          IdUDK20-IdUDK6+1
+#define NumOfUserKey      99
+#define IdKeyMax          IdUser1+NumOfUserKey-1
+
+// key code for macro commands
+#define IdCmdDisconnect   1000
+#define IdCmdLoadKeyMap   1001
+#define IdCmdRestoreSetup 1002
+
+#define KeyStrMax 1023
+
+// (user) key type IDs
+#define IdBinary  0  // transmit text without any modification
+#define IdText    1  // transmit text with new-line & DBCS conversions
+#define IdMacro   2  // activate macro
+#define IdCommand 3  // post a WM_COMMAND message
+
+typedef struct {
+	WORD Map[IdKeyMax];
+	/* user key str position/length in buffer */
+	int UserKeyPtr[NumOfUserKey], UserKeyLen[NumOfUserKey];
+	BYTE UserKeyStr[KeyStrMax+1];
+	/* user key type */
+	BYTE UserKeyType[NumOfUserKey];
+} TKeyMap;
+typedef TKeyMap *PKeyMap;
 
 /* Control Characters */
 
@@ -913,24 +1080,23 @@ typedef struct {
 	BOOL TelAutoDetect; /* TTPLUG */
 
 	/* Text log */
-	HANDLE reserve_2;		// HLogBuf;
-	PCHAR reserve_4;		// LogBuf;
-	int reserve_5[3];		// LogPtr, LStart, LCount;
-	/* Binary log */
-	HANDLE reserve_3;		// HBinBuf;
-	PCHAR reserve_6;		// BinBuf;
-	int reserve_7[3];		// BinPtr, BStart, BCount;
-	int reserve_1[2];		// DStart, DCount;
-	int reserve_8;			// BinSkip;
-	WORD reserve_9;			// FilePause;
-	BOOL reserve_10;		// ProtoFlag;
+	HANDLE HLogBuf;
+	PCHAR LogBuf;
+	int LogPtr, LStart, LCount;
+	/* Binary log & DDE */
+	HANDLE HBinBuf;
+	PCHAR BinBuf;
+	int BinPtr, BStart, BCount, DStart, DCount;
+	int BinSkip;
+	WORD FilePause;
+	BOOL ProtoFlag;
 	/* message flag */
 	WORD NoMsg;
 	/* if TRUE, teraterm trys to connect other protocol family */
 	BOOL RetryWithOtherProtocol;
 	struct addrinfo * res0;
 	struct addrinfo * res;
-	char *reserve_11;	// Locale
+	char *Locale;
 	int *CodePage;
 	int *ConnetingTimeout;
 
@@ -943,16 +1109,12 @@ typedef struct {
 	BOOL Flush;
 
 	BOOL TelLineMode;
-	void *reserve_12;	// _locale_t locale
+	_locale_t locale;
 	BOOL VirtualStoreEnabled;
 
-	void *NotifyIcon;
+	NOTIFYICONDATA *NotifyIcon;
 
 	DWORD ConnectedTime;
-
-	void (*Log1Byte)(BYTE b);
-	void (*Log1Bin)(BYTE b);
-	void (*LogBinSkip)(int add);
 } TComVar;
 typedef TComVar *PComVar;
 
@@ -978,3 +1140,28 @@ typedef TComVar *PComVar;
 #define MAXNWIN 256
 #define MAXCOMPORT 4096
 #define MAXHOSTLIST 500
+
+/* shared memory */
+typedef struct {
+	size_t size_tmap;		/* sizeof TMap */
+	size_t size_tttset;		/* sizeof TTTSet */
+	/* Setup information from "teraterm.ini" */
+	TTTSet ts;
+	/* Key code map from "keyboard.def" */
+	TKeyMap km;
+	// Window list
+	int NWin;
+	HWND WinList[MAXNWIN];
+	/* COM port use flag
+	 *           bit 8  7  6  5  4  3  2  1
+	 * char[0] : COM 8  7  6  5  4  3  2  1
+	 * char[1] : COM16 15 14 13 12 11 10  9 ...
+	 */
+	unsigned char ComFlag[(MAXCOMPORT-1)/CHAR_BIT+1];
+	/* Previous window rect (Tera Term 4.78 or later) */
+	WINDOWPLACEMENT WinPrevRect[MAXNWIN];
+	BOOL WinUndoFlag;
+	int WinUndoStyle;
+} TMap;
+typedef TMap *PMap;
+

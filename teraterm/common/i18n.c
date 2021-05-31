@@ -29,63 +29,54 @@
 #include "i18n.h"
 #include "ttlib.h"
 #include "codeconv.h"
-#include "compat_win.h"
 
 #include <assert.h>
+#include <tchar.h>
 
-/**
- *	GetI18nStr() の unicode版
- *	@param[in]	buf_len		文字数(\0含む)
- *	@reterm		バッファの文字数(L'\0'を含む)
- */
-DllExport size_t WINAPI GetI18nStrW(const char *section, const char *key, wchar_t *buf, int buf_len, const wchar_t *def,
-									const char *iniFile)
+#if defined(UNICODE)
+DllExport void GetI18nStrW(const char *section, const char *key, wchar_t *buf, int buf_len, const wchar_t *def, const char *iniFile)
 {
-	size_t size;
-	if (pGetPrivateProfileStringW != NULL) {
-		wchar_t sectionW[64];
-		wchar_t keyW[128];
-		wchar_t iniFileW[MAX_PATH];
-		MultiByteToWideChar(CP_ACP, 0, section, -1, sectionW, _countof(sectionW));
-		MultiByteToWideChar(CP_ACP, 0, key, -1, keyW, _countof(keyW));
-		MultiByteToWideChar(CP_ACP, 0, iniFile, -1, iniFileW, _countof(iniFileW));
-		// The return value is the number of characters copied to the buffer,
-		// not including the terminating null character.
-		size = pGetPrivateProfileStringW(sectionW, keyW, def, buf, buf_len, iniFileW);
-		if (size == 0 && def == NULL) {
-			buf[0] = 0;
-		}
-	}
-	else {
-		char tmp[MAX_UIMSG];
-		char defA[MAX_UIMSG];
-		WideCharToMultiByte(CP_ACP, 0, def, -1, defA, _countof(defA), NULL, NULL);
-		size = GetPrivateProfileStringA(section, key, defA, tmp, _countof(tmp), iniFile);
-		if (size == 0 && def == NULL) {
-			buf[0] = 0;
-		}
-		MultiByteToWideChar(CP_ACP, 0, tmp, -1, buf, buf_len);
-	}
-	size = RestoreNewLineW(buf);
-	return size;
+	wchar_t sectionW[64];
+	wchar_t keyW[128];
+	wchar_t iniFileW[MAX_PATH];
+	MultiByteToWideChar(CP_ACP, 0, section, -1, sectionW, _countof(sectionW));
+	MultiByteToWideChar(CP_ACP, 0, key, -1, keyW, _countof(keyW));
+	MultiByteToWideChar(CP_ACP, 0, iniFile, -1, iniFileW, _countof(iniFileW));
+	GetPrivateProfileStringW(sectionW, keyW, def, buf, buf_len, iniFileW);
+	RestoreNewLineW(buf);
 }
+#endif
 
-/**
- *	section/keyの文字列をbufにセットする
- *	section/keyが見つからなかった場合、
- *		defの文字列をbufにセットする
- *		defがNULLの場合buf[0] = 0となる
- *	@param	buf_len		文字数(\0含む)
- */
 DllExport void WINAPI GetI18nStr(const char *section, const char *key, PCHAR buf, int buf_len, const char *def, const char *iniFile)
 {
-	DWORD size = GetPrivateProfileStringA(section, key, def, buf, buf_len, iniFile);
-	if (size == 0 && def == NULL) {
-		// GetPrivateProfileStringA()の戻り値はbufにセットした文字数(終端含まず)
-		// OSのバージョンによってはdefがNULLの時、bufが未設定となることがある
-		buf[0] = 0;
-	}
+	GetPrivateProfileStringA(section, key, def, buf, buf_len, iniFile);
 	RestoreNewLine(buf);
+}
+
+// TODO: バッファ不足時の動作
+void GetI18nStrU8(const char *section, const char *key, char *buf, int buf_len, const char *def, const char *iniFile)
+{
+	size_t r;
+#if defined(UNICODE)
+	wchar_t tmp[MAX_UIMSG];
+	wchar_t defW[MAX_UIMSG];
+	r = UTF8ToWideChar(def, -1, defW, _countof(defW));
+	assert(r != 0);
+	GetI18nStrW(section, key, tmp, _countof(tmp), defW, iniFile);
+	r = buf_len;
+	WideCharToUTF8(tmp, NULL, buf, &r);
+	assert(r != 0);
+#else
+	// ANSI -> Wide -> utf8
+	char strA[MAX_UIMSG];
+	wchar_t strW[MAX_UIMSG];
+	GetI18nStr(section, key, strA, _countof(strA), def, iniFile);
+	r = MultiByteToWideChar(CP_ACP, 0, strA, -1, strW, _countof(strW));
+	assert(r != 0);
+	r = buf_len;
+	WideCharToUTF8(strW, NULL, buf, &r);
+	assert(r != 0);
+#endif
 }
 
 int WINAPI GetI18nLogfont(const char *section, const char *key, PLOGFONTA logfont, int ppi, const char *iniFile)
@@ -126,8 +117,8 @@ int WINAPI GetI18nLogfont(const char *section, const char *key, PLOGFONTA logfon
  *    言語ファイルで変換できた回数(infoCount以下の数になる)
  *
  */
-int WINAPI SetI18nDlgStrs(const char *section, HWND hDlgWnd,
-						 const DlgTextInfo *infos, size_t infoCount, const char *UILanguageFile)
+int WINAPI SetI18DlgStrs(const char *section, HWND hDlgWnd,
+				   const DlgTextInfo *infos, size_t infoCount, const char *UILanguageFile)
 {
 	size_t i;
 	int translatedCount = 0;
@@ -136,85 +127,43 @@ int WINAPI SetI18nDlgStrs(const char *section, HWND hDlgWnd,
 	assert(infoCount > 0);
 	for (i = 0 ; i < infoCount; i++) {
 		const char *key = infos[i].key;
-		BOOL r = FALSE;
-		if (pGetPrivateProfileStringW == NULL) {
-			// ANSI
-			char uimsg[MAX_UIMSG];
-			GetI18nStr(section, key, uimsg, sizeof(uimsg), NULL, UILanguageFile);
-			if (uimsg[0] != '\0') {
-				const int nIDDlgItem = infos[i].nIDDlgItem;
-				if (nIDDlgItem == 0) {
-					r = SetWindowTextA(hDlgWnd, uimsg);
-					assert(r != 0);
-				} else {
-					r = SetDlgItemTextA(hDlgWnd, nIDDlgItem, uimsg);
-					assert(r != 0);
-				}
+		TCHAR uimsg[MAX_UIMSG] = {0};  // オールゼロで初期化しておく
+		GetI18nStrT(section, key, uimsg, sizeof(uimsg), _T(""), UILanguageFile);
+		if (uimsg[0] != _T('\0')) {
+			const int nIDDlgItem = infos[i].nIDDlgItem;
+			BOOL r;
+			if (nIDDlgItem == 0) {
+				r = SetWindowText(hDlgWnd, uimsg);
+				assert(r != 0);
+			} else {
+				r = SetDlgItemText(hDlgWnd, nIDDlgItem, uimsg);
+				assert(r != 0);
 			}
+			(void)r;
+
+			if (r)
+				translatedCount++;
 		}
-		else {
-			// UNICODE
-			wchar_t uimsg[MAX_UIMSG];
-			GetI18nStrW(section, key, uimsg, _countof(uimsg), NULL, UILanguageFile);
-			if (uimsg[0] != L'\0') {
-				const int nIDDlgItem = infos[i].nIDDlgItem;
-				if (nIDDlgItem == 0) {
-					r = pSetWindowTextW(hDlgWnd, uimsg);
-					assert(r != 0);
-				} else {
-					r = pSetDlgItemTextW(hDlgWnd, nIDDlgItem, uimsg);
-					assert(r != 0);
-				}
-			}
-		}
-		if (r)
-			translatedCount++;
 	}
 
 	return (translatedCount);
 }
 
-void WINAPI SetI18nMenuStrs(const char *section, HMENU hMenu, const DlgTextInfo *infos, size_t infoCount,
-						   const char *UILanguageFile)
+void WINAPI SetI18MenuStrs(const char *section, HMENU hMenu,
+					const DlgTextInfo *infos, size_t infoCount, const char *UILanguageFile)
 {
-	const int id_position_threshold = 1000;
 	size_t i;
 	for (i = 0; i < infoCount; i++) {
 		const int nIDDlgItem = infos[i].nIDDlgItem;
 		const char *key = infos[i].key;
-		if (pGetPrivateProfileStringW == NULL) {
-			// ANSI
-			char uimsg[MAX_UIMSG];
-			GetI18nStr(section, key, uimsg, sizeof(uimsg), NULL, UILanguageFile);
-			if (uimsg[0] != '\0') {
-				UINT uFlags = (nIDDlgItem < id_position_threshold) ? MF_BYPOSITION : MF_BYCOMMAND;
-				ModifyMenuA(hMenu, nIDDlgItem, uFlags, nIDDlgItem, uimsg);
-			}
-			else {
-				if (nIDDlgItem < id_position_threshold) {
-					// 一度ModifyMenu()しておかないとメニューの位置がずれる
-					GetMenuStringA(hMenu, nIDDlgItem, uimsg, _countof(uimsg), MF_BYPOSITION);
-					ModifyMenuA(hMenu, nIDDlgItem, MF_BYPOSITION, nIDDlgItem, uimsg);
-				}
-			}
-		}
-		else {
-			// UNICODE
-			wchar_t uimsg[MAX_UIMSG];
-			GetI18nStrW(section, key, uimsg, _countof(uimsg), NULL, UILanguageFile);
-			if (uimsg[0] != '\0') {
-				UINT uFlags = (nIDDlgItem < id_position_threshold) ? MF_BYPOSITION : MF_BYCOMMAND;
-				pModifyMenuW(hMenu, nIDDlgItem, uFlags, nIDDlgItem, uimsg);
-			}
-			else {
-				if (nIDDlgItem < id_position_threshold) {
-					// 一度ModifyMenu()しておかないとメニューの位置がずれる
-					pGetMenuStringW(hMenu, nIDDlgItem, uimsg, _countof(uimsg), MF_BYPOSITION);
-					pModifyMenuW(hMenu, nIDDlgItem, MF_BYPOSITION, nIDDlgItem, uimsg);
-				}
+		TCHAR uimsg[MAX_UIMSG];
+		GetI18nStrT(section, key, uimsg, sizeof(uimsg), _T(""), UILanguageFile);
+		if (uimsg[0] != '\0') {
+			if (nIDDlgItem < 1000) {
+				ModifyMenu(hMenu, nIDDlgItem, MF_BYPOSITION, nIDDlgItem, uimsg);
+			} else {
+				ModifyMenu(hMenu, nIDDlgItem, MF_BYCOMMAND, nIDDlgItem, uimsg);
 			}
 		}
 	}
 }
-
-/* vim: set ts=4 sw=4 ff=dos : */

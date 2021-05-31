@@ -1,5 +1,12 @@
 ﻿project(TTXttyrec)
 
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/")
+
+include_directories(
+  ../../teraterm/teraterm
+  ../../teraterm/common
+  )
+
 add_library(
   TTXttyplay SHARED
   TTXttyplay.c
@@ -9,40 +16,8 @@ add_library(
   ReadMe-ja.txt
   )
 
-if(SUPPORT_OLD_WINDOWS)
-  if(MSVC)
-    target_sources(
-      TTXttyplay
-      PRIVATE
-      ../../teraterm/common/compat_w95_vs2005.c
-      )
-  endif()
-  if(MINGW)
-    target_sources(
-      TTXttyplay
-      PRIVATE
-      ../../teraterm/libmingw/tlssup.c
-      )
-    target_link_libraries(
-      TTXttyplay
-      PRIVATE
-      -Wl,--whole-archive
-      mingw_msvcrt
-      -Wl,--no-whole-archive
-      )
-  endif()
-endif(SUPPORT_OLD_WINDOWS)
-
-target_include_directories(
-  TTXttyplay
-  PRIVATE
-  ../../teraterm/teraterm
-  ../../teraterm/common
-  )
-
 target_link_libraries(
   TTXttyplay
-  PRIVATE
   ttpcmn
   #
   comdlg32
@@ -57,40 +32,8 @@ add_library(
   ReadMe-ja.txt
   )
 
-if(SUPPORT_OLD_WINDOWS)
-  if(MSVC)
-    target_sources(
-      TTXttyrec
-      PRIVATE
-      ../../teraterm/common/compat_w95_vs2005.c
-      )
-  endif()
-  if(MINGW)
-    target_sources(
-      TTXttyrec
-      PRIVATE
-      ../../teraterm/libmingw/tlssup.c
-      )
-    target_link_libraries(
-      TTXttyrec
-      PRIVATE
-      -Wl,--whole-archive
-      mingw_msvcrt
-      -Wl,--no-whole-archive
-      )
-  endif()
-endif(SUPPORT_OLD_WINDOWS)
-
-target_include_directories(
-  TTXttyrec
-  PRIVATE
-  ../../teraterm/teraterm
-  ../../teraterm/common
-  )
-
 target_link_libraries(
   TTXttyrec
-  PRIVATE
   ttpcmn
   comdlg32
   )
@@ -99,11 +42,4 @@ set_target_properties(
   TTXttyrec TTXttyplay
   PROPERTIES
   PREFIX ""
-  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/"
-  )
-
-install(
-  TARGETS TTXttyrec TTXttyplay
-  RUNTIME
-  DESTINATION .
   )

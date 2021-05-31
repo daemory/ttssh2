@@ -352,17 +352,17 @@ BOOL CCtrlWindow::OnCancel()
 
 BOOL CCtrlWindow::OnCommand(WPARAM wParam, LPARAM lParam)
 {
-	wchar_t uimsg[MAX_UIMSG];
+	char uimsg[MAX_UIMSG];
 
 	switch (LOWORD(wParam)) {
 	case IDC_CTRLPAUSESTART:
 		if (Pause) {
-			get_lang_msgW("BTN_PAUSE", uimsg, _countof(uimsg),  L"Pau&se", UILanguageFile);
-			SetDlgItemTextW(IDC_CTRLPAUSESTART, uimsg);
+			get_lang_msg("BTN_PAUSE", uimsg, sizeof(uimsg),  "Pau&se", UILanguageFile);
+			SetDlgItemText(IDC_CTRLPAUSESTART, uimsg);
 		}
 		else {
-			get_lang_msgW("BTN_START", uimsg, _countof(uimsg),  L"&Start", UILanguageFile);
-			SetDlgItemTextW(IDC_CTRLPAUSESTART, uimsg);
+			get_lang_msg("BTN_START", uimsg, sizeof(uimsg),  "&Start", UILanguageFile);
+			SetDlgItemText(IDC_CTRLPAUSESTART, uimsg);
 		}
 		Pause = ! Pause;
 		return TRUE;

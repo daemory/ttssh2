@@ -38,14 +38,12 @@
 #include "helpid.h"
 #include "i18n.h"
 #include "commlib.h"
-#include "codeconv.h"
-#include "layer_for_unicode.h"
 
 HWND HVTWin = NULL;
 HWND HTEKWin = NULL;
 
 int ActiveWin = IdVT; /* IdVT, IdTEK */
-IdTalk TalkStatus = IdTalkKeyb; /* IdTalkKeyb, IdTalkCB, IdTalkTextFile */
+int TalkStatus = IdTalkKeyb; /* IdTalkKeyb, IdTalkCB, IdTalkTextFile */
 BOOL KeybEnabled = TRUE; /* keyboard switch */
 BOOL Connecting = FALSE;
 
@@ -69,6 +67,68 @@ void VTActivate()
   SetFocus(HVTWin);
 }
 
+
+// タイトルバーのCP932への変換を行う
+// 現在、SJIS、EUCのみに対応。
+// (2005.3.13 yutaka)
+void ConvertToCP932(char *str, int destlen)
+{
+#define IS_SJIS(n) (ts.KanjiCode == IdSJIS && IsDBCSLeadByte(n))
+#define IS_EUC(n) (ts.KanjiCode == IdEUC && (n & 0x80))
+	extern WORD PASCAL JIS2SJIS(WORD KCode);
+	int len = strlen(str);
+	char *cc = _alloca(len + 1);
+	char *c = cc;
+	int i;
+	unsigned char b;
+	WORD word;
+
+	if (_stricmp(ts.Locale, DEFAULT_LOCALE) == 0) {
+		for (i = 0 ; i < len ; i++) {
+			b = str[i];
+			if (IS_SJIS(b) || IS_EUC(b)) {
+				word = b<<8;
+
+				if (i == len - 1) {
+					*c++ = b;
+					continue;
+				}
+
+				b = str[i + 1];
+				word |= b;
+				i++;
+
+				if (ts.KanjiCode == IdSJIS) {
+					// SJISはそのままCP932として出力する
+
+				} else if (ts.KanjiCode == IdEUC) {
+					// EUC -> SJIS
+					word &= ~0x8080;
+					word = JIS2SJIS(word);
+
+				} else if (ts.KanjiCode == IdJIS) {
+
+				} else if (ts.KanjiCode == IdUTF8) {
+
+				} else if (ts.KanjiCode == IdUTF8m) {
+
+				} else {
+
+				}
+
+				*c++ = word >> 8;
+				*c++ = word & 0xff;
+
+			} else {
+				*c++ = b;
+			}
+		}
+
+		*c = '\0';
+		strncpy_s(str, destlen, cc, _TRUNCATE);
+	}
+}
+
 // キャプションの変更
 //
 // (2005.2.19 yutaka) format ID=13の新規追加、COM5以上の表示に対応
@@ -88,128 +148,113 @@ void VTActivate()
  */
 void ChangeTitle()
 {
-	wchar_t TempTitle[HostNameMaxLength + TitleBuffSize * 2 + 1]; // バッファ拡張
-	wchar_t TempTitleWithRemote[TitleBuffSize * 2];
+	char TempTitle[HostNameMaxLength + TitleBuffSize * 2 + 1]; // バッファ拡張
+	char TempTitleWithRemote[TitleBuffSize * 2];
 
-	{
-		wchar_t *title = ToWcharA(ts.Title);
-		wchar_t *title_remote = ToWcharA(cv.TitleRemote);
-		if (title_remote == NULL) {
-			// TODO cv.TitleRemote が strncpy_s() で不正な文字が含まれたとき NULL が返る
-			title_remote = _wcsdup(L"-");
+	if (Connecting || !cv.Ready || strlen(cv.TitleRemote) == 0) {
+		strncpy_s(TempTitleWithRemote, sizeof(TempTitleWithRemote), ts.Title, _TRUNCATE);
+		strncpy_s(TempTitle, sizeof(TempTitle), ts.Title, _TRUNCATE);
+	}
+	else {
+		// リモートからのタイトルを別に扱う (2008.11.1 maya)
+		if (ts.AcceptTitleChangeRequest == IdTitleChangeRequestOff) {
+			strncpy_s(TempTitleWithRemote, sizeof(TempTitleWithRemote), ts.Title, _TRUNCATE);
 		}
-		if (Connecting || !cv.Ready || wcslen(title_remote) == 0) {
-			wcsncpy_s(TempTitleWithRemote, _countof(TempTitleWithRemote), title, _TRUNCATE);
-			wcsncpy_s(TempTitle, _countof(TempTitle), title, _TRUNCATE);
+		else if (ts.AcceptTitleChangeRequest == IdTitleChangeRequestAhead) {
+			_snprintf_s(TempTitleWithRemote, sizeof(TempTitleWithRemote), _TRUNCATE,
+			            "%s %s", cv.TitleRemote, ts.Title);
+		}
+		else if (ts.AcceptTitleChangeRequest == IdTitleChangeRequestLast) {
+			_snprintf_s(TempTitleWithRemote, sizeof(TempTitleWithRemote), _TRUNCATE,
+			            "%s %s", ts.Title, cv.TitleRemote);
 		}
 		else {
-			// リモートからのタイトルを別に扱う (2008.11.1 maya)
-			if (ts.AcceptTitleChangeRequest == IdTitleChangeRequestOff) {
-				wcsncpy_s(TempTitleWithRemote, _countof(TempTitleWithRemote), title, _TRUNCATE);
-			}
-			else if (ts.AcceptTitleChangeRequest == IdTitleChangeRequestAhead) {
-				_snwprintf_s(TempTitleWithRemote, _countof(TempTitleWithRemote), _TRUNCATE,
-							 L"%s %s", title_remote, title);
-			}
-			else if (ts.AcceptTitleChangeRequest == IdTitleChangeRequestLast) {
-				_snwprintf_s(TempTitleWithRemote, _countof(TempTitleWithRemote), _TRUNCATE,
-							 L"%s %s", title, title_remote);
-			}
-			else {
-				wcsncpy_s(TempTitleWithRemote, _countof(TempTitleWithRemote), title_remote, _TRUNCATE);
-			}
-			wcsncpy_s(TempTitle, _countof(TempTitle), TempTitleWithRemote, _TRUNCATE);
+			strncpy_s(TempTitleWithRemote, sizeof(TempTitleWithRemote), cv.TitleRemote, _TRUNCATE);
 		}
-		free(title);
-		free(title_remote);
+		strncpy_s(TempTitle, sizeof(TempTitle), TempTitleWithRemote, _TRUNCATE);
 	}
 
 	if ((ts.TitleFormat & 1)!=0)
 	{ // host name
-		wchar_t UIMsg[MAX_UIMSG];
-		wcsncat_s(TempTitle,_countof(TempTitle), L" - ",_TRUNCATE);
+		strncat_s(TempTitle,sizeof(TempTitle), " - ",_TRUNCATE);
 		if (Connecting) {
-			get_lang_msgW("DLG_MAIN_TITLE_CONNECTING", UIMsg, _countof(UIMsg), L"[connecting...]", ts.UILanguageFile);
-			wcsncat_s(TempTitle,_countof(TempTitle), UIMsg,_TRUNCATE);
+			get_lang_msg("DLG_MAIN_TITLE_CONNECTING", ts.UIMsg, sizeof(ts.UIMsg), "[connecting...]", ts.UILanguageFile);
+			strncat_s(TempTitle,sizeof(TempTitle),ts.UIMsg,_TRUNCATE);
 		}
 		else if (! cv.Ready) {
-			get_lang_msgW("DLG_MAIN_TITLE_DISCONNECTED", UIMsg, _countof(UIMsg), L"[disconnected]", ts.UILanguageFile);
-			wcsncat_s(TempTitle,_countof(TempTitle), UIMsg,_TRUNCATE);
+			get_lang_msg("DLG_MAIN_TITLE_DISCONNECTED", ts.UIMsg, sizeof(ts.UIMsg), "[disconnected]", ts.UILanguageFile);
+			strncat_s(TempTitle,sizeof(TempTitle),ts.UIMsg,_TRUNCATE);
 		}
 		else if (cv.PortType==IdSerial)
 		{
 			// COM5 overに対応
-			wchar_t str[24]; // COMxxxx:xxxxxxxxxxbps
+			char str[24]; // COMxxxx:xxxxxxxxxxbps
 			if (ts.TitleFormat & 32) {
-				_snwprintf_s(str, _countof(str), _TRUNCATE, L"COM%d:%ubps", ts.ComPort, ts.Baud);
+				_snprintf_s(str, sizeof(str), _TRUNCATE, "COM%d:%ubps", ts.ComPort, ts.Baud);
 			}
 			else {
-				_snwprintf_s(str, _countof(str), _TRUNCATE, L"COM%d", ts.ComPort);
+				_snprintf_s(str, sizeof(str), _TRUNCATE, "COM%d", ts.ComPort);
 			}
 
 			if (ts.TitleFormat & 8) {
-				_snwprintf_s(TempTitle, _countof(TempTitle), _TRUNCATE, L"%s - %s", str, TempTitleWithRemote);
+				_snprintf_s(TempTitle, sizeof(TempTitle), _TRUNCATE, "%s - %s", str, TempTitleWithRemote);
 			} else {
-				wcsncat_s(TempTitle, _countof(TempTitle), str, _TRUNCATE);
+				strncat_s(TempTitle, sizeof(TempTitle), str, _TRUNCATE);
 			}
 		}
 		else if (cv.PortType == IdNamedPipe)
 		{
-			wchar_t str[_countof(TempTitle)];
-			wchar_t *host_name = ToWcharA(ts.HostName);
-			wcsncpy_s(str, _countof(str), host_name, _TRUNCATE);
-			free(host_name);
+			char str[sizeof(TempTitle)];
+			strncpy_s(str, sizeof(str), ts.HostName, _TRUNCATE);
 
 			if (ts.TitleFormat & 8) {
 				// format ID = 13(8 + 5): <hots/port> - <title>
-				_snwprintf_s(TempTitle, _countof(TempTitle), _TRUNCATE, L"%s - %s", str, TempTitleWithRemote);
+				_snprintf_s(TempTitle, sizeof(TempTitle), _TRUNCATE, "%s - %s", str, TempTitleWithRemote);
 			}
 			else {
-				wcsncat_s(TempTitle, _countof(TempTitle), str, _TRUNCATE);
+				strncat_s(TempTitle, sizeof(TempTitle), str, _TRUNCATE);
 			}
 		}
 		else {
-			wchar_t str[_countof(TempTitle)];
-			wchar_t *host_name = ToWcharA(ts.HostName);
+			char str[sizeof(TempTitle)];
 			if (ts.TitleFormat & 16) {
-				_snwprintf_s(str, _countof(str), _TRUNCATE, L"%s:%d", host_name, ts.TCPPort);
+				_snprintf_s(str, sizeof(str), _TRUNCATE, "%s:%d", ts.HostName, ts.TCPPort);
 			}
 			else {
-				wcsncpy_s(str, _countof(str), host_name, _TRUNCATE);
+				strncpy_s(str, sizeof(str), ts.HostName, _TRUNCATE);
 			}
-			free(host_name);
 
 			if (ts.TitleFormat & 8) {
 				// format ID = 13(8 + 5): <hots/port> - <title>
-				_snwprintf_s(TempTitle, _countof(TempTitle), _TRUNCATE, L"%s - %s", str, TempTitleWithRemote);
+				_snprintf_s(TempTitle, sizeof(TempTitle), _TRUNCATE, "%s - %s", str, TempTitleWithRemote);
 			}
 			else {
-				wcsncat_s(TempTitle, _countof(TempTitle), str, _TRUNCATE);
+				strncat_s(TempTitle, sizeof(TempTitle), str, _TRUNCATE);
 			}
 		}
 	}
 
 	if ((ts.TitleFormat & 2)!=0)
 	{ // serial no.
-		wchar_t Num[11];
-		wcsncat_s(TempTitle,_countof(TempTitle),L" (",_TRUNCATE);
-		_snwprintf_s(Num,_countof(Num),_TRUNCATE,L"%u",SerialNo);
-		wcsncat_s(TempTitle,_countof(TempTitle),Num,_TRUNCATE);
-		wcsncat_s(TempTitle,_countof(TempTitle),L")",_TRUNCATE);
+		char Num[11];
+		strncat_s(TempTitle,sizeof(TempTitle)," (",_TRUNCATE);
+		_snprintf_s(Num,sizeof(Num),_TRUNCATE,"%u",SerialNo);
+		strncat_s(TempTitle,sizeof(TempTitle),Num,_TRUNCATE);
+		strncat_s(TempTitle,sizeof(TempTitle),")",_TRUNCATE);
 	}
 
 	if ((ts.TitleFormat & 4)!=0) // VT
-		wcsncat_s(TempTitle,_countof(TempTitle),L" VT",_TRUNCATE);
+		strncat_s(TempTitle,sizeof(TempTitle)," VT",_TRUNCATE);
 
-	_SetWindowTextW(HVTWin,TempTitle);
+	SetWindowText(HVTWin,TempTitle);
 
 	if (HTEKWin!=0)
 	{
 		if ((ts.TitleFormat & 4)!=0) // TEK
 		{
-			wcsncat_s(TempTitle,_countof(TempTitle),L" TEK",_TRUNCATE);
+			strncat_s(TempTitle,sizeof(TempTitle)," TEK",_TRUNCATE);
 		}
-		_SetWindowTextW(HTEKWin,TempTitle);
+		SetWindowText(HTEKWin,TempTitle);
 	}
 }
 

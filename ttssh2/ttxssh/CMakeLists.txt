@@ -1,20 +1,20 @@
-﻿set(PACKAGE_NAME "ttxssh")
+﻿project(ttxssh)
 
-project(${PACKAGE_NAME})
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/")
 
 include(${CMAKE_CURRENT_SOURCE_DIR}/../../libs/lib_zlib.cmake)
 include(${CMAKE_CURRENT_SOURCE_DIR}/../../libs/lib_openssl.cmake)
 
 if (MSVC)
-  set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} /DELAYLOAD:user32.dll")
+  set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} /DELAYLOAD:user32.dll /DELAYLOAD:dnsapi.dll")
 endif()
 
 add_library(
-  ${PACKAGE_NAME} SHARED
+  ttxssh SHARED
   )
 
 target_sources(
-  ${PACKAGE_NAME}
+  ttxssh
   PRIVATE
   ${CMAKE_CURRENT_BINARY_DIR}/puttyversion.h
   ../matcher/matcher.c
@@ -98,7 +98,7 @@ target_sources(
   )
 
 target_sources(
-  ${PACKAGE_NAME}
+  ttxssh
   PRIVATE
   ../../teraterm/teraterm/WSAAsyncGetAddrInfo.c
   ../../teraterm/common/ttcommon.h
@@ -106,12 +106,14 @@ target_sources(
   ../../teraterm/common/ttlib.h
   ../../teraterm/common/ttlib.c
   ../../teraterm/common/dlglib.h
+  ../../teraterm/common/dlglib.c
+  ../../teraterm/common/dlglib_cpp.cpp
+  ../../teraterm/common/dlglib_tmpl.cpp
   ../../teraterm/common/servicenames.h
+  ../../teraterm/common/codeconv.cpp
   ../../teraterm/common/codeconv.h
+  ../../teraterm/common/tipwin.cpp
   ../../teraterm/common/tipwin.h
-  ../../teraterm/common/layer_for_unicode.h
-  ../../teraterm/common/compat_win.h
-  ../../teraterm/common/dllutil.h
   )
 
 source_group(
@@ -119,32 +121,8 @@ source_group(
   REGULAR_EXPRESSION
   "teraterm\/common\/")
 
-if(SUPPORT_OLD_WINDOWS)
-  if(MSVC)
-    target_sources(
-      ${PACKAGE_NAME}
-      PRIVATE
-      ../../teraterm/common/compat_w95_vs2005.c
-      )
-  endif()
-  if(MINGW)
-    target_sources(
-      ${PACKAGE_NAME}
-      PRIVATE
-      ../../teraterm/libmingw/tlssup.c
-      )
-    target_link_libraries(
-      ${PACKAGE_NAME}
-      PRIVATE
-      -Wl,--whole-archive
-      mingw_msvcrt
-      -Wl,--no-whole-archive
-      )
-  endif()
-endif(SUPPORT_OLD_WINDOWS)
-
 target_include_directories(
-  ${PACKAGE_NAME}
+  ttxssh
   PRIVATE
   ../../teraterm/teraterm
   ../../teraterm/common
@@ -155,30 +133,28 @@ target_include_directories(
 )
 
 set_target_properties(
-  ${PACKAGE_NAME}
+  ttxssh
   PROPERTIES
   PREFIX ""
-  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/"
   )
 
 target_compile_definitions(
-  ${PACKAGE_NAME}
+  ttxssh
   PRIVATE
   $<$<CONFIG:Debug>:_CRTDBG_MAP_ALLOC>
   )
-
-if(MINGW)
-  target_link_options(
+if(USE_UNICODE_API)
+  target_compile_definitions(
     ttxssh
     PRIVATE
-    -Wl,-Map=ttxssh.map,-cref
+    UNICODE
+    _UNICODE
     )
 endif()
 
+
 target_link_libraries(
-  ${PACKAGE_NAME}
-  PRIVATE
-  common_static
+  ttxssh
   libputty
   ttpcmn
   argon2
@@ -186,10 +162,10 @@ target_link_libraries(
   ${OPENSSL_LIB}
   #
   ws2_32
+  dnsapi
   gdi32
   comdlg32
   delayimp
-  comctl32
   # OpenSSL が使用
   crypt32.lib		# TODO このlibを使用しないパッチを適応したら削除すること
   )
@@ -223,9 +199,3 @@ install(
   RUNTIME
   DESTINATION .
   )
-
-####
-# ソースツリー内に生成ファイルが存在していたら削除する
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/ttssh2/ttxssh/puttyversion.h")
-  file(REMOVE "${CMAKE_CURRENT_SOURCE_DIR}/ttssh2/ttxssh/puttyversion.h")
-endif()

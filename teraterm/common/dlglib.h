@@ -49,7 +49,7 @@ void SetDropDownList(HWND HDlg, int Id_Item, const char *List[], int nsel);
 void SetDropDownListW(HWND HDlg, int Id_Item, const wchar_t *List[], int nsel);
 LONG GetCurSel(HWND HDlg, int Id_Item);
 void InitDlgProgress(HWND HDlg, int id_Progress, int *CurProgStat);
-void SetEditboxEmacsKeybind(HWND hDlg, int nID);
+void SetEditboxSubclass(HWND hDlg, int nID, BOOL ComboBox);
 
 #if defined(_UNICODE)
 #define SetDropDownListT(p1, p2, p3, p4)	SetDropDownListW(p1, p2, p3, p4)
@@ -68,12 +68,6 @@ BOOL TTEndDialog(HWND hDlgWnd, INT_PTR nResult);
 HWND TTCreateDialogIndirectParam(
 	HINSTANCE hInstance,
 	LPCDLGTEMPLATE lpTemplate,
-	HWND hWndParent,
-	DLGPROC lpDialogFunc,
-	LPARAM lParamInit);
-HWND TTCreateDialogParam(
-	HINSTANCE hInstance,
-	LPCTSTR lpTemplateName,
 	HWND hWndParent,
 	DLGPROC lpDialogFunc,
 	LPARAM lParamInit);
@@ -98,11 +92,12 @@ void SetDialogFont(const char *FontName, int FontHeight, int FontCharSet,
 BOOL IsExistFontA(const char *face, BYTE charset, BOOL strict);
 int GetFontPointFromPixel(HWND hWnd, int pixel);
 int GetFontPixelFromPoint(HWND hWnd, int point);
-wchar_t *AllocControlTextW(HWND hWnd);
-char *AllocControlTextA(HWND hWnd);
-void ExpandCBWidth(HWND dlg, int ID);
-wchar_t *GetCommonDialogFilterW(const char *user_filter_mask, const char *UILanguageFile);
-char *GetCommonDialogFilterA(const char *user_filter_mask, const char *UILanguageFile);
+
+#if defined(_UNICODE)
+#define TTSetDlgFont(p1,p2,p3)	TTSetDlgFontW(p1,p2,p3)
+#else
+#define TTSetDlgFont(p1,p2,p3)	TTSetDlgFontA(p1,p2,p3)
+#endif
 
 #ifdef __cplusplus
 }

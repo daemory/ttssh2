@@ -336,16 +336,6 @@
 				<param name="ImageNumber" value="11">
 				</OBJECT>
 			<LI> <OBJECT type="text/sitemap">
-				<param name="Name" value="Additional settings/coding">
-				<param name="Local" value="html\menu\setup-additional-coding.html">
-				<param name="ImageNumber" value="11">
-				</OBJECT>
-			<LI> <OBJECT type="text/sitemap">
-				<param name="Name" value="Additional settings/log">
-				<param name="Local" value="html\menu\setup-additional-log.html">
-				<param name="ImageNumber" value="11">
-				</OBJECT>
-			<LI> <OBJECT type="text/sitemap">
 				<param name="Name" value="Save setup">
 				<param name="Local" value="html\menu\setup-save.html">
 				<param name="ImageNumber" value="11">
@@ -515,17 +505,10 @@
 			<param name="ImageNumber" value="11">
 			</OBJECT>
 		<LI> <OBJECT type="text/sitemap">
-			<param name="Name" value="Keyboard setup file overview">
+			<param name="Name" value="Keyboard setup file">
 			<param name="Local" value="html\setup\keyboard.html">
 			<param name="ImageNumber" value="11">
 			</OBJECT>
-			<UL>
-			<LI> <OBJECT type="text/sitemap">
-				<param name="Name" value="Keyboard setup file detail">
-				<param name="Local" value="html\reference\keyboard_cfg.html">
-				<param name="ImageNumber" value="11">
-			</OBJECT>
-			</UL>
 		<LI> <OBJECT type="text/sitemap">
 			<param name="Name" value="TTSSH known_hosts file">
 			<param name="Local" value="html\setup\knownfiles.html">
@@ -550,11 +533,6 @@
 		<LI> <OBJECT type="text/sitemap">
 			<param name="Name" value="Keycode">
 			<param name="Local" value="html\reference\keycode.txt">
-			<param name="ImageNumber" value="11">
-			</OBJECT>
-		<LI> <OBJECT type="text/sitemap">
-			<param name="Name" value="menu id">
-			<param name="Local" value="html\reference\menu_id.html">
 			<param name="ImageNumber" value="11">
 			</OBJECT>
 		<LI> <OBJECT type="text/sitemap">
@@ -595,11 +573,6 @@
 		<LI> <OBJECT type="text/sitemap">
 			<param name="Name" value="License of CygTerm+">
 			<param name="Local" value="html\reference\CygTerm+-LICENSE.txt">
-			<param name="ImageNumber" value="11">
-			</OBJECT>
-		<LI> <OBJECT type="text/sitemap">
-			<param name="Name" value="License of cJSON">
-			<param name="Local" value="html\reference\cJSON-LICENSE.txt">
 			<param name="ImageNumber" value="11">
 			</OBJECT>
 		<LI> <OBJECT type="text/sitemap">

@@ -10,6 +10,8 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 
+#include "compat_w95.h"
+
 #define ORDER 4800
 // #define ID_MENUITEM 37000
 #define INISECTION "AdditionalTitle"
@@ -363,6 +365,7 @@ BOOL WINAPI DllMain(HANDLE hInstance,
       break;
     case DLL_PROCESS_ATTACH:
       /* do process initialization */
+      DoCover_IsDebuggerPresent();
       hInst = hInstance;
       pvar = &InstVar;
       break;

@@ -37,10 +37,9 @@
 #include "i18n.h"
 #include "ttlib.h"
 #include "dlglib.h"
-#include "layer_for_unicode.h"
 
 struct DrapDropDlgParam {
-	const wchar_t *TargetFilename;
+	const TCHAR *TargetFilename;
 	enum drop_type DropType;
 	unsigned char DropTypePaste;
 	bool ScpEnable;
@@ -93,7 +92,7 @@ static LRESULT CALLBACK OnDragDropDlgProc(HWND hDlgWnd, UINT msg, WPARAM wp, LPA
 		SetDlgTexts(hDlgWnd, TextInfos, _countof(TextInfos), Param->UILanguageFile);
 
 		// target file
-		_SetDlgItemTextW(hDlgWnd, IDC_FILENAME_EDIT, Param->TargetFilename);
+		SetDlgItemText(hDlgWnd, IDC_FILENAME_EDIT, Param->TargetFilename);
 
 		// checkbox
 		CheckRadioButton(hDlgWnd, IDC_SCP_RADIO, IDC_PASTE_RADIO,
@@ -111,7 +110,7 @@ static LRESULT CALLBACK OnDragDropDlgProc(HWND hDlgWnd, UINT msg, WPARAM wp, LPA
 			EnableWindow(GetDlgItem(hDlgWnd, IDC_SCP_PATH), FALSE);
 			EnableWindow(GetDlgItem(hDlgWnd, IDC_SCP_PATH_NOTE), FALSE);
 		}
-		SetEditboxEmacsKeybind(hDlgWnd, IDC_SCP_PATH);
+		SetEditboxSubclass(hDlgWnd, IDC_SCP_PATH, FALSE);
 
 		// Send File
 		if (Param->DropType == DROP_TYPE_SEND_FILE_BINARY) {
@@ -244,7 +243,7 @@ static LRESULT CALLBACK OnDragDropDlgProc(HWND hDlgWnd, UINT msg, WPARAM wp, LPA
 
 enum drop_type ShowDropDialogBox(
 	HINSTANCE hInstance, HWND hWndParent,
-	const wchar_t *TargetFilename,
+	const TCHAR *TargetFilename,
 	enum drop_type DefaultDropType,
 	int RemaingFileCount,
 	bool EnableSCP,
@@ -269,7 +268,7 @@ enum drop_type ShowDropDialogBox(
 	Param.ScpSendDirSize = _countof(pts->ScpSendDir);
 	Param.UILanguageFile = pts->UILanguageFile;
 
-	INT_PTR ret = TTDialogBoxParam(
+	int ret = TTDialogBoxParam(
 		hInstance, MAKEINTRESOURCE(IDD_DAD_DIALOG),
 		hWndParent, (DLGPROC)OnDragDropDlgProc,
 		(LPARAM)&Param);

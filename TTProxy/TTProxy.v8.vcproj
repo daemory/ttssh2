@@ -73,7 +73,7 @@
 			<Tool
 				Name="VCLinkerTool"
 				IgnoreImportLibrary="true"
-				AdditionalDependencies="common_static.lib ws2_32.lib ttpcmn.lib gdi32.lib comdlg32.lib shell32.lib ole32.lib user32.lib version.lib"
+				AdditionalDependencies="ws2_32.lib ttpcmn.lib gdi32.lib comdlg32.lib shell32.lib ole32.lib"
 				OutputFile="$(OutDir)\TTXProxy.dll"
 				LinkIncremental="1"
 				SuppressStartupBanner="true"
@@ -170,7 +170,7 @@
 			<Tool
 				Name="VCLinkerTool"
 				IgnoreImportLibrary="true"
-				AdditionalDependencies="common_static.lib ws2_32.lib ttpcmn.lib gdi32.lib comdlg32.lib shell32.lib ole32.lib user32.lib version.lib"
+				AdditionalDependencies="ws2_32.lib ttpcmn.lib gdi32.lib comdlg32.lib shell32.lib ole32.lib"
 				OutputFile="$(OutDir)\TTXProxy.dll"
 				LinkIncremental="2"
 				SuppressStartupBanner="true"
@@ -216,7 +216,47 @@
 			Filter="cpp;c;cxx;rc;def;r;odl;idl;hpj;bat"
 			>
 			<File
-				RelativePath="..\teraterm\common\compat_w95_vs2005.c"
+				RelativePath="..\teraterm\common\dlglib.c"
+				>
+				<FileConfiguration
+					Name="Release|Win32"
+					>
+					<Tool
+						Name="VCCLCompilerTool"
+						UsePrecompiledHeader="0"
+					/>
+				</FileConfiguration>
+				<FileConfiguration
+					Name="Debug|Win32"
+					>
+					<Tool
+						Name="VCCLCompilerTool"
+						UsePrecompiledHeader="0"
+					/>
+				</FileConfiguration>
+			</File>
+			<File
+				RelativePath="..\teraterm\common\dlglib_cpp.cpp"
+				>
+				<FileConfiguration
+					Name="Release|Win32"
+					>
+					<Tool
+						Name="VCCLCompilerTool"
+						UsePrecompiledHeader="0"
+					/>
+				</FileConfiguration>
+				<FileConfiguration
+					Name="Debug|Win32"
+					>
+					<Tool
+						Name="VCCLCompilerTool"
+						UsePrecompiledHeader="0"
+					/>
+				</FileConfiguration>
+			</File>
+			<File
+				RelativePath="..\teraterm\common\dlglib_tmpl.cpp"
 				>
 				<FileConfiguration
 					Name="Release|Win32"
@@ -256,6 +296,26 @@
 						AdditionalIncludeDirectories=""
 						PreprocessorDefinitions=""
 						UsePrecompiledHeader="1"
+					/>
+				</FileConfiguration>
+			</File>
+			<File
+				RelativePath="..\teraterm\common\ttlib.c"
+				>
+				<FileConfiguration
+					Name="Release|Win32"
+					>
+					<Tool
+						Name="VCCLCompilerTool"
+						UsePrecompiledHeader="0"
+					/>
+				</FileConfiguration>
+				<FileConfiguration
+					Name="Debug|Win32"
+					>
+					<Tool
+						Name="VCCLCompilerTool"
+						UsePrecompiledHeader="0"
 					/>
 				</FileConfiguration>
 			</File>

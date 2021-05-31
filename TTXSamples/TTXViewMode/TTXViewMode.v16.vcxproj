@@ -57,6 +57,7 @@
       <Optimization>Disabled</Optimization>
       <AdditionalIncludeDirectories>$(SolutionDir)..\teraterm\common;$(SolutionDir)..\teraterm\teraterm;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>WIN32;_DEBUG;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <MinimalRebuild>true</MinimalRebuild>
       <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
       <PrecompiledHeader />
@@ -64,7 +65,7 @@
       <DebugInformationFormat>EditAndContinue</DebugInformationFormat>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>$(SolutionDir)..\teraterm\$(Configuration)\common_static.lib;$(SolutionDir)..\teraterm\$(Configuration)\ttpcmn.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(SolutionDir)..\teraterm\$(Configuration)\ttpcmn.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <DelayLoadDLLs>user32.dll;%(DelayLoadDLLs)</DelayLoadDLLs>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <SubSystem>Windows</SubSystem>
@@ -82,7 +83,7 @@
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>$(SolutionDir)..\teraterm\$(Configuration)\common_static.lib;$(SolutionDir)..\teraterm\$(Configuration)\ttpcmn.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(SolutionDir)..\teraterm\$(Configuration)\ttpcmn.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <DelayLoadDLLs>user32.dll;%(DelayLoadDLLs)</DelayLoadDLLs>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <SubSystem>Windows</SubSystem>
@@ -92,6 +93,10 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="..\..\teraterm\common\dlglib.c" />
+    <ClCompile Include="..\..\teraterm\common\dlglib_cpp.cpp" />
+    <ClCompile Include="..\..\teraterm\common\dlglib_tmpl.cpp" />
+    <ClCompile Include="..\..\teraterm\common\ttlib.c" />
     <ClCompile Include="TTXViewMode.c" />
   </ItemGroup>
   <ItemGroup>

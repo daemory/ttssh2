@@ -37,13 +37,12 @@
 #include "tttypes.h"
 #include "dlglib.h"
 #include "ttmdlg.h"
-#include "ttmacro.h"
 
 #include "ListDlg.h"
 
 // CListDlg ダイアログ
 
-CListDlg::CListDlg(const wchar_t *Text, const wchar_t *Caption, wchar_t **Lists, int Selected, int x, int y)
+CListDlg::CListDlg(const PCHAR Text, const PCHAR Caption, const CHAR **Lists, int Selected, int x, int y)
 {
 	m_Text = Text;
 	m_Caption = Caption;
@@ -60,7 +59,7 @@ INT_PTR CListDlg::DoModal(HINSTANCE hInst, HWND hWndParent)
 
 void CListDlg::InitList(HWND HList)
 {
-	wchar_t **p;
+	const char **p;
 	int ListMaxWidth = 0;
 	int ListCount = 0;
 	HDC DC = ::GetDC(HList);
@@ -70,8 +69,8 @@ void CListDlg::InitList(HWND HList)
 	while (*p) {
 		SIZE size;
 		int ListWidth;
-		SendDlgItemMessageW(IDC_LISTBOX, LB_ADDSTRING, 0, (LPARAM)(*p));
-		GetTextExtentPoint32W(DC, *p, (int)wcslen(*p), &size);
+		SendDlgItemMessage(IDC_LISTBOX, LB_ADDSTRING, 0, (LPARAM)(*p));
+		GetTextExtentPoint32(DC, *p, strlen(*p), &size);
 		ListWidth = size.cx;
 		if (ListWidth > ListMaxWidth) {
 			ListMaxWidth = ListWidth;
@@ -105,10 +104,10 @@ BOOL CListDlg::OnInitDialog()
 	InitList(HList);
 
 	// 本文とタイトル
-	SetDlgItemTextW(IDC_LISTTEXT, m_Text);
-	SetWindowTextW(m_Caption);
+	SetDlgItemText(IDC_LISTTEXT, m_Text);
+	SetWindowText(m_Caption);
 
-	CalcTextExtentW(GetDlgItem(IDC_LISTTEXT), NULL, m_Text,&s);
+	CalcTextExtent(GetDlgItem(IDC_LISTTEXT), NULL, m_Text,&s);
 	TW = s.cx + s.cx/10;
 	TH = s.cy;
 

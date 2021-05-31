@@ -5,6 +5,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "compat_w95.h"
+
 #define ORDER 4000
 #define MENU_ID 39393
 
@@ -60,7 +62,7 @@ BOOL __declspec(dllexport) PASCAL TTXBind(WORD Version, TTXExports *exports) {
   return TRUE;
 }
 
-BOOL WINAPI DllMain(HANDLE hInstance,
+BOOL WINAPI DllMain(HANDLE hInstance, 
 		    ULONG ul_reason_for_call,
 		    LPVOID lpReserved)
 {
@@ -73,6 +75,7 @@ BOOL WINAPI DllMain(HANDLE hInstance,
       break;
     case DLL_PROCESS_ATTACH:
       /* do process initialization */
+      DoCover_IsDebuggerPresent();
       hInst = hInstance;
       pvar = &InstVar;
       break;

@@ -25,7 +25,7 @@ if(("${CMAKE_BUILD_TYPE}" STREQUAL "") AND ("${CMAKE_CONFIGURATION_TYPE}" STREQU
 	  -P oniguruma.cmake
 	  )
 	return()
-  elseif(("$ENV{MSYSTEM}" MATCHES "MINGW") OR ("${CMAKE_COMMAND}" MATCHES "mingw"))
+  elseif("$ENV{MSYSTEM}" MATCHES "MINGW")
 	# mingw on msys2
 	if("${CMAKE_BUILD_TYPE}" STREQUAL "")
 	  set(CMAKE_BUILD_TYPE Release)
@@ -68,7 +68,7 @@ set(EXTRACT_DIR "${CMAKE_SOURCE_DIR}/build/oniguruma/src")
 set(SRC_DIR "${CMAKE_SOURCE_DIR}/build/oniguruma/src/oniguruma-5adee14d43128abe8170e0e5de66c43f89df5295")
 set(BUILD_DIR "${CMAKE_SOURCE_DIR}/build/oniguruma/build_${TOOLSET}")
 set(INSTALL_DIR "${CMAKE_SOURCE_DIR}/oniguruma_${TOOLSET}")
-if(("${CMAKE_GENERATOR}" MATCHES "Win64") OR ("${ARCHITECTURE}" MATCHES "x64") OR ("$ENV{MSYSTEM_CHOST}" STREQUAL "x86_64-w64-mingw32") OR ("${CMAKE_COMMAND}" MATCHES "mingw64"))
+if(("${CMAKE_GENERATOR}" MATCHES "Win64") OR ("${ARCHITECTURE}" MATCHES "x64") OR ("$ENV{MSYSTEM_CHOST}" STREQUAL "x86_64-w64-mingw32"))
   set(BUILD_DIR "${BUILD_DIR}_x64")
   set(INSTALL_DIR "${INSTALL_DIR}_x64")
 endif()
@@ -78,8 +78,8 @@ endif()
 if(NOT EXISTS ${SRC_DIR}/README.md)
 
   file(DOWNLOAD
-    ${SRC_URL}
-    ${DOWN_DIR}/${SRC_ARC}
+	${SRC_URL}
+	${DOWN_DIR}/${SRC_ARC}
     EXPECTED_HASH SHA1=${SRC_ARC_HASH_SHA1}
     SHOW_PROGRESS
     )
@@ -91,22 +91,6 @@ if(NOT EXISTS ${SRC_DIR}/README.md)
     WORKING_DIRECTORY ${EXTRACT_DIR}
     )
 
-  file(COPY
-    ${SRC_DIR}/COPYING
-    DESTINATION ${CMAKE_CURRENT_LIST_DIR}/doc_help)
-  file(RENAME
-    ${CMAKE_CURRENT_LIST_DIR}/doc_help/COPYING
-    ${CMAKE_CURRENT_LIST_DIR}/doc_help/Oniguruma-LICENSE.txt)
-
-  file(COPY
-    ${SRC_DIR}/doc/RE
-    DESTINATION ${CMAKE_CURRENT_LIST_DIR}/doc_help/en)
-  file(COPY
-    ${SRC_DIR}/doc/RE.ja
-    DESTINATION ${CMAKE_CURRENT_LIST_DIR}/doc_help/ja)
-  file(RENAME
-    ${CMAKE_CURRENT_LIST_DIR}/doc_help/ja/RE.ja
-    ${CMAKE_CURRENT_LIST_DIR}/doc_help/ja/RE)
 endif()
 
 ########################################

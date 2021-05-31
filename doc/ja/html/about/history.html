@@ -31,10 +31,11 @@
 
 <h2 id="teraterm">Tera Term</h2>
 
-<!--h3 id="teraterm_5.0">202x.xx.xx (Ver 5.0)</h3>
+<h3 id="teraterm_4.106">2021.6.5 (Ver 4.106)</h3>
 <ul class="history">
-  <li>Changes
+  <li>変更
     <ul>
+      <li>端末横幅の最大値を500文字から1000文字に変更した。</li>
       <li>シリアルポート接続
         <ul>
           <li>シリアルポート設定で、1.5ストップビットのサポートを削除した。</li>
@@ -43,18 +44,28 @@
     </ul>
   </li>
 
-  <li>Bug fixes
+  <li>バグ修正
     <ul>
+      <li>ログの経過時間形式のタイムスタンプの形式が正しくない問題を修正した。</li>
+      <li><a href="../usage/tips/ime.html#feedback">IMEの前後参照変換機能</a>が動作するよう修正した。4.103でのエンバグ。</li>
+      <li>VT ウィンドウと Htmlヘルプウィンドウを同時に閉じるとアプリケーションフォールトが発生する不具合を修正した。</li>
+      <li>メインディスプレイ以外でデスクトップ画像を背景に表示できなかったのを修正した。4.101でのエンバグ。</li>
+      <li>ツールチップ表示時のメモリリークを修正した。4.103でのエンバグ。</li>
+      <li><a href="../macro/command/yesnobox.html">yesnobox</a> マクロコマンドで、言語ファイルを読み込まないとき "OK" が表示されていた。"yes" に修正した。4.103でエンバグ。</li>
       <li><a href="../macro/command/filecreate.html">filecreate</a>, <a href="../macro/command/fileopen.html">fileopen</a> マクロコマンドで開いたファイルハンドルがロックしている問題を修正した。</li>
+      <li><a href="../macro/command/getdate.html">getdate</a>, <a href="../macro/command/gettime.html">gettime</a> マクロコマンドで timezone つきで呼び出すと正しい時刻を返さない問題を修正した。v4.105でのビルドミス。</li>
     </ul>
   </li>
 
-  <li>Misc
+  <li>その他
     <ul>
-      <li>Oniguruma 6.9.6へ差し替えた。</li>
+      <li><a href="#ttssh_2.92">TTSSH(2.92)</a>へ差し替えた。</li>
+      <li><a href="#kanjimenu_0.1.8">TTX KanjiMenu Plugin(0.1.8)</a>へ差し替えた。</li>
+      <li><a href="#ttmenu_1.16">TeraTerm Menu(1.16)</a>へ差し替えた。</li>
+      <li>Oniguruma 6.9.7.1へ差し替えた。</li>
     </ul>
   </li>
-</ul-->
+</ul>
 
 <h3 id="teraterm_4.105">2019.12.7 (Ver 4.105)</h3>
 <ul class="history">
@@ -3272,7 +3283,7 @@
 
 <h2 id="ttssh">TTSSH</h2>
 
-<!--h3 id="ttssh_2.92">202x.xx.x (Ver 2.92)</h3>
+<h3 id="ttssh_2.92">2021.6.5 (Ver 2.92)</h3>
 <ul class="history">
   <li>変更
     <ul>
@@ -3283,15 +3294,21 @@
 
   <li>バグ修正
     <ul>
+      <li>Windows Vista以降でVirtual Storeが有効の場合でかつHost key rotationが有効の場合、known_hostsから元々あったホスト鍵を削除してしまう問題を修正した。</li>
+      <li>Windows Vista以降でVirtual Storeが有効の場合、ホスト鍵の種類が同じで、鍵の内容が異なるときに、known_hostsからの鍵削除ができない問題を修正した。</li>
+      <li>D&DによるSCP送信で、多数のファイルを一括送信するとエラーになる問題を修正した。</li>
+      <li>ユーザ認証が完了した直後にVTウィンドウのサイズを変更したり Send break を送信したりすると、サーバから切断される問題を修正した。</li>
+      <li>システムのメモリが不足している時、鍵交換時のホスト鍵による署名検証で不正な署名を正しい物として扱う可能性が有った問題を修正した。</li>
+      <li>SSH認証ダイアログで一部のコントロールが常に有効になる問題を修正した。</li>
     </ul>
   </li>
 
   <li>その他
     <ul>
-      <li>OpenSSL 1.1.1j へ差し替えた。</li>
+      <li>OpenSSL 1.1.1dから1.1.1kへ差し替えた。</li>
     </ul>
   </li>
-</ul-->
+</ul>
 
 <h3 id="ttssh_2.91">2019.12.7 (Ver 2.91)</h3>
 <ul class="history">
@@ -5092,6 +5109,12 @@
 
 <h2 id="ttmenu">TeraTerm Menu</h2>
 
+<h3 id="ttmenu_1.16">2021.6.5 (Ver 1.16)</h3>
+<ul class="history">
+      <li>リストへ登録するボタンのツールチップの文言をRegister, Unregisterに変更した。</li>
+      <li>バージョン情報に余計な￥が表示されていた問題を修正した。</li>
+</ul>
+
 <h3 id="ttmenu_1.15">2017.11.30 (Ver 1.15)</h3>
 <ul class="history">
       <li>ttpmenu.ini を使っている場合にすべてのホスト設定名を格納するバッファサイズを拡張した(2.6KB -> 10KB)。</li>
@@ -5181,6 +5204,11 @@
 
 
 <h2 id="kanjimenu">TTX KanjiMenu</h2>
+
+<h3 id="kanjimenu_0.1.8">2021.6.5 (Ver 0.1.8)</h3>
+<ul class="history">
+      <li>韓国語モードで UTF-8m が表示されない問題を修正した。</li>
+</ul>
 
 <h3 id="kanjimenu_0.1.7">2016.11.30 (Ver 0.1.7)</h3>
 <ul class="history">

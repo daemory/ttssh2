@@ -8,7 +8,7 @@
 
 /* Tera Term extension mechanism
    Robert O'Callahan (roc+tt@cs.cmu.edu)
-
+   
    Tera Term by Takashi Teranishi (teranishi@rikaxp.riken.go.jp)
 */
 
@@ -22,12 +22,10 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "compat_w95.h"
+
 #define IniSection "TTXKanjiMenu"
 #define ORDER 5000
-
-#define ID_MI_KANJIRECV 54009
-#define ID_MI_KANJISEND 54109
-#define ID_MI_USEONESETTING 54200
 
 #define UpdateRecvMenu(val)	\
 	CheckMenuRadioItem(pvar->hmEncode, \
@@ -41,120 +39,6 @@
 	                   ID_MI_KANJISEND + IdUTF8, \
 	                   ID_MI_KANJISEND + (val), \
 	                   MF_BYCOMMAND)
-
-// メニュー項目名の情報
-typedef struct {
-	int menuID;
-	const char *menuStr;
-} KmTextInfo;
-
-// 受信漢字コード (日本語)
-static const KmTextInfo MenuNameRecvJ[] = {
-	{ ID_MI_KANJIRECV + IdSJIS,  "Recv: &Shift_JIS" },
-	{ ID_MI_KANJIRECV + IdEUC,   "Recv: &EUC-JP" },
-	{ ID_MI_KANJIRECV + IdJIS,   "Recv: &JIS" },
-	{ ID_MI_KANJIRECV + IdUTF8,  "Recv: &UTF-8" },
-	{ ID_MI_KANJIRECV + IdUTF8m, "Recv: UTF-8&m" }
-};
-
-// 受信漢字コード (韓国語)
-static const KmTextInfo MenuNameRecvK[] = {
-	{ ID_MI_KANJIRECV + IdSJIS,  "Recv: &KS5601" },
-	{ ID_MI_KANJIRECV + IdUTF8,  "Recv: &UTF-8" },
-	{ ID_MI_KANJIRECV + IdUTF8m, "Recv: UTF-8&m" }
-};
-
-// 送信漢字コード (日本語)
-static const KmTextInfo MenuNameSendJ[] = {
-	{ ID_MI_KANJISEND + IdSJIS,  "Send: S&hift_JIS" },
-	{ ID_MI_KANJISEND + IdEUC,   "Send: EU&C-JP" },
-	{ ID_MI_KANJISEND + IdJIS,   "Send: J&IS" },
-	{ ID_MI_KANJISEND + IdUTF8,  "Send: U&TF-8" }
-};
-
-// 送信漢字コード (韓国語)
-static const KmTextInfo MenuNameSendK[] = {
-	{ ID_MI_KANJISEND + IdSJIS,  "Send: K&S5601" },
-	{ ID_MI_KANJISEND + IdUTF8,  "Send: U&TF-8" }
-};
-
-// 送受信漢字コード (日本語)
-static const KmTextInfo MenuNameOneJ[] = {
-	{ ID_MI_KANJIRECV + IdSJIS,  "Recv/Send: &Shift_JIS" },
-	{ ID_MI_KANJIRECV + IdEUC,   "Recv/Send: &EUC-JP" },
-	{ ID_MI_KANJIRECV + IdJIS,   "Recv/Send: &JIS" },
-	{ ID_MI_KANJIRECV + IdUTF8,  "Recv/Send: &UTF-8" },
-	{ ID_MI_KANJIRECV + IdUTF8m, "Recv: UTF-8&m/Send: UTF-8" }
-};
-
-// 送受信漢字コード (韓国語)
-static const KmTextInfo MenuNameOneK[] = {
-	{ ID_MI_KANJIRECV + IdSJIS,  "Recv/Send: &KS5601" },
-	{ ID_MI_KANJIRECV + IdUTF8,  "Recv/Send: &UTF-8" },
-	{ ID_MI_KANJIRECV + IdUTF8m, "Recv: UTF-8&m/Send: UTF-8" }
-};
-
-// メニュー自体の国際化用情報 (日本語)
-static DlgTextInfo MenuTitleInfoJ[] = {
-	{ -1, "MENU_KANJI" }
-};
-
-// メニュー自体の国際化用情報 (韓国語)
-static DlgTextInfo MenuTitleInfoK[] = {
-	{ -1, "MENU_KANJI_K" }
-};
-
-// メニュー内の各項目の国際化用情報 (送受信分離時/日本語)
-static const DlgTextInfo MenuInfoSeparateJ[] = {
-	// 受信
-	{ ID_MI_KANJIRECV + IdSJIS,  "MENU_RECV_SJIS" },
-	{ ID_MI_KANJIRECV + IdEUC,   "MENU_RECV_EUCJP" },
-	{ ID_MI_KANJIRECV + IdJIS,   "MENU_RECV_JIS" },
-	{ ID_MI_KANJIRECV + IdUTF8,  "MENU_RECV_UTF8" },
-	{ ID_MI_KANJIRECV + IdUTF8m, "MENU_RECV_UTF8m" },
-	// 送信
-	{ ID_MI_KANJISEND + IdSJIS,  "MENU_SEND_SJIS" },
-	{ ID_MI_KANJISEND + IdEUC,   "MENU_SEND_EUCJP" },
-	{ ID_MI_KANJISEND + IdJIS,   "MENU_SEND_JIS" },
-	{ ID_MI_KANJISEND + IdUTF8,  "MENU_SEND_UTF8" },
-	// UseOneSetting
-	{ ID_MI_USEONESETTING, "MENU_USE_ONE_SETTING" }
-};
-
-// メニュー内の各項目の国際化用情報 (送受信分離時/韓国語)
-static const DlgTextInfo MenuInfoSeparateK[] = {
-	// 受信
-	{ ID_MI_KANJIRECV + IdSJIS,  "MENU_RECV_KS5601" },
-	{ ID_MI_KANJIRECV + IdUTF8,  "MENU_RECV_UTF8" },
-	{ ID_MI_KANJIRECV + IdUTF8m, "MENU_RECV_UTF8m" },
-	// 送信
-	{ ID_MI_KANJISEND + IdSJIS,  "MENU_SEND_KS5601" },
-	{ ID_MI_KANJISEND + IdUTF8,  "MENU_SEND_UTF8" },
-	// UseOneSetting
-	{ ID_MI_USEONESETTING, "MENU_USE_ONE_SETTING" }
-};
-
-// メニュー内の各項目の国際化用情報 (送受信共通時/日本語)
-static const DlgTextInfo MenuInfoOneJ[] = {
-	// 送受信
-	{ ID_MI_KANJIRECV + IdSJIS,  "MENU_SJIS" },
-	{ ID_MI_KANJIRECV + IdEUC,   "MENU_EUCJP" },
-	{ ID_MI_KANJIRECV + IdJIS,   "MENU_JIS" },
-	{ ID_MI_KANJIRECV + IdUTF8,  "MENU_UTF8" },
-	{ ID_MI_KANJIRECV + IdUTF8m, "MENU_UTF8m" },
-	// UseOneSetting
-	{ ID_MI_USEONESETTING, "MENU_USE_ONE_SETTING" }
-};
-
-// メニュー内の各項目の国際化用情報 (送受信共通時/韓国語)
-static const DlgTextInfo MenuInfoOneK[] = {
-	// 送受信
-	{ ID_MI_KANJIRECV + IdSJIS,  "MENU_KS5601" },
-	{ ID_MI_KANJIRECV + IdUTF8,  "MENU_UTF8" },
-	{ ID_MI_KANJIRECV + IdUTF8m, "MENU_UTF8m" },
-	// UseOneSetting
-	{ ID_MI_USEONESETTING, "MENU_USE_ONE_SETTING" }
-};
 
 static HANDLE hInst; /* Instance handle of TTX*.DLL */
 
@@ -175,7 +59,7 @@ static TInstVar *pvar;
 static TInstVar InstVar;
 
 /*
- * 初期化
+ * This function is called when Tera Term starts up.
  */
 static void PASCAL TTXInit(PTTSet ts, PComVar cv) {
 	pvar->ts = ts;
@@ -186,11 +70,6 @@ static void PASCAL TTXInit(PTTSet ts, PComVar cv) {
 	pvar->NeedResetCharSet = FALSE;
 }
 
-/*
- * 端末設定ダイアログのフック関数1: UseOneSetting 用
- *
- * 送信と受信の漢字コード設定が同じになるように調整する。
- */
 static BOOL PASCAL TTXKanjiMenuSetupTerminal(HWND parent, PTTSet ts) {
 	WORD orgRecvCode, orgSendCode;
 	BOOL ret;
@@ -222,12 +101,6 @@ static BOOL PASCAL TTXKanjiMenuSetupTerminal(HWND parent, PTTSet ts) {
 	return ret;
 }
 
-/*
- * 端末設定ダイアログのフック関数2: 内部状態リセット用
- *
- * 端末設定ダイアログをフックし、設定ダイアログを開かずに TRUE を返す事によって
- * 設定ダイアログ呼出の後処理のみを利用する。
- */
 static BOOL PASCAL ResetCharSet(HWND parent, PTTSet ts) {
 	pvar->NeedResetCharSet = FALSE;
 	return TRUE;
@@ -235,28 +108,14 @@ static BOOL PASCAL ResetCharSet(HWND parent, PTTSet ts) {
 
 static void PASCAL TTXGetUIHooks(TTXUIHooks *hooks) {
 	if (pvar->NeedResetCharSet) {
-		// 内部状態リセットの為に呼び出された場合
 		*hooks->SetupTerminal = ResetCharSet;
 	}
 	else if (pvar->UseOneSetting && (pvar->ts->Language == IdJapanese || pvar->ts->Language == IdKorean)) {
-		// UseOneSetting が TRUE の時は端末設定ダイアログの後処理の為にフックする
 		pvar->origSetupTermDlg = *hooks->SetupTerminal;
 		*hooks->SetupTerminal = TTXKanjiMenuSetupTerminal;
 	}
 }
 
-/*
- * 漢字コード関連の内部状態のリセット
- * TTXからはTera Termの内部状態を直接いじれない為、端末設定ダイアログの後処理を利用する。
- */
-static void CallResetCharSet(HWND hWin){
-	pvar->NeedResetCharSet = TRUE;
-	SendMessage(hWin, WM_COMMAND, MAKELONG(ID_SETUP_TERMINAL, 0), 0);
-}
-
-/*
- * 設定の読み込み
- */
 static void PASCAL TTXKanjiMenuReadIniFile(PCHAR fn, PTTSet ts) {
 	char buff[20];
 
@@ -269,7 +128,6 @@ static void PASCAL TTXKanjiMenuReadIniFile(PCHAR fn, PTTSet ts) {
 	}
 	else {
 		pvar->UseOneSetting = TRUE;
-		// UseOneSetting が on の場合は、送受信設定が同じになるように調整する
 		if (pvar->ts->Language == IdJapanese) {
 			if (pvar->ts->KanjiCode == IdUTF8m) {
 				pvar->ts->KanjiCodeSend = IdUTF8;
@@ -285,9 +143,6 @@ static void PASCAL TTXKanjiMenuReadIniFile(PCHAR fn, PTTSet ts) {
 	return;
 }
 
-/*
- * 設定の保存
- */
 static void PASCAL TTXKanjiMenuWriteIniFile(PCHAR fn, PTTSet ts) {
 	/* Call original WriteIniFile */
 	pvar->origWriteIniFile(fn, ts);
@@ -297,9 +152,6 @@ static void PASCAL TTXKanjiMenuWriteIniFile(PCHAR fn, PTTSet ts) {
 	return;
 }
 
-/*
- * 設定の読み書きをフックする
- */
 static void PASCAL TTXGetSetupHooks(TTXSetupHooks *hooks) {
 	pvar->origReadIniFile = *hooks->ReadIniFile;
 	*hooks->ReadIniFile = TTXKanjiMenuReadIniFile;
@@ -307,112 +159,133 @@ static void PASCAL TTXGetSetupHooks(TTXSetupHooks *hooks) {
 	*hooks->WriteIniFile = TTXKanjiMenuWriteIniFile;
 }
 
-/*
- * 特定のIDの子を持つメニューの位置を返す
- */
-static int GetMenuPosByChildId(HMENU menu, UINT id) {
-	UINT i, j, items, subitems, cur_id;
-	HMENU m;
+// #define ID_MI_KANJIMASK 0xFF00
+#define ID_MI_KANJIRECV 54009
+#define ID_MI_KANJISEND 54109
+#define ID_MI_USEONESETTING 54200
 
-	items = GetMenuItemCount(menu);
-
-	for (i=0; i<items; i++) {
-		if (m = GetSubMenu(menu, i)) {
-			subitems = GetMenuItemCount(m);
-			for (j=0; j<subitems; j++) {
-				cur_id = GetMenuItemID(m, j);
-				if (cur_id == id) {
-					return i;
-				}
-			}
-		}
-	}
-	return -1;
-}
-
-/*
- * 送信漢字コード設定用のメニュー項目を追加する
- *
- * UseOneSetting が off の時に使う
- */
-static void InsertSendKcodeMenu(HMENU menu) {
+static void PASCAL InsertSendKcodeMenu(HMENU menu) {
 	UINT flag = MF_BYPOSITION | MF_STRING | MF_CHECKED;
-	int i;
 
 	if (pvar->ts->Language == IdJapanese) {
-		for (i = 0; i < _countof(MenuNameSendJ); i++) {
-			InsertMenu(pvar->hmEncode, ID_MI_USEONESETTING, MF_BYCOMMAND | MF_STRING,
-					MenuNameSendJ[i].menuID, MenuNameSendJ[i].menuStr);
-		}
+		InsertMenu(menu, 5, MF_BYPOSITION | MF_SEPARATOR, 0, NULL);
+
+		GetI18nStr(IniSection, "MENU_SEND_SJIS", pvar->ts->UIMsg, sizeof(pvar->ts->UIMsg),
+			   "Send: S&hift_JIS", pvar->ts->UILanguageFile);
+		InsertMenu(menu, 6, flag, ID_MI_KANJISEND+IdSJIS,  pvar->ts->UIMsg);
+		GetI18nStr(IniSection, "MENU_SEND_EUCJP", pvar->ts->UIMsg, sizeof(pvar->ts->UIMsg),
+			   "Send: EU&C-JP", pvar->ts->UILanguageFile);
+		InsertMenu(menu, 7, flag, ID_MI_KANJISEND+IdEUC,   pvar->ts->UIMsg);
+		GetI18nStr(IniSection, "MENU_SEND_JIS", pvar->ts->UIMsg, sizeof(pvar->ts->UIMsg),
+			   "Send: J&IS", pvar->ts->UILanguageFile);
+		InsertMenu(menu, 8, flag, ID_MI_KANJISEND+IdJIS,   pvar->ts->UIMsg);
+		GetI18nStr(IniSection, "MENU_SEND_UTF8", pvar->ts->UIMsg, sizeof(pvar->ts->UIMsg),
+			   "Send: U&TF-8", pvar->ts->UILanguageFile);
+		InsertMenu(menu, 9, flag, ID_MI_KANJISEND+IdUTF8,  pvar->ts->UIMsg);
 	}
 	else { // IdKorean
-		for (i = 0; i < _countof(MenuNameSendK); i++) {
-			InsertMenu(pvar->hmEncode, ID_MI_USEONESETTING, MF_BYCOMMAND | MF_STRING,
-					MenuNameSendK[i].menuID, MenuNameSendK[i].menuStr);
-		}
-	}
+		InsertMenu(menu, 3, MF_BYPOSITION | MF_SEPARATOR, 0, NULL);
 
-	InsertMenu(menu, ID_MI_USEONESETTING, MF_BYCOMMAND | MF_SEPARATOR, 0, NULL);
-}
+		GetI18nStr(IniSection, "MENU_SEND_KS5601", pvar->ts->UIMsg, sizeof(pvar->ts->UIMsg),
+			   "Send: K&S5601", pvar->ts->UILanguageFile);
+		InsertMenu(menu, 4, flag, ID_MI_KANJISEND+IdSJIS,  pvar->ts->UIMsg);
 
-/*
- * 送信漢字コード設定用のメニュー項目を削除する
- *
- * UseOneSetting が on にされた時に呼ばれる
- */
-static void DeleteSendKcodeMenu(HMENU menu) {
-	int i;
-
-	if (pvar->ts->Language == IdJapanese) {
-		for (i=0; i < _countof(MenuNameSendJ); i++) {
-			DeleteMenu(menu, MenuNameSendJ[i].menuID, MF_BYCOMMAND);
-		}
-		// 受信メニューの直後に有るセパレータを削除する
-		DeleteMenu(menu, _countof(MenuNameRecvJ), MF_BYPOSITION);
-	}
-	else { // IdKorean
-		for (i=0; i < _countof(MenuNameSendK); i++) {
-			DeleteMenu(menu, MenuNameSendK[i].menuID, MF_BYCOMMAND);
-		}
-		// 受信メニューの直後に有るセパレータを削除する
-		DeleteMenu(menu, _countof(MenuNameRecvK), MF_BYPOSITION);
+		GetI18nStr(IniSection, "MENU_SEND_UTF8", pvar->ts->UIMsg, sizeof(pvar->ts->UIMsg),
+			   "Send: U&TF-8", pvar->ts->UILanguageFile);
+		InsertMenu(menu, 5, flag, ID_MI_KANJISEND+IdUTF8,  pvar->ts->UIMsg);
 	}
 }
 
-/*
- * メニュー項目の更新
- *
- * 以下の二つについてメニュー項目を更新する。
- * 1. UseOneSetting の設定に基づいて、受信用メニュー項目を受信専用/送受信兼用の切り替えを行う
- * 2. メニュー項目の国際化を行う
- *
- * 通常は 1 で設定した項目名は 2 で上書き更新されるが、lng ファイルが設定されていない、
- * または lng ファイルにメニュー項目名が含まれていない場合への対応として 1 を行っている。
- */
-static void UpdateMenuCaption(HMENU menu, BOOL UseOneSetting) {
-#define doUpdateMenu(nameInfo, i18nInfo) { \
-	UINT i, id; \
-	for (i=0; i < _countof(nameInfo); i++) { \
-		id = (nameInfo)[i].menuID; \
-		ModifyMenu(menu, id, MF_BYCOMMAND, id, (nameInfo)[i].menuStr); \
-	} \
-	SetI18nMenuStrs(IniSection, menu, (i18nInfo), _countof(i18nInfo), pvar->ts->UILanguageFile); \
-}
-
+static void PASCAL DeleteSendKcodeMenu(HMENU menu) {
 	if (pvar->ts->Language == IdJapanese) {
-		if (UseOneSetting) {
-			doUpdateMenu(MenuNameOneJ, MenuInfoOneJ);
-		}
-		else {
-			doUpdateMenu(MenuNameRecvJ, MenuInfoSeparateJ);
-		}
+		DeleteMenu(menu, 5, MF_BYPOSITION);
+		DeleteMenu(menu, 5, MF_BYPOSITION);
+		DeleteMenu(menu, 5, MF_BYPOSITION);
+		DeleteMenu(menu, 5, MF_BYPOSITION);
+		DeleteMenu(menu, 5, MF_BYPOSITION);
 	}
 	else { // IdKorean
-		if (UseOneSetting) {
-			doUpdateMenu(MenuNameOneK, MenuInfoOneK);
+		DeleteMenu(menu, 3, MF_BYPOSITION);
+		DeleteMenu(menu, 3, MF_BYPOSITION);
+		DeleteMenu(menu, 3, MF_BYPOSITION);
+	}
+}
+
+static void PASCAL UpdateRecvMenuCaption(HMENU menu, BOOL UseOneSetting) {
+	if (UseOneSetting) {
+		if (pvar->ts->Language == IdJapanese) {
+			GetI18nStr(IniSection, "MENU_SJIS", pvar->ts->UIMsg, sizeof(pvar->ts->UIMsg),
+			           "Recv/Send: &Shift_JIS", pvar->ts->UILanguageFile);
+			ModifyMenu(menu, ID_MI_KANJIRECV+IdSJIS,  MF_BYCOMMAND, ID_MI_KANJIRECV+IdSJIS,
+			           pvar->ts->UIMsg);
+			GetI18nStr(IniSection, "MENU_EUCJP", pvar->ts->UIMsg, sizeof(pvar->ts->UIMsg),
+			           "Recv/Send: &EUC-JP", pvar->ts->UILanguageFile);
+			ModifyMenu(menu, ID_MI_KANJIRECV+IdEUC,   MF_BYCOMMAND, ID_MI_KANJIRECV+IdEUC,
+			           pvar->ts->UIMsg);
+			GetI18nStr(IniSection, "MENU_JIS", pvar->ts->UIMsg, sizeof(pvar->ts->UIMsg),
+			           "Recv/Send: &JIS", pvar->ts->UILanguageFile);
+			ModifyMenu(menu, ID_MI_KANJIRECV+IdJIS,   MF_BYCOMMAND, ID_MI_KANJIRECV+IdJIS,
+			           pvar->ts->UIMsg);
+			GetI18nStr(IniSection, "MENU_UTF8", pvar->ts->UIMsg, sizeof(pvar->ts->UIMsg),
+			           "Recv/Send: &UTF-8", pvar->ts->UILanguageFile);
+			ModifyMenu(menu, ID_MI_KANJIRECV+IdUTF8,  MF_BYCOMMAND, ID_MI_KANJIRECV+IdUTF8,
+			           pvar->ts->UIMsg);
+			GetI18nStr(IniSection, "MENU_UTF8m", pvar->ts->UIMsg, sizeof(pvar->ts->UIMsg),
+			           "Recv: UTF-8&m/Send: UTF-8", pvar->ts->UILanguageFile);
+			ModifyMenu(menu, ID_MI_KANJIRECV+IdUTF8m, MF_BYCOMMAND, ID_MI_KANJIRECV+IdUTF8m,
+			           pvar->ts->UIMsg);
 		}
-		else {
-			doUpdateMenu(MenuNameRecvK, MenuInfoSeparateK);
+		else { // IdKorean
+			GetI18nStr(IniSection, "MENU_KS5601", pvar->ts->UIMsg, sizeof(pvar->ts->UIMsg),
+			           "Recv/Send: &KS5601", pvar->ts->UILanguageFile);
+			ModifyMenu(menu, ID_MI_KANJIRECV+IdSJIS,  MF_BYCOMMAND, ID_MI_KANJIRECV+IdSJIS,
+			           pvar->ts->UIMsg);
+			GetI18nStr(IniSection, "MENU_UTF8", pvar->ts->UIMsg, sizeof(pvar->ts->UIMsg),
+			           "Recv/Send: &UTF-8", pvar->ts->UILanguageFile);
+			ModifyMenu(menu, ID_MI_KANJIRECV+IdUTF8,  MF_BYCOMMAND, ID_MI_KANJIRECV+IdUTF8,
+			           pvar->ts->UIMsg);
+			GetI18nStr(IniSection, "MENU_UTF8m", pvar->ts->UIMsg, sizeof(pvar->ts->UIMsg),
+			           "Recv: UTF-8&m/Send: UTF-8", pvar->ts->UILanguageFile);
+			ModifyMenu(menu, ID_MI_KANJIRECV+IdUTF8m, MF_BYCOMMAND, ID_MI_KANJIRECV+IdUTF8m,
+			           pvar->ts->UIMsg);
+		}
+	}
+	else {
+		if (pvar->ts->Language == IdJapanese) {
+			GetI18nStr(IniSection, "MENU_RECV_SJIS", pvar->ts->UIMsg, sizeof(pvar->ts->UIMsg),
+			           "Recv: &Shift_JIS", pvar->ts->UILanguageFile);
+			ModifyMenu(menu, ID_MI_KANJIRECV+IdSJIS,  MF_BYCOMMAND, ID_MI_KANJIRECV+IdSJIS,
+			           pvar->ts->UIMsg);
+			GetI18nStr(IniSection, "MENU_RECV_EUCJP", pvar->ts->UIMsg, sizeof(pvar->ts->UIMsg),
+			           "Recv: &EUC-JP", pvar->ts->UILanguageFile);
+			ModifyMenu(menu, ID_MI_KANJIRECV+IdEUC,   MF_BYCOMMAND, ID_MI_KANJIRECV+IdEUC,
+			           pvar->ts->UIMsg);
+			GetI18nStr(IniSection, "MENU_RECV_JIS", pvar->ts->UIMsg, sizeof(pvar->ts->UIMsg),
+			           "Recv: &JIS", pvar->ts->UILanguageFile);
+			ModifyMenu(menu, ID_MI_KANJIRECV+IdJIS,   MF_BYCOMMAND, ID_MI_KANJIRECV+IdJIS,
+			           pvar->ts->UIMsg);
+			GetI18nStr(IniSection, "MENU_RECV_UTF8", pvar->ts->UIMsg, sizeof(pvar->ts->UIMsg),
+			           "Recv: &UTF-8", pvar->ts->UILanguageFile);
+			ModifyMenu(menu, ID_MI_KANJIRECV+IdUTF8,  MF_BYCOMMAND, ID_MI_KANJIRECV+IdUTF8,
+			           pvar->ts->UIMsg);
+			GetI18nStr(IniSection, "MENU_RECV_UTF8m", pvar->ts->UIMsg, sizeof(pvar->ts->UIMsg),
+			           "Recv: UTF-8&m", pvar->ts->UILanguageFile);
+			ModifyMenu(menu, ID_MI_KANJIRECV+IdUTF8m, MF_BYCOMMAND, ID_MI_KANJIRECV+IdUTF8m,
+			           pvar->ts->UIMsg);
+		}
+		else { // IdKorean
+			GetI18nStr(IniSection, "MENU_RECV_KS5601", pvar->ts->UIMsg, sizeof(pvar->ts->UIMsg),
+			           "Recv: &KS5601", pvar->ts->UILanguageFile);
+			ModifyMenu(menu, ID_MI_KANJIRECV+IdSJIS,  MF_BYCOMMAND, ID_MI_KANJIRECV+IdSJIS,
+			           pvar->ts->UIMsg);
+			GetI18nStr(IniSection, "MENU_RECV_UTF8", pvar->ts->UIMsg, sizeof(pvar->ts->UIMsg),
+			           "Recv: &UTF-8", pvar->ts->UILanguageFile);
+			ModifyMenu(menu, ID_MI_KANJIRECV+IdUTF8,  MF_BYCOMMAND, ID_MI_KANJIRECV+IdUTF8,
+			           pvar->ts->UIMsg);
+			GetI18nStr(IniSection, "MENU_RECV_UTF8m", pvar->ts->UIMsg, sizeof(pvar->ts->UIMsg),
+			           "Recv: UTF-8&m", pvar->ts->UILanguageFile);
+			ModifyMenu(menu, ID_MI_KANJIRECV+IdUTF8m, MF_BYCOMMAND, ID_MI_KANJIRECV+IdUTF8m,
+			           pvar->ts->UIMsg);
 		}
 	}
 }
@@ -421,14 +294,15 @@ static void UpdateMenuCaption(HMENU menu, BOOL UseOneSetting) {
  * This function is called when Tera Term creates a new menu.
  */
 static void PASCAL TTXModifyMenu(HMENU menu) {
-	// 言語が日本語または韓国語の時のみメニューに追加する
+	UINT flag = MF_ENABLED;
+
+	// 言語が日本語のときのみメニューに追加されるようにした。 (2007.7.14 maya)
 	if (pvar->ts->Language != IdJapanese && pvar->ts->Language != IdKorean) {
 		return;
 	}
 
 	{
 		MENUITEMINFO mi;
-		int pos, i;
 
 		pvar->hmEncode = CreateMenu();
 
@@ -444,53 +318,71 @@ static void PASCAL TTXModifyMenu(HMENU menu) {
 		mi.fMask  = MIIM_TYPE | MIIM_SUBMENU;
 		mi.fType  = MFT_STRING;
 		mi.hSubMenu = pvar->hmEncode;
-
 		if (pvar->ts->Language == IdJapanese) {
-			mi.dwTypeData = "&KanjiCode";
+			GetI18nStr(IniSection, "MENU_KANJI", pvar->ts->UIMsg, sizeof(pvar->ts->UIMsg),
+			           "&KanjiCode", pvar->ts->UILanguageFile);
 		}
 		else { // IdKorean
-			mi.dwTypeData = "Coding(&K)";
+			GetI18nStr(IniSection, "MENU_KANJI_K", pvar->ts->UIMsg, sizeof(pvar->ts->UIMsg),
+			           "Coding(&K)", pvar->ts->UILanguageFile);
 		}
+		mi.dwTypeData = pvar->ts->UIMsg;
 		InsertMenuItem(menu, ID_HELPMENU, FALSE, &mi);
 
+		flag = MF_STRING|MF_CHECKED;
 		if (pvar->ts->Language == IdJapanese) {
-			for (i = 0; i < _countof(MenuNameRecvJ); i++) {
-				AppendMenu(pvar->hmEncode, MF_STRING, MenuNameRecvJ[i].menuID, MenuNameRecvJ[i].menuStr);
-			}
+			GetI18nStr(IniSection, "MENU_RECV_SJIS", pvar->ts->UIMsg, sizeof(pvar->ts->UIMsg),
+				   "Recv: &Shift_JIS", pvar->ts->UILanguageFile);
+			AppendMenu(pvar->hmEncode, flag, ID_MI_KANJIRECV+IdSJIS,  pvar->ts->UIMsg);
+			GetI18nStr(IniSection, "MENU_RECV_EUCJP", pvar->ts->UIMsg, sizeof(pvar->ts->UIMsg),
+				   "Recv: &EUC-JP", pvar->ts->UILanguageFile);
+			AppendMenu(pvar->hmEncode, flag, ID_MI_KANJIRECV+IdEUC,   pvar->ts->UIMsg);
+			GetI18nStr(IniSection, "MENU_RECV_JIS", pvar->ts->UIMsg, sizeof(pvar->ts->UIMsg),
+				   "Recv: &JIS", pvar->ts->UILanguageFile);
+			AppendMenu(pvar->hmEncode, flag, ID_MI_KANJIRECV+IdJIS,   pvar->ts->UIMsg);
+			GetI18nStr(IniSection, "MENU_RECV_UTF8", pvar->ts->UIMsg, sizeof(pvar->ts->UIMsg),
+				   "Recv: &UTF-8", pvar->ts->UILanguageFile);
+			AppendMenu(pvar->hmEncode, flag, ID_MI_KANJIRECV+IdUTF8,  pvar->ts->UIMsg);
+			GetI18nStr(IniSection, "MENU_RECV_UTF8m", pvar->ts->UIMsg, sizeof(pvar->ts->UIMsg),
+				   "Recv: UTF-8&m", pvar->ts->UILanguageFile);
+			AppendMenu(pvar->hmEncode, flag, ID_MI_KANJIRECV+IdUTF8m, pvar->ts->UIMsg);
 		}
 		else { // IdKorean
-			for (i = 0; i < _countof(MenuNameRecvK); i++) {
-				AppendMenu(pvar->hmEncode, MF_STRING, MenuNameRecvK[i].menuID, MenuNameRecvK[i].menuStr);
-			}
+			GetI18nStr(IniSection, "MENU_RECV_KS5601", pvar->ts->UIMsg, sizeof(pvar->ts->UIMsg),
+				   "Recv: &KS5601", pvar->ts->UILanguageFile);
+			AppendMenu(pvar->hmEncode, flag, ID_MI_KANJIRECV+IdSJIS,  pvar->ts->UIMsg);
+			GetI18nStr(IniSection, "MENU_RECV_UTF8", pvar->ts->UIMsg, sizeof(pvar->ts->UIMsg),
+				   "Recv: &UTF-8", pvar->ts->UILanguageFile);
+			AppendMenu(pvar->hmEncode, flag, ID_MI_KANJIRECV+IdUTF8, pvar->ts->UIMsg);
+			GetI18nStr(IniSection, "MENU_RECV_UTF8m", pvar->ts->UIMsg, sizeof(pvar->ts->UIMsg),
+				   "Recv: UTF-8&m", pvar->ts->UILanguageFile);
+			AppendMenu(pvar->hmEncode, flag, ID_MI_KANJIRECV+IdUTF8m, pvar->ts->UIMsg);
 		}
-
-		AppendMenu(pvar->hmEncode, MF_SEPARATOR, 0, NULL);
-		AppendMenu(pvar->hmEncode, MF_STRING, ID_MI_USEONESETTING ,  "Use &one setting");
 
 		if (!pvar->UseOneSetting) {
 			InsertSendKcodeMenu(pvar->hmEncode);
 		}
-
-		pos = GetMenuPosByChildId(menu, ID_MI_KANJIRECV + IdSJIS);
-
-		if (pos > 0) {
-			if (pvar->ts->Language == IdJapanese) {
-				MenuTitleInfoJ->nIDDlgItem = pos;
-				SetI18nMenuStrs(IniSection, menu, MenuTitleInfoJ, _countof(MenuTitleInfoJ), pvar->ts->UILanguageFile);
-			}
-			else {
-				MenuTitleInfoK->nIDDlgItem = pos;
-				SetI18nMenuStrs(IniSection, menu, MenuTitleInfoK, _countof(MenuTitleInfoK), pvar->ts->UILanguageFile);
-			}
+		else {
+			UpdateRecvMenuCaption(pvar->hmEncode, pvar->UseOneSetting);
 		}
 
-		UpdateMenuCaption(pvar->hmEncode, pvar->UseOneSetting);
+		AppendMenu(pvar->hmEncode, MF_SEPARATOR, 0, NULL);
+		GetI18nStr(IniSection, "MENU_USE_ONE_SETTING", pvar->ts->UIMsg, sizeof(pvar->ts->UIMsg),
+		           "Use &one setting", pvar->ts->UILanguageFile);
+		AppendMenu(pvar->hmEncode, flag, ID_MI_USEONESETTING ,  pvar->ts->UIMsg);
+
+		UpdateRecvMenu(pvar->ts->KanjiCode);
+		if (!pvar->UseOneSetting) {
+			UpdateSendMenu(pvar->ts->KanjiCodeSend);
+		}
+
+		CheckMenuItem(pvar->hmEncode, ID_MI_USEONESETTING, MF_BYCOMMAND | (pvar->UseOneSetting)?MF_CHECKED:0);
 	}
 }
 
 
 /*
- * ラジオメニュー/チェックメニューの状態を設定に合わせて更新する。
+ * This function is called when Tera Term pops up a submenu menu.
  */
 static void PASCAL TTXModifyPopupMenu(HMENU menu) {
 	// メニューが呼び出されたら、最新の設定に更新する。(2007.5.25 yutaka)
@@ -509,6 +401,9 @@ static int PASCAL TTXProcessCommand(HWND hWin, WORD cmd) {
 	WORD val;
 
 	if ((cmd > ID_MI_KANJIRECV) && (cmd <= ID_MI_KANJIRECV+IdUTF8m)) {
+		// 範囲チェックを追加 
+		// TTProxyのバージョンダイアログを開くと、当該ハンドラが呼ばれ、誤動作していたのを修正。
+		// (2007.7.13 yutaka)
 		val = cmd - ID_MI_KANJIRECV;
 		pvar->cv->KanjiCodeEcho = pvar->ts->KanjiCode = val;
 		if (pvar->UseOneSetting) {
@@ -517,7 +412,8 @@ static int PASCAL TTXProcessCommand(HWND hWin, WORD cmd) {
 			}
 			pvar->cv->KanjiCodeSend = pvar->ts->KanjiCodeSend = val;
 		}
-		CallResetCharSet(hWin);
+		pvar->NeedResetCharSet = TRUE;
+		SendMessage(hWin, WM_COMMAND, MAKELONG(ID_SETUP_TERMINAL, 0), 0);
 		return UpdateRecvMenu(pvar->ts->KanjiCode)?1:0;
 	}
 	else if ((cmd > ID_MI_KANJISEND) && (cmd <= ID_MI_KANJISEND+IdUTF8)) {
@@ -525,11 +421,13 @@ static int PASCAL TTXProcessCommand(HWND hWin, WORD cmd) {
 		pvar->cv->KanjiCodeSend = pvar->ts->KanjiCodeSend = val;
 		if (pvar->UseOneSetting) {
 			pvar->cv->KanjiCodeEcho = pvar->ts->KanjiCode = val;
-			CallResetCharSet(hWin);
+			pvar->NeedResetCharSet = TRUE;
+			SendMessage(hWin, WM_COMMAND, MAKELONG(ID_SETUP_TERMINAL, 0), 0);
 			return UpdateRecvMenu(pvar->ts->KanjiCode)?1:0;
 		}
 		else {
-			CallResetCharSet(hWin);
+			pvar->NeedResetCharSet = TRUE;
+			SendMessage(hWin, WM_COMMAND, MAKELONG(ID_SETUP_TERMINAL, 0), 0);
 			return UpdateSendMenu(pvar->ts->KanjiCodeSend)?1:0;
 		}
 	}
@@ -537,6 +435,7 @@ static int PASCAL TTXProcessCommand(HWND hWin, WORD cmd) {
 		if (pvar->UseOneSetting) {
 			pvar->UseOneSetting = FALSE;
 			InsertSendKcodeMenu(pvar->hmEncode);
+			CheckMenuItem(pvar->hmEncode, ID_MI_USEONESETTING, MF_BYCOMMAND);
 		}
 		else {
 			pvar->UseOneSetting = TRUE;
@@ -550,8 +449,9 @@ static int PASCAL TTXProcessCommand(HWND hWin, WORD cmd) {
 			pvar->cv->KanjiCodeSend = pvar->ts->KanjiCodeSend = val;
 
 			DeleteSendKcodeMenu(pvar->hmEncode);
+			CheckMenuItem(pvar->hmEncode, ID_MI_USEONESETTING, MF_BYCOMMAND | MF_CHECKED);
 		}
-		UpdateMenuCaption(pvar->hmEncode, pvar->UseOneSetting);
+		UpdateRecvMenuCaption(pvar->hmEncode, pvar->UseOneSetting);
 		return 1;
 	}
 
@@ -601,7 +501,7 @@ BOOL __declspec(dllexport) PASCAL TTXBind(WORD Version, TTXExports *exports) {
 	return TRUE;
 }
 
-BOOL WINAPI DllMain(HANDLE hInstance,
+BOOL WINAPI DllMain(HANDLE hInstance, 
                     ULONG ul_reason_for_call,
                     LPVOID lpReserved)
 {
@@ -614,6 +514,7 @@ BOOL WINAPI DllMain(HANDLE hInstance,
 			break;
 		case DLL_PROCESS_ATTACH:
 			/* do process initialization */
+			DoCover_IsDebuggerPresent();
 			hInst = hInstance;
 			pvar = &InstVar;
 			break;
@@ -623,5 +524,3 @@ BOOL WINAPI DllMain(HANDLE hInstance,
 	}
 	return TRUE;
 }
-
-/* vim: set ts=4 sw=4 ff=dos : */

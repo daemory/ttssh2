@@ -40,8 +40,8 @@
 #include "inpdlg.h"
 
 // CInpDlg dialog
-CInpDlg::CInpDlg(wchar_t *Input, const wchar_t *Text, const wchar_t *Title,
-                 const wchar_t *Default, BOOL Paswd,
+CInpDlg::CInpDlg(PCHAR Input, PCHAR Text, PCHAR Title,
+                 PCHAR Default, BOOL Paswd,
                  int x, int y)
 {
 	InputStr = Input;
@@ -68,11 +68,11 @@ BOOL CInpDlg::OnInitDialog()
 	HWND HEdit, HOk;
 
 	SetDlgTexts(m_hWnd, TextInfos, _countof(TextInfos), UILanguageFile);
-	SetWindowTextW(TitleStr);
-	SetDlgItemTextW(IDC_INPTEXT,TextStr);
-	SetDlgItemTextW(IDC_INPEDIT,DefaultStr);
+	SetWindowText(TitleStr);
+	SetDlgItemText(IDC_INPTEXT,TextStr);
+	SetDlgItemText(IDC_INPEDIT,DefaultStr);
 
-	CalcTextExtentW(GetDlgItem(IDC_INPTEXT), NULL, TextStr, &s);
+	CalcTextExtent(GetDlgItem(IDC_INPTEXT), NULL, TextStr, &s);
 	TW = s.cx + s.cx/10;
 	TH = s.cy;
 
@@ -99,7 +99,7 @@ BOOL CInpDlg::OnInitDialog()
 
 BOOL CInpDlg::OnOK()
 {
-	GetDlgItemTextW(IDC_INPEDIT,InputStr,MaxStrLen-1);
+	GetDlgItemText(IDC_INPEDIT,InputStr,MaxStrLen-1);
 	EndDialog(IDOK);
 	return TRUE;
 }
@@ -161,8 +161,8 @@ void CInpDlg::Relocation(BOOL is_init, int new_WW)
 	::MoveWindow(HEdit,(WW-EW)/2-4,TH+BH,EW,EH,TRUE);
 	::MoveWindow(HOk,(TW-BW)/2,TH+EH+BH*3/2,BW,BH,TRUE);
 
-	if (!PaswdFlag) {
-		SendDlgItemMessage(IDC_INPEDIT,EM_SETPASSWORDCHAR, 0, 0);
+	if (PaswdFlag) {
+		SendDlgItemMessage(IDC_INPEDIT,EM_SETPASSWORDCHAR,(UINT)'*',0);
 	}
 
 	SendDlgItemMessage(IDC_INPEDIT, EM_LIMITTEXT, MaxStrLen, 0);

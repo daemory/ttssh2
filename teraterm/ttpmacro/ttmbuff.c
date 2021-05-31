@@ -140,8 +140,8 @@ BOOL LoadMacroFile(PCHAR FileName, int IBuff)
 
 	BuffPtr[IBuff] = 0;
 
-//	Buff[IBuff] = LoadFileAA(FileName, &Len);
-	Buff[IBuff] = LoadFileU8A(FileName, &Len);
+	Buff[IBuff] = LoadFileAA(FileName, &Len);
+//	Buff[IBuff] = LoadFileU8A(FileName, &Len);
 	if (Buff[IBuff] == NULL) {
 		BuffLen[IBuff] = 0;
 		return FALSE;

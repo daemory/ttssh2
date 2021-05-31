@@ -36,7 +36,7 @@ FONT 8, "Tahoma", 0, 0, 0x0
 BEGIN
     LTEXT           "TTSSH\r\nTera Term Secure Shell extension,\r\nCompatible with SSH protocol version 1.5 and 2.0",IDC_TTSSH_VERSION,6,7,220,24
     ICON            "",IDC_TTSSH_ICON,248,7,20,20
-    LTEXT           "(C) 2004-2019 TeraTerm Project",IDC_TTSSH_RIGHTS,11,32,206,8
+    LTEXT           "(C) 2004-2021 TeraTerm Project",IDC_TTSSH_RIGHTS,11,32,206,8
     LTEXT           "Includes:\r\nTTSSH 1.5.4, (C) 1998-2001 Robert O'Callahan roc+tt@cs.cmu.edu\r\nIPv6 extention version 0.81, (C) 2000-2003 Jun-ya KATO kato@win6.jp",IDC_INCLUDES,6,45,262,24
     LTEXT           "OpenSSL:",IDC_OPENSSL_VERSION,6,69,175,8
     LTEXT           "zlib:",IDC_ZLIB_VERSION,6,78,175,8
@@ -103,7 +103,7 @@ BEGIN
     RTEXT           "TCP &port#:",IDC_HOSTTCPPORTLABEL,144,30,51,8,NOT WS_GROUP
     EDITTEXT        IDC_HOSTTCPPORT,198,28,30,12,ES_NUMBER | WS_GROUP
     RTEXT           "SSH &version:",IDC_SSH_VERSION_LABEL,129,46,61,8
-    COMBOBOX        IDC_SSH_VERSION,193,45,35,71,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    COMBOBOX        IDC_SSH_VERSION,193,45,35,30,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
     RTEXT           "IP versio&n:",IDC_HOSTTCPPROTOCOLLABEL,134,63,56,8
     COMBOBOX        IDC_HOSTTCPPROTOCOL,193,62,35,43,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
     RTEXT           "Po&rt:",IDC_HOSTCOMLABEL,58,89,34,8,NOT WS_GROUP
@@ -180,7 +180,7 @@ STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
 CAPTION "SECURITY WARNING"
 FONT 8, "Tahoma", 0, 0, 0x0
 BEGIN
-    LTEXT           "There is no entry for the server ""%s"" in your list of known hosts. The machine you have contacted may be a hostile machine pretending to be the server.",IDC_HOSTWARNING,15,7,229,41
+    LTEXT           "There is no entry for the server ""#####################################"" in your list of known hosts. The machine you have contacted may be a hostile machine pretending to be the server.",IDC_HOSTWARNING,15,7,229,41
     LTEXT           "If you choose to add this machine to the known hosts list and continue, then you will not receive this warning again.",IDC_HOSTWARNING2,15,48,229,26
     LTEXT           "",IDC_HOSTSSHFPCHECK,15,72,229,16
     LTEXT           "",IDC_HOSTSSHFPDNSSEC,15,88,229,8
@@ -201,7 +201,7 @@ STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
 CAPTION "SECURITY WARNING"
 FONT 8, "Tahoma", 0, 0, 0x0
 BEGIN
-    LTEXT           "Your known hosts list has an entry for the server ""%s"", but the machine you have contacted has presented a DIFFERENT KEY to the one in your known hosts list. A hostile machine may be pretending to be the server.",IDC_HOSTWARNING,15,7,229,43
+    LTEXT           "Your known hosts list has an entry for the server ""####################################"", but the machine you have contacted has presented a DIFFERENT KEY to the one in your known hosts list. A hostile machine may be pretending to be the server.",IDC_HOSTWARNING,15,7,229,43
     LTEXT           "If you choose to add this new key to the known hosts list and continue, then you will not receive this warning again.",IDC_HOSTWARNING2,15,48,229,24
     LTEXT           "",IDC_HOSTSSHFPCHECK,15,72,229,16
     LTEXT           "",IDC_HOSTSSHFPDNSSEC,15,88,229,8
@@ -408,7 +408,7 @@ STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
 CAPTION "SECURITY WARNING"
 FONT 8, "Tahoma", 0, 0, 0x0
 BEGIN
-    LTEXT           "Your known hosts list has an entry for the server ""%s"", but the machine you have contacted has presented a DIFFERENT TYPE KEY to the one in your known hosts list. A hostile machine may be pretending to be the server.",IDC_HOSTWARNING,15,7,229,43
+    LTEXT           "Your known hosts list has an entry for the server ""####################################"", but the machine you have contacted has presented a DIFFERENT TYPE KEY to the one in your known hosts list. A hostile machine may be pretending to be the server.",IDC_HOSTWARNING,15,7,229,43
     LTEXT           "If you choose to add this new key to the known hosts list and continue, then you will not receive this warning again.",IDC_HOSTWARNING2,15,48,229,24
     LTEXT           "",IDC_HOSTSSHFPCHECK,15,72,229,16
     LTEXT           "",IDC_HOSTSSHFPDNSSEC,15,88,229,8

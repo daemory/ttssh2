@@ -35,8 +35,6 @@
 
 #include <openssl/evp.h>
 
-#include "codeconv.h"
-
 // from cipher-3des.c
 extern const EVP_CIPHER* evp_ssh1_3des(void);
 
@@ -252,56 +250,73 @@ char *get_cipher_name(int cipher_id)
 }
 
 // リストボックス表示名
-wchar_t *get_listbox_cipher_nameW(int cipher_id, PTInstVar pvar)
+char *get_listbox_cipher_name(int cipher_id, PTInstVar pvar)
 {
-	typedef struct {
-		int no;
-		const char *nameA;
-	} list_t;
-	static const list_t list[] = {
-		{ SSH_CIPHER_3DES, "3DES(SSH1)" },
-		{ SSH_CIPHER_DES, "DES(SSH1)" },
-		{ SSH_CIPHER_BLOWFISH, "Blowfish(SSH1)" },
-		{ SSH2_CIPHER_AES128_CBC, "aes128-cbc(SSH2)" },
-		{ SSH2_CIPHER_AES192_CBC, "aes192-cbc(SSH2)" },
-		{ SSH2_CIPHER_AES256_CBC, "aes256-cbc(SSH2)" },
-		{ SSH2_CIPHER_3DES_CBC, "3des-cbc(SSH2)" },
-		{ SSH2_CIPHER_BLOWFISH_CBC, "blowfish-cbc(SSH2)" },
-		{ SSH2_CIPHER_AES128_CTR, "aes128-ctr(SSH2)" },
-		{ SSH2_CIPHER_AES192_CTR, "aes192-ctr(SSH2)" },
-		{ SSH2_CIPHER_AES256_CTR, "aes256-ctr(SSH2)" },
-		{ SSH2_CIPHER_ARCFOUR, "arcfour(SSH2)" },
-		{ SSH2_CIPHER_ARCFOUR128, "arcfour128(SSH2)" },
-		{ SSH2_CIPHER_ARCFOUR256, "arcfour256(SSH2)" },
-		{ SSH2_CIPHER_CAST128_CBC, "cast128-cbc(SSH2)" },
-		{ SSH2_CIPHER_3DES_CTR, "3des-ctr(SSH2)" },
-		{ SSH2_CIPHER_BLOWFISH_CTR, "blowfish-ctr(SSH2)" },
-		{ SSH2_CIPHER_CAST128_CTR, "cast128-ctr(SSH2)" },
-		{ SSH2_CIPHER_CAMELLIA128_CBC, "camellia128-cbc(SSH2)" },
-		{ SSH2_CIPHER_CAMELLIA192_CBC, "camellia192-cbc(SSH2)" },
-		{ SSH2_CIPHER_CAMELLIA256_CBC, "camellia256-cbc(SSH2)" },
-		{ SSH2_CIPHER_CAMELLIA128_CTR, "camellia128-ctr(SSH2)" },
-		{ SSH2_CIPHER_CAMELLIA192_CTR, "camellia192-ctr(SSH2)" },
-		{ SSH2_CIPHER_CAMELLIA256_CTR, "camellia256-ctr(SSH2)" },
-		{ SSH2_CIPHER_AES128_GCM, "aes128-gcm@openssh.com(SSH2)" },
-		{ SSH2_CIPHER_AES256_GCM, "aes256-gcm@openssh.com(SSH2)" },
-		{ SSH2_CIPHER_CHACHAPOLY, "chacha20-poly1305@openssh.com(SSH2)" },
-	};
-	int i;
-	const list_t *p = list;
+	switch (cipher_id) {
+	case SSH_CIPHER_NONE:
+		UTIL_get_lang_msg("DLG_SSHSETUP_CIPHER_BORDER", pvar,
+		                  "<ciphers below this line are disabled>");
+		return pvar->ts->UIMsg;
+	case SSH_CIPHER_3DES:
+		return "3DES(SSH1)";
+	case SSH_CIPHER_DES:
+		return "DES(SSH1)";
+	case SSH_CIPHER_BLOWFISH:
+		return "Blowfish(SSH1)";
 
-	if (cipher_id == SSH_CIPHER_NONE) {
-		wchar_t uimsg[MAX_UIMSG];
-		UTIL_get_lang_msgW("DLG_SSHSETUP_CIPHER_BORDER", pvar,
-						   L"<ciphers below this line are disabled>", uimsg);
-		return _wcsdup(uimsg);
+	// for SSH2(yutaka)
+	case SSH2_CIPHER_AES128_CBC:
+		return "aes128-cbc(SSH2)";
+	case SSH2_CIPHER_AES192_CBC:
+		return "aes192-cbc(SSH2)";
+	case SSH2_CIPHER_AES256_CBC:
+		return "aes256-cbc(SSH2)";
+	case SSH2_CIPHER_3DES_CBC:
+		return "3des-cbc(SSH2)";
+	case SSH2_CIPHER_BLOWFISH_CBC:
+		return "blowfish-cbc(SSH2)";
+	case SSH2_CIPHER_AES128_CTR:
+		return "aes128-ctr(SSH2)";
+	case SSH2_CIPHER_AES192_CTR:
+		return "aes192-ctr(SSH2)";
+	case SSH2_CIPHER_AES256_CTR:
+		return "aes256-ctr(SSH2)";
+	case SSH2_CIPHER_ARCFOUR:
+		return "arcfour(SSH2)";
+	case SSH2_CIPHER_ARCFOUR128:
+		return "arcfour128(SSH2)";
+	case SSH2_CIPHER_ARCFOUR256:
+		return "arcfour256(SSH2)";
+	case SSH2_CIPHER_CAST128_CBC:
+		return "cast128-cbc(SSH2)";
+	case SSH2_CIPHER_3DES_CTR:
+		return "3des-ctr(SSH2)";
+	case SSH2_CIPHER_BLOWFISH_CTR:
+		return "blowfish-ctr(SSH2)";
+	case SSH2_CIPHER_CAST128_CTR:
+		return "cast128-ctr(SSH2)";
+	case SSH2_CIPHER_CAMELLIA128_CBC:
+		return "camellia128-cbc(SSH2)";
+	case SSH2_CIPHER_CAMELLIA192_CBC:
+		return "camellia192-cbc(SSH2)";
+	case SSH2_CIPHER_CAMELLIA256_CBC:
+		return "camellia256-cbc(SSH2)";
+	case SSH2_CIPHER_CAMELLIA128_CTR:
+		return "camellia128-ctr(SSH2)";
+	case SSH2_CIPHER_CAMELLIA192_CTR:
+		return "camellia192-ctr(SSH2)";
+	case SSH2_CIPHER_CAMELLIA256_CTR:
+		return "camellia256-ctr(SSH2)";
+	case SSH2_CIPHER_AES128_GCM:
+		return "aes128-gcm@openssh.com(SSH2)";
+	case SSH2_CIPHER_AES256_GCM:
+		return "aes256-gcm@openssh.com(SSH2)";
+	case SSH2_CIPHER_CHACHAPOLY:
+		return "chacha20-poly1305@openssh.com(SSH2)";
+
+	default:
+		return NULL;
 	}
-	for (i = 0; i < _countof(list); p++,i++) {
-		if (p->no == cipher_id) {
-			return ToWcharA(p->nameA);
-		}
-	}
-	return NULL;
 }
 
 /*

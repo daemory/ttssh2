@@ -207,7 +207,11 @@
 			Filter="cpp;c;cxx;rc;def;r;odl;hpj;bat;for;f90"
 			>
 			<File
-				RelativePath="..\common\compat_w95_vs2005.c"
+				RelativePath="..\common\codeconv.cpp"
+				>
+			</File>
+			<File
+				RelativePath=".\comportinfo.cpp"
 				>
 			</File>
 			<File
@@ -227,14 +231,6 @@
 				>
 			</File>
 			<File
-				RelativePath=".\ttcmn_cominfo.c"
-				>
-			</File>
-			<File
-				RelativePath=".\ttcmn_notify.cpp"
-				>
-			</File>
-			<File
 				RelativePath="..\common\ttlib.c"
 				>
 			</File>
@@ -244,15 +240,11 @@
 			Filter="h;hpp;hxx;hm;inl;fi;fd"
 			>
 			<File
-				RelativePath="..\common\compat_win.h"
+				RelativePath=".\comportinfo.h"
 				>
 			</File>
 			<File
 				RelativePath=".\devpkey_teraterm.h"
-				>
-			</File>
-			<File
-				RelativePath="..\common\dllutil.h"
 				>
 			</File>
 			<File

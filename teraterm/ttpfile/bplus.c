@@ -30,6 +30,7 @@
 /* TTFILE.DLL, B-Plus protocol */
 #include "teraterm.h"
 #include "tttypes.h"
+#include "ttftypes.h"
 #include <string.h>
 #include "tt_res.h"
 
@@ -37,107 +38,49 @@
 #include "ftlib.h"
 #include "ttcommon.h"
 #include "ttlib.h"
-#include "layer_for_unicode.h"
-
-#include "bplus.h"
+#include "win16api.h"
 
 /* proto type */
-//BOOL PASCAL GetTransFname(PFileVarProto fv, PCHAR CurDir, WORD FuncId, LPLONG Option);
-
-/* B Plus */
-typedef struct {
-  BYTE WS;
-  BYTE WR;
-  BYTE B_S;
-  BYTE CM;
-  BYTE DQ;
-  BYTE TL;
-  BYTE Q[8];
-  BYTE DR;
-  BYTE UR;
-  BYTE FI;
-} TBPParam;
-
-
-typedef struct {
-  BYTE PktIn[2066], PktOut[2066];
-  int PktInCount, CheckCount;
-  int PktOutLen, PktOutCount, PktOutPtr;
-  LONG Check, CheckCalc;
-  BYTE PktNum, PktNumSent;
-  int PktNumOffset;
-  int PktSize;
-  WORD BPMode, BPState, BPPktState;
-  BOOL GetPacket, EnqSent;
-  BYTE MaxBS, CM;
-  BOOL Quoted;
-  int TimeOut;
-  BOOL CtlEsc;
-  BYTE Q[8];
-	TProtoLog *log;
-	const char *FullName;		// Windows上のファイル名 UTF-8
-} TBPVar;
-typedef TBPVar far *PBPVar;
-
-  /* B Plus states */
-#define BP_Init      1
-#define BP_RecvFile  2
-#define BP_RecvData  3
-#define BP_SendFile  4
-#define BP_SendData  5
-#define BP_SendClose 6
-#define BP_Failure   7
-#define BP_Close     8
-#define BP_AutoFile  9
-
-  /* B Plus packet states */
-#define BP_PktGetDLE   1
-#define BP_PktDLESeen  2
-#define BP_PktGetData  3
-#define BP_PktGetCheck 4
-#define BP_PktSending  5
+BOOL PASCAL GetTransFname
+  (PFileVar fv, PCHAR CurDir, WORD FuncId, LPLONG Option);
 
 #define BPTimeOut 10
 #define BPTimeOutTCPIP 0
 
-static BOOL BPOpenFileToBeSent(PFileVarProto fv)
+BOOL BPOpenFileToBeSent(PFileVar fv)
 {
-  BOOL r;
-  TFileIO *fileio = fv->file;
-  PBPVar bv = fv->data;
-
   if (fv->FileOpen) return TRUE;
-  if (bv->FullName == NULL) return FALSE;
+  if (strlen(&(fv->FullName[fv->DirLen]))==0) return FALSE;
 
-  r = fileio->OpenRead(fileio, bv->FullName);
-  fv->FileOpen = r;
-  if (r == TRUE) {
-    fv->SetDlgProtoFileName(fv, bv->FullName);
-    fv->FileSize = fileio->GetFSize(fileio, bv->FullName);
+  fv->FileHandle = _lopen(fv->FullName,OF_READ);
+  fv->FileOpen = fv->FileHandle != INVALID_HANDLE_VALUE;
+  if (fv->FileOpen)
+  {
+    SetDlgItemText(fv->HWin, IDC_PROTOFNAME, &(fv->FullName[fv->DirLen]));
+    fv->FileSize = GetFSize(fv->FullName);
   }
   return fv->FileOpen;
 }
 
-// 通信中に受信/送信が切り替わる?
-static void BPDispMode(PFileVarProto fv, PBPVar bv)
+void BPDispMode(PFileVar fv, PBPVar bv)
 {
-	switch (bv->BPMode) {
+  strncpy_s(fv->DlgCaption, sizeof(fv->DlgCaption),"Tera Term: B-Plus ", _TRUNCATE);
+  switch (bv->BPMode) {
     case IdBPSend:
-		fv->SetDialogCation(fv, "FILEDLG_TRANS_TITLE_BPSEND", TitBPSend);
-		break;
+      strncat_s(fv->DlgCaption,sizeof(fv->DlgCaption),"Send",_TRUNCATE);
+      break;
     case IdBPReceive:
-    case IdBPAuto:
-		fv->SetDialogCation(fv, "FILEDLG_TRANS_TITLE_BPRCV", TitBPRcv);
-		break;
-	}
+      strncat_s(fv->DlgCaption,sizeof(fv->DlgCaption),"Receive",_TRUNCATE);
+      break;
+  }
 
-	_SetWindowTextW(fv->HWin,fv->DlgCaption);
+  SetWindowText(fv->HWin,fv->DlgCaption);
 }
 
-static BOOL BPInit(PFileVarProto fv, PComVar cv, PTTSet ts)
+void BPInit
+  (PFileVar fv, PBPVar bv, PComVar cv, PTTSet ts)
 {
   int i;
-  PBPVar bv = fv->data;
 
   if (bv->BPMode==IdBPAuto)
   {
@@ -203,63 +146,60 @@ static BOOL BPInit(PFileVarProto fv, PComVar cv, PTTSet ts)
     }
   }
 
-  if ((ts->LogFlag & LOG_BP)!=0) {
-	  TProtoLog* log = ProtoLogCreate();
-	  bv->log = log;
-	  log->Open(log, "BPLUS.LOG");
-	  log->LogState = 0;
-  }
+  fv->LogFlag = ((ts->LogFlag & LOG_BP)!=0);
+  if (fv->LogFlag)
+    fv->LogFile = _lcreat("BPLUS.LOG",0);
+  fv->LogState = 0;
+  fv->LogCount = 0;
 
-  return TRUE;
 }
 
-static int BPRead1Byte(PFileVarProto fv, PBPVar bv, PComVar cv, LPBYTE b)
+int BPRead1Byte(PFileVar fv, PBPVar bv, PComVar cv, LPBYTE b)
 {
   if (CommRead1Byte(cv,b) == 0)
     return 0;
 
-  if (bv->log != NULL)
+  if (fv->LogFlag)
   {
-	TProtoLog *log = bv->log;
-    if (log->LogState==0)
+    if (fv->LogState==0)
     {
-		log->LogState = 1;
-		log->WriteRaw(log, "\015\012<<<\015\012", 7);
+      fv->LogState = 1;
+      fv->LogCount = 0;
+      _lwrite(fv->LogFile,"\015\012<<<\015\012",7);
     }
-    log->DumpByte(log, *b);
+    FTLog1Byte(fv,*b);
   }
   return 1;
 }
 
-static int BPWrite(PFileVarProto fv, PBPVar bv, PComVar cv, PCHAR B, int C)
+int BPWrite(PFileVar fv, PBPVar bv, PComVar cv, PCHAR B, int C)
 {
   int i, j;
 
   i = CommBinaryOut(cv,B,C);
 
-  if (bv->log != NULL && (i>0))
+  if (fv->LogFlag && (i>0))
   {
-	  TProtoLog* log = bv->log;
-	  if (log->LogState != 0)
+    if (fv->LogState != 0)
     {
-		  log->LogState = 0;
-		  log->WriteRaw(log,"\015\012>>>\015\012",7);
+      fv->LogState = 0;
+      fv->LogCount = 0;
+      _lwrite(fv->LogFile,"\015\012>>>\015\012",7);
     }
     for (j=0 ; j <= i-1 ; j++)
-      log->DumpByte(log,B[j]);
+      FTLog1Byte(fv,B[j]);
   }
   return i;
 }
 
-static void BPTimeOutProc(PFileVarProto fv, PComVar cv)
+void BPTimeOutProc(PFileVar fv, PBPVar bv, PComVar cv)
 {
-  PBPVar bv = fv->data;
   BPWrite(fv,bv,cv,"\005\005",2); /* two ENQ */
-  fv->FTSetTimeOut(fv,bv->TimeOut);
+  FTSetTimeOut(fv,bv->TimeOut);
   bv->EnqSent = TRUE;
 }
 
-static void BPUpdateCheck(PBPVar bv, BYTE b)
+void BPUpdateCheck(PBPVar bv, BYTE b)
 {
   WORD w;
 
@@ -283,7 +223,7 @@ static void BPUpdateCheck(PBPVar bv, BYTE b)
   }
 }
 
-static void BPSendACK(PFileVarProto fv, PBPVar bv, PComVar cv)
+void BPSendACK(PFileVar fv, PBPVar bv, PComVar cv)
 {
   char Temp[2];
 
@@ -297,7 +237,7 @@ static void BPSendACK(PFileVarProto fv, PBPVar bv, PComVar cv)
   bv->BPPktState = BP_PktGetDLE;
 }
 
-static void BPSendNAK(PFileVarProto fv, PBPVar bv, PComVar cv)
+void BPSendNAK(PFileVar fv, PBPVar bv, PComVar cv)
 {
   if ((bv->BPState != BP_Failure) &&
       (bv->BPState != BP_Close))
@@ -305,7 +245,7 @@ static void BPSendNAK(PFileVarProto fv, PBPVar bv, PComVar cv)
   bv->BPPktState = BP_PktGetDLE;
 }
 
-static void BPPut1Byte(PBPVar bv, BYTE b, int *OutPtr)
+void BPPut1Byte(PBPVar bv, BYTE b, int *OutPtr)
 {
   int Iq;
   BYTE Mq;
@@ -333,7 +273,7 @@ static void BPPut1Byte(PBPVar bv, BYTE b, int *OutPtr)
   (*OutPtr)++;
 }
 
-static void BPMakePacket(PBPVar bv, BYTE PktType, int DataLen)
+void BPMakePacket(PBPVar bv, BYTE PktType, int DataLen)
 {
   int i;
   BYTE b;
@@ -390,7 +330,7 @@ static void BPMakePacket(PBPVar bv, BYTE PktType, int DataLen)
   bv->BPPktState = BP_PktSending;
 }
 
-static void BPSendFailure(PBPVar bv, BYTE b)
+void BPSendFailure(PBPVar bv, BYTE b)
 {
   int i;
 
@@ -401,7 +341,7 @@ static void BPSendFailure(PBPVar bv, BYTE b)
   bv->BPState = BP_Failure;
 }
 
-static void BPSendInit(PBPVar bv)
+void BPSendInit(PBPVar bv)
 {
   BYTE b;
   int i, Count;
@@ -492,7 +432,7 @@ static void BPSendInit(PBPVar bv)
     bv->Q[i] = Param.Q[i];
 }
 
-static void BPSendTCPacket(PBPVar bv)
+void BPSendTCPacket(PBPVar bv)
 {
   int i;
 
@@ -503,24 +443,23 @@ static void BPSendTCPacket(PBPVar bv)
   bv->BPState = BP_SendClose;
 }
 
-static void BPSendNPacket(PFileVarProto fv, PBPVar bv)
+void BPSendNPacket(PFileVar fv, PBPVar bv)
 {
   int i, c;
   BYTE b;
-  TFileIO *fileio = fv->file;
 
   i = 4;
   c = 1;
   while ((i-4 < bv->PktSize-1) && (c>0))
   {
-    c = fileio->ReadFile(fileio, &b, 1);
+    c = _lread(fv->FileHandle,&b,1);
     if (c==1)
       BPPut1Byte(bv,b,&i);
     fv->ByteCount = fv->ByteCount + c;
   }
   if (c==0)
   {
-    fileio->Close(fileio);
+    _lclose(fv->FileHandle);
     fv->FileOpen = FALSE;
   }
   i = i - 4;
@@ -533,7 +472,7 @@ static void BPSendNPacket(PFileVarProto fv, PBPVar bv)
   SetDlgTime(fv->HWin, IDC_PROTOELAPSEDTIME, fv->StartTime, fv->ByteCount);
 }
 
-static void BPCheckPacket(PFileVarProto fv, PBPVar bv, PComVar cv)
+void BPCheckPacket(PFileVar fv, PBPVar bv, PComVar cv)
 {
   if (bv->Check != bv->CheckCalc)
   {
@@ -563,56 +502,30 @@ static void BPCheckPacket(PFileVarProto fv, PBPVar bv, PComVar cv)
   bv->GetPacket = TRUE;
 }
 
-static   int BPGet1(PBPVar bv, int *i, LPBYTE b)
-{
-	if (*i < bv->PktInCount)
-	{
-		*b = bv->PktIn[*i];
-		(*i)++;
-		return 1;
-	}
-	return 0;
-}
+  int BPGet1(PBPVar bv, int *i, LPBYTE b)
+  {
+    if (*i < bv->PktInCount)
+    {
+      *b = bv->PktIn[*i];
+      (*i)++;
+      return 1;
+    }
+    return 0;
+  }
 
-static BOOL FTCreateFile(PFileVarProto fv)
-{
-	TFileIO *file = fv->file;
-	PBPVar bv = fv->data;
 
-	fv->SetDlgProtoFileName(fv, bv->FullName);
-	fv->FileOpen = file->OpenWrite(file, bv->FullName);
-	if (! fv->FileOpen) {
-		if (fv->NoMsg) {
-			MessageBox(fv->HMainWin,"Cannot create file",
-					   "Tera Term: Error",MB_ICONEXCLAMATION);
-		}
-		return FALSE;
-	}
-
-	fv->ByteCount = 0;
-	fv->FileSize = 0;
-	if (fv->ProgStat != -1) {
-		fv->ProgStat = 0;
-	}
-	fv->StartTime = GetTickCount();
-
-	return TRUE;
-}
-
-static void BPParseTPacket(PFileVarProto fv, PBPVar bv)
+void BPParseTPacket(PFileVar fv, PBPVar bv)
 {
   int i, j, c;
   BYTE b;
 //  char Temp[HostNameMaxLength + 1]; // 81(yutaka)
   char Temp[81]; // 81(yutaka)
-  TFileIO *fileio = fv->file;
-  char *RecievePath;
 
   switch (bv->PktIn[2]) {
     case 'C': /* Close */
       if (fv->FileOpen)
       {
-	fileio->Close(fileio);
+	_lclose(fv->FileHandle);
 	fv->FileOpen = FALSE;
       }
       fv->Success = TRUE;
@@ -642,12 +555,8 @@ static void BPParseTPacket(PFileVarProto fv, PBPVar bv)
       }
       Temp[j] = 0;
 
-      RecievePath = fv->GetRecievePath(fv);
-      free((void *)bv->FullName);
-      bv->FullName = fileio->GetRecieveFilename(fileio, RecievePath, FALSE, Temp, !fv->OverWrite);
-      free(RecievePath);
-
-
+      GetFileNamePos(Temp,&i,&j);
+	  strncpy_s(&(fv->FullName[fv->DirLen]),sizeof(fv->FullName) - fv->DirLen,&(Temp[j]),_TRUNCATE);
       /* file open */
       if (! FTCreateFile(fv))
       {
@@ -692,25 +601,17 @@ static void BPParseTPacket(PFileVarProto fv, PBPVar bv)
 	}
 	Temp[j] = 0;
 
-	RecievePath = fv->GetRecievePath(fv);
-	free((void *)bv->FullName);
-	bv->FullName = fileio->GetRecieveFilename(fileio, Temp, FALSE, RecievePath, !fv->OverWrite);
-	free(RecievePath);
+	GetFileNamePos(Temp,&i,&j);
+	FitFileName(&(Temp[j]),sizeof(Temp) - j,NULL);
+	strncpy_s(&(fv->FullName[fv->DirLen]),sizeof(fv->FullName) - fv->DirLen,
+		&(Temp[j]),_TRUNCATE);
 
 	/* file open */
 	if (! BPOpenFileToBeSent(fv))
 	{
-	  PBPVar bv = fv->data;
-
 	  /* if file not found, ask user new file name */
-	  free((void *)bv->FullName);
-	  bv->FullName = NULL;
-
-	  // ダイアログを開いてファイル名をユーザーに指定してもらう
-	  // この位置で行うのは適切でないと思われるため
-	  // [cancel]を押したときと同様の動作とした
-	  //if (! GetTransFname(fv, NULL, GTF_BP, (PLONG)&i))
-	  if (FALSE)
+	  fv->FullName[fv->DirLen] = 0;
+	  if (! GetTransFname(fv, NULL, GTF_BP, (PLONG)&i)) 
 	  {
 	    BPSendFailure(bv,'E');
 	    return;
@@ -732,9 +633,8 @@ static void BPParseTPacket(PFileVarProto fv, PBPVar bv)
   }
 }
 
-static void BPParsePacket(PFileVarProto fv, PBPVar bv)
+void BPParsePacket(PFileVar fv, PBPVar bv)
 {
-  TFileIO *fileio = fv->file;
   bv->GetPacket = FALSE;
   /* Packet type */
 
@@ -760,7 +660,7 @@ static void BPParsePacket(PFileVarProto fv, PBPVar bv)
 	BPSendFailure(bv,'E');
 	return;
       }
-      fileio->WriteFile(fileio, &(bv->PktIn[2]), bv->PktInCount-2);
+      _lwrite(fv->FileHandle,&(bv->PktIn[2]),bv->PktInCount-2);
       fv->ByteCount = fv->ByteCount +
 		      bv->PktInCount - 2;
       SetDlgNum(fv->HWin, IDC_PROTOBYTECOUNT, fv->ByteCount);
@@ -775,12 +675,12 @@ static void BPParsePacket(PFileVarProto fv, PBPVar bv)
   }
 }
 
-static void BPParseAck(PFileVarProto fv, PBPVar bv, BYTE b)
+void BPParseAck(PFileVar fv, PBPVar bv, BYTE b)
 {
   b = (b - 0x30) % 10;
   if (bv->EnqSent)
   {
-    fv->FTSetTimeOut(fv,0);
+    FTSetTimeOut(fv,0);
     bv->EnqSent = FALSE;
     if ((bv->PktOutLen>0) && (b==bv->PktNum)) /* Resend packet */
     {
@@ -797,7 +697,7 @@ static void BPParseAck(PFileVarProto fv, PBPVar bv, BYTE b)
   else
     return;
 
-  fv->FTSetTimeOut(fv,0);
+  FTSetTimeOut(fv,0);
   bv->PktNum = b;
   if (b==0)
     bv->PktNumOffset = bv->PktNumOffset + 10;
@@ -834,19 +734,18 @@ static void BPParseAck(PFileVarProto fv, PBPVar bv, BYTE b)
   SetDlgNum(fv->HWin, IDC_PROTOPKTNUM, bv->PktNum + bv->PktNumOffset);
 }
 
-static void BPDequote(LPBYTE b)
-{
-	if ((*b>=0x40) && (*b<=0x5f))
-		*b = *b - 0x40;
-	else if ((*b>=0x60) && (*b<=0x7f))
-		*b = *b + 0x20;
-}
+  void BPDequote(LPBYTE b)
+  {
+    if ((*b>=0x40) && (*b<=0x5f))
+      *b = *b - 0x40;
+    else if ((*b>=0x60) && (*b<=0x7f))
+      *b = *b + 0x20;
+  }
 
-static BOOL BPParse(PFileVarProto fv, PComVar cv)
+BOOL BPParse(PFileVar fv, PBPVar bv, PComVar cv)
 {
   int c;
   BYTE b;
-  PBPVar bv = fv->data;
 
   do {
 
@@ -864,7 +763,7 @@ static BOOL BPParse(PFileVarProto fv, PComVar cv)
       if (cv->OutBuffCount==0)
       {
 	bv->BPPktState = BP_PktGetDLE;
-	fv->FTSetTimeOut(fv,bv->TimeOut);
+	FTSetTimeOut(fv,bv->TimeOut);
       }
       else
 	return TRUE;
@@ -892,7 +791,7 @@ static BOOL BPParse(PFileVarProto fv, PComVar cv)
 	      break;
 	    case 0x15: /* NAK */
 	      BPWrite(fv,bv,cv,"\005\005",2); /* two ENQs */
-	      fv->FTSetTimeOut(fv,bv->TimeOut);
+	      FTSetTimeOut(fv,bv->TimeOut);
 	      bv->EnqSent = TRUE;
 	      break;
 	  }
@@ -919,7 +818,7 @@ static BOOL BPParse(PFileVarProto fv, PComVar cv)
 		  /* CCITT CRC-16/32 are not supported */
 		  bv->CheckCalc = 0;
 		  bv->CheckCount = 1;
-		  break;
+		  break;   
 	      }
 	      break;
 	    default:
@@ -994,58 +893,9 @@ static BOOL BPParse(PFileVarProto fv, PComVar cv)
   return TRUE;
 }
 
-static void BPCancel(PFileVarProto fv, PComVar cv)
+void BPCancel(PBPVar bv)
 {
-	PBPVar bv = fv->data;
-	(void)cv;
-	if ((bv->BPState != BP_Failure) &&
-		(bv->BPState != BP_Close))
-		BPSendFailure(bv,'A');
-}
-
-static int SetOptV(PFileVarProto fv, int request, va_list ap)
-{
-	PBPVar bv = fv->data;
-	switch(request) {
-	case BPLUS_MODE: {
-		int Mode = va_arg(ap, int);
-		bv->BPMode = Mode;
-		return 0;
-	}
-	}
-	return -1;
-}
-
-static void Destroy(PFileVarProto fv)
-{
-	PBPVar bv = fv->data;
-	if (bv->log != NULL) {
-		TProtoLog* log = bv->log;
-		log->Destory(log);
-		bv->log = NULL;
-	}
-	free((void *)bv->FullName);
-	bv->FullName = NULL;
-	free(bv);
-	fv->data = NULL;
-}
-
-BOOL BPCreate(PFileVarProto fv)
-{
-	PBPVar bv;
-	bv = malloc(sizeof(*bv));
-	if (bv == NULL) {
-		return FALSE;
-	}
-	memset(bv, 0, sizeof(*bv));
-	fv->data = bv;
-
-	fv->Destroy = Destroy;
-	fv->Init = BPInit;
-	fv->Parse = BPParse;
-	fv->TimeOutProc = BPTimeOutProc;
-	fv->Cancel = BPCancel;
-	fv->SetOptV = SetOptV;
-
-	return TRUE;
+  if ((bv->BPState != BP_Failure) &&
+      (bv->BPState != BP_Close))
+    BPSendFailure(bv,'A');
 }

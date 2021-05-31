@@ -5,9 +5,13 @@
 #ifndef _YCL_FILEVERSION_H_
 #define _YCL_FILEVERSION_H_
 
+#if _MSC_VER >= 1000
 #pragma once
+#endif // _MSC_VER >= 1000
 
 #include <YCL/common.h>
+
+#pragma comment(lib, "version.lib")
 
 namespace yebisuya {
 

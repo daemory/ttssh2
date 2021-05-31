@@ -31,6 +31,7 @@
 
 #include <windowsx.h>
 #include <stdio.h>
+
 #include "tmfc.h"
 #include "teraterm.h"
 #include "ttlib.h"
@@ -42,23 +43,21 @@
 #include "ttmparse.h"
 #include "htmlhelp.h"
 #include "dlglib.h"
-#include "ttmacro.h"
-#include "codeconv.h"
 
 #include "errdlg.h"
 
 // CErrDlg dialog
 
-CErrDlg::CErrDlg(const char *Msg, const char *Line, int x, int y, int lineno, int start, int end, const char *FileName)
+CErrDlg::CErrDlg(const char *Msg, PCHAR Line, int x, int y, int lineno, int start, int end, PCHAR FileName)
 {
-	MsgStr = _wcsdup((wc)Msg);
-	LineStr = _wcsdup((wc)Line);
+	MsgStr = Msg;
+	LineStr = Line;
 	PosX = x;
 	PosY = y;
 	LineNo = lineno;
 	StartPos = start;
 	EndPos = end;
-	MacroFileName = _wcsdup((wc)FileName);
+	MacroFileName = FileName;
 }
 
 INT_PTR CErrDlg::DoModal(HINSTANCE hInst, HWND hWndParent)
@@ -73,33 +72,32 @@ BOOL CErrDlg::OnInitDialog()
 		{ IDCANCEL, "BTN_CONTINUE" },
 		{ IDC_MACROERRHELP, "BTN_HELP" },
 	};
-	wchar_t buf[MaxLineLen*2];
+	char buf[MaxLineLen*2], buf2[10];
 
 	SetDlgTexts(m_hWnd, TextInfos, _countof(TextInfos), UILanguageFile);
 
-	SetDlgItemTextW(IDC_ERRMSG,MsgStr);
+	SetDlgItemText(IDC_ERRMSG,MsgStr);
 
 	// 行番号を先頭につける。
 	// ファイル名もつける。
 	// エラー箇所に印をつける。
-	_snwprintf_s(buf, _countof(buf), _TRUNCATE, L"%ls:%d:", MacroFileName, LineNo);
-	SetDlgItemTextW(IDC_ERRLINE, buf);
+	_snprintf_s(buf, sizeof(buf), _TRUNCATE, "%s:%d:", MacroFileName, LineNo);
+	SetDlgItemText(IDC_ERRLINE, buf);
 
-	size_t len = wcslen(LineStr);
+	size_t len = strlen(LineStr);
 	buf[0] = 0;
 	for (size_t i = 0 ; i < len ; i++) {
 		if (i == StartPos)
-			wcsncat_s(buf, _countof(buf), L"<<<", _TRUNCATE);
+			strncat_s(buf, sizeof(buf), "<<<", _TRUNCATE);
 		if (i == EndPos)
-			wcsncat_s(buf, _countof(buf), L">>>", _TRUNCATE);
-		wchar_t buf2[10];
+			strncat_s(buf, sizeof(buf), ">>>", _TRUNCATE);
 		buf2[0] = LineStr[i];
 		buf2[1] = 0;
-		wcsncat_s(buf, _countof(buf), buf2, _TRUNCATE);
+		strncat_s(buf, sizeof(buf), buf2, _TRUNCATE);
 	}
 	if (EndPos == len)
-		wcsncat_s(buf, _countof(buf), L">>>", _TRUNCATE);
-	SetDlgItemTextW(IDC_EDIT_ERRLINE, buf);
+		strncat_s(buf, sizeof(buf), ">>>", _TRUNCATE);
+	SetDlgItemText(IDC_EDIT_ERRLINE, buf);
 
 	SetDlgPos();
 

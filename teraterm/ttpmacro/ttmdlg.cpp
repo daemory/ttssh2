@@ -50,7 +50,6 @@
 #include "statdlg.h"
 #include "ListDlg.h"
 #include "ttmlib.h"
-#include "ttmdlg.h"
 #include "ttmacro.h"
 
 #include "ttmdlg.h"
@@ -86,7 +85,7 @@ void ParseParam(PBOOL IOption, PBOOL VOption)
 	SleepFlag = FALSE;
 	*IOption = FALSE;
 	*VOption = FALSE;
-	Param = GetCommandLineA();
+	Param = GetCommandLine();
 
 	ParamsSize = 50;
 	Params = (char **)malloc(sizeof(char*) * ParamsSize);
@@ -220,8 +219,8 @@ void SetDlgPos(int x, int y)
 	}
 }
 
-void OpenInpDlg(wchar_t *Buff, const wchar_t *Text, const wchar_t *Caption,
-                const wchar_t *Default, BOOL Paswd)
+void OpenInpDlg(PCHAR Buff, PCHAR Text, PCHAR Caption,
+                PCHAR Default, BOOL Paswd)
 {
 	HINSTANCE hInst = GetInstance();
 	HWND hWndParent = GetHWND();
@@ -229,7 +228,7 @@ void OpenInpDlg(wchar_t *Buff, const wchar_t *Text, const wchar_t *Caption,
 	InpDlg.DoModal(hInst, hWndParent);
 }
 
-int OpenErrDlg(const char *Msg, const char *Line, int lineno, int start, int end, const char *FileName)
+int OpenErrDlg(const char *Msg, PCHAR Line, int lineno, int start, int end, PCHAR FileName)
 {
 	HINSTANCE hInst = GetInstance();
 	HWND hWndParent = GetHWND();
@@ -237,7 +236,7 @@ int OpenErrDlg(const char *Msg, const char *Line, int lineno, int start, int end
 	return ErrDlg.DoModal(hInst, hWndParent);
 }
 
-int OpenMsgDlg(const wchar_t *Text, const wchar_t *Caption, BOOL YesNo)
+int OpenMsgDlg(PCHAR Text, PCHAR Caption, BOOL YesNo)
 {
 	HINSTANCE hInst = GetInstance();
 	HWND hWndParent = GetHWND();
@@ -245,7 +244,7 @@ int OpenMsgDlg(const wchar_t *Text, const wchar_t *Caption, BOOL YesNo)
 	return MsgDlg.DoModal(hInst, hWndParent);
 }
 
-void OpenStatDlg(const wchar_t *Text, const wchar_t *Caption)
+void OpenStatDlg(PCHAR Text, PCHAR Caption)
 {
 	if (StatDlg==NULL) {
 		HINSTANCE hInst = GetInstance();
@@ -282,7 +281,7 @@ void BringupStatDlg()
  * @retval -1		cancelボタン
  * @retval -2		closeボタン
  */
-int OpenListDlg(const wchar_t *Text, const wchar_t *Caption, wchar_t **Lists, int Selected)
+int OpenListDlg(PCHAR Text, PCHAR Caption, const CHAR **Lists, int Selected)
 {
 	HINSTANCE hInst = GetInstance();
 	HWND hWndParent = GetHWND();

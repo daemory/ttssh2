@@ -5,7 +5,9 @@
 #ifndef _YCL_STRINGBUFFER_H_
 #define _YCL_STRINGBUFFER_H_
 
+#if _MSC_VER >= 1000
 #pragma once
+#endif // _MSC_VER >= 1000
 
 #include <YCL/common.h>
 
@@ -43,9 +45,7 @@ private:
 		}else{
 			buffer = new char[bufferSize];
 		}
-		if (source != NULL) {
-			memcpy(buffer, source, validLength);
-		}
+		memcpy(buffer, source, validLength);
 		memset(buffer + validLength, '\0', bufferSize - validLength);
 	}
 public:
@@ -112,7 +112,7 @@ public:
 	// 返値:
 	//	指定の位置の文字。
 	char charAt(size_t index)const {
-		return index < validLength ? buffer[index] : '\0';
+		return index >= 0 && index < validLength ? buffer[index] : '\0';
 	}
 	// 指定の位置の文字を取得する。
 	// 引数:
@@ -120,7 +120,9 @@ public:
 	// 返値:
 	//	指定の位置の文字の参照。
 	char& charAt(size_t index) {
-		if (index >= validLength) {
+		if (index < 0) {
+			index = 0;
+		}else if (index >= validLength) {
 			ensureCapacity(validLength + 1);
 			index = validLength++;
 		}
@@ -178,6 +180,8 @@ public:
 	// 返値:
 	//	削除結果。
 	StringBuffer& remove(size_t start, size_t end) {
+		if (start <= 0)
+			start = 0;
 		if (start < end) {
 			if (end < validLength){
 				memcpy(buffer + start, buffer + end, validLength - end);
@@ -196,6 +200,8 @@ public:
 	// 返値:
 	//	置換結果。
 	StringBuffer& replace(size_t start, size_t end, const char* source) {
+		if (start < 0)
+			start = 0;
 		if (end > validLength)
 			end = validLength;
 		if (start < end) {
@@ -213,6 +219,8 @@ public:
 	// 返値:
 	//	指定の位置の文字列。
 	String substring(size_t index)const {
+		if (index < 0)
+			index = 0;
 		return String(buffer + index, validLength - index);
 	}
 	// 指定の位置の文字列を取得する。
@@ -222,6 +230,8 @@ public:
 	// 返値:
 	//	指定の位置の文字列。
 	String substring(size_t start, size_t end)const {
+		if (start < 0)
+			start = 0;
 		if (end > validLength)
 			end = validLength;
 		return String(buffer + start, end - start);
@@ -252,7 +262,9 @@ public:
 	// 返値:
 	//	挿入結果。
 	StringBuffer& insert(size_t index, const char* source, size_t length) {
-		if (index >= validLength)
+		if (index < 0)
+			index = 0;
+		else if (index >= validLength)
 			index = validLength;
 		size_t oldLength = validLength;
 		ensureCapacity(validLength + length);

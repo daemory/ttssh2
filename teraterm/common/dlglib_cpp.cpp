@@ -34,19 +34,133 @@
 #endif
 #include <stdlib.h>
 #include <crtdbg.h>
-#include <wchar.h>
 
 #include "dlglib.h"
 #include "ttlib.h"
-#include "layer_for_unicode.h"
-#include "codeconv.h"
+
+// ダイアログモーダル状態の時、OnIdle()を実行する
+//#define ENABLE_CALL_IDLE_MODAL	1
+
+extern BOOL CallOnIdle(LONG lCount);
+
+typedef struct {
+	DLGPROC OrigProc;	// Dialog proc
+	LONG_PTR OrigUser;	// DWLP_USER
+	LPARAM ParamInit;
+	int DlgResult;
+	bool EndDialogFlag;
+} TTDialogData;
+
+static TTDialogData *TTDialogTmpData;
+
+#if ENABLE_CALL_IDLE_MODAL
+static int TTDoModal(HWND hDlgWnd)
+{
+	LONG lIdleCount = 0;
+	MSG Msg;
+	TTDialogData *data = (TTDialogData *)GetWindowLongPtr(hDlgWnd, DWLP_USER);
+
+	for (;;)
+	{
+		if (!IsWindow(hDlgWnd)) {
+			// ウインドウが閉じられた
+			return IDCANCEL;
+		}
+#if defined(_DEBUG)
+		if (!IsWindowVisible(hDlgWnd)) {
+			// 誤ってEndDialog()が使われた? -> TTEndDialog()を使うこと
+			::ShowWindow(hDlgWnd, SW_SHOWNORMAL);
+		}
+#endif
+		if (data->EndDialogFlag) {
+			// TTEndDialog()が呼ばれた
+			return data->DlgResult;
+		}
+
+		if(!::PeekMessage(&Msg, NULL, NULL, NULL, PM_NOREMOVE))
+		{
+			// メッセージがない
+			// OnIdel() を処理する
+			if (!CallOnIdle(lIdleCount++)) {
+				// Idle処理がなくなった
+				lIdleCount = 0;
+				Sleep(10);
+			}
+			continue;
+		}
+		else
+		{
+			// メッセージがある
+
+			// pump message
+			BOOL quit = !::GetMessage(&Msg, NULL, NULL, NULL);
+			if (quit) {
+				// QM_QUIT
+				PostQuitMessage(0);
+				return IDCANCEL;
+			}
+
+			if (!::IsDialogMessage(hDlgWnd, &Msg)) {
+				// ダイアログ以外の処理
+				::TranslateMessage(&Msg);
+				::DispatchMessage(&Msg);
+			}
+		}
+	}
+
+	// ここには来ない
+	return IDOK;
+}
+#endif
+
+static INT_PTR CALLBACK TTDialogProc(
+	HWND hDlgWnd, UINT msg,
+	WPARAM wParam, LPARAM lParam)
+{
+	TTDialogData *data = (TTDialogData *)GetWindowLongPtr(hDlgWnd, DWLP_USER);
+	if (msg == WM_INITDIALOG) {
+		data = (TTDialogData *)lParam;
+		SetWindowLongPtr(hDlgWnd, DWLP_USER, (LONG_PTR)lParam);
+		lParam = data->ParamInit;
+	}
+
+	if (data == NULL) {
+		// WM_INITDIALOGよりも前は設定されていない
+		data = TTDialogTmpData;
+	} else {
+		// TTEndDialog()が呼ばれたとき、DWLP_USER が参照できない
+		TTDialogTmpData = data;
+	}
+
+	SetWindowLongPtr(hDlgWnd, DWLP_DLGPROC, (LONG_PTR)data->OrigProc);
+	SetWindowLongPtr(hDlgWnd, DWLP_USER, (LONG_PTR)data->OrigUser);
+	LRESULT Result = data->OrigProc(hDlgWnd, msg, wParam, lParam);
+	data->OrigProc = (DLGPROC)GetWindowLongPtr(hDlgWnd, DWLP_DLGPROC);
+	data->OrigUser = GetWindowLongPtr(hDlgWnd, DWLP_USER);
+	SetWindowLongPtr(hDlgWnd, DWLP_DLGPROC, (LONG_PTR)TTDialogProc);
+	SetWindowLongPtr(hDlgWnd, DWLP_USER, (LONG_PTR)data);
+
+	if (msg == WM_NCDESTROY) {
+		SetWindowLongPtr(hDlgWnd, DWLP_USER, 0);
+		free(data);
+	}
+
+	return Result;
+}
 
 /**
  *	EndDialog() 互換関数
  */
 BOOL TTEndDialog(HWND hDlgWnd, INT_PTR nResult)
 {
+#if ENABLE_CALL_IDLE_MODAL
+	TTDialogData *data = TTDialogTmpData;
+	data->DlgResult = nResult;
+	data->EndDialogFlag = true;
+	return TRUE;
+#else
 	return EndDialog(hDlgWnd, nResult);
+#endif
 }
 
 /**
@@ -59,24 +173,21 @@ HWND TTCreateDialogIndirectParam(
 	DLGPROC lpDialogFunc,		// ダイアログボックスプロシージャへのポインタ
 	LPARAM lParamInit)			// 初期化値
 {
+	TTDialogData *data = (TTDialogData *)malloc(sizeof(TTDialogData));
+	data->OrigProc = lpDialogFunc;
+	data->OrigUser = 0;
+	data->ParamInit = lParamInit;
+	data->EndDialogFlag = false;
+	data->DlgResult = 0;
 	DLGTEMPLATE *lpTemplate = TTGetDlgTemplate(hInstance, lpTemplateName);
-	HWND hDlgWnd = _CreateDialogIndirectParamW(hInstance, lpTemplate, hWndParent, lpDialogFunc, lParamInit);
+	TTDialogTmpData = data;
+	HWND hDlgWnd = CreateDialogIndirectParam(
+		hInstance, lpTemplate, hWndParent, TTDialogProc, (LPARAM)data);
+	TTDialogTmpData = NULL;
+	ShowWindow(hDlgWnd, SW_SHOW);
+    UpdateWindow(hDlgWnd);
 	free(lpTemplate);
 	return hDlgWnd;
-}
-
-/**
- *	CreateDialogParam() 互換関数
- */
-HWND TTCreateDialogParam(
-	HINSTANCE hInstance,
-	LPCTSTR lpTemplateName,
-	HWND hWndParent,
-	DLGPROC lpDialogFunc,
-	LPARAM lParamInit)
-{
-	return TTCreateDialogIndirectParam(hInstance, lpTemplateName,
-									   hWndParent, lpDialogFunc, lParamInit);
 }
 
 /**
@@ -88,32 +199,53 @@ HWND TTCreateDialog(
 	HWND hWndParent,
 	DLGPROC lpDialogFunc)
 {
-	return TTCreateDialogParam(hInstance, lpTemplateName,
-							   hWndParent, lpDialogFunc, NULL);
+	return TTCreateDialogIndirectParam(hInstance, lpTemplateName,
+									   hWndParent, lpDialogFunc, NULL);
 }
 
 /**
  *	DialogBoxParam() 互換関数
  *		EndDialog()ではなく、TTEndDialog()を使用すること
  */
-INT_PTR TTDialogBoxParam(HINSTANCE hInstance, LPCTSTR lpTemplateName,
-						 HWND hWndParent,		// オーナーウィンドウのハンドル
-						 DLGPROC lpDialogFunc,  // ダイアログボックスプロシージャへのポインタ
-						 LPARAM lParamInit)		// 初期化値
+INT_PTR TTDialogBoxParam(
+	HINSTANCE hInstance,
+	LPCTSTR lpTemplateName,
+	HWND hWndParent,			// オーナーウィンドウのハンドル
+	DLGPROC lpDialogFunc,		// ダイアログボックスプロシージャへのポインタ
+	LPARAM lParamInit)			// 初期化値
 {
+#if ENABLE_CALL_IDLE_MODAL
+	HWND hDlgWnd = TTCreateDialogIndirectParam(
+		hInstance, lpTemplateName,
+		hWndParent, lpDialogFunc, lParamInit);
+	EnableWindow(hWndParent, FALSE);
+	int DlgResult = TTDoModal(hDlgWnd);
+	::DestroyWindow(hDlgWnd);
+	EnableWindow(hWndParent, TRUE);
+	return DlgResult;
+#else
 	DLGTEMPLATE *lpTemplate = TTGetDlgTemplate(hInstance, lpTemplateName);
-	INT_PTR DlgResult = _DialogBoxIndirectParamW(hInstance, lpTemplate, hWndParent, lpDialogFunc, lParamInit);
+	INT_PTR DlgResult = DialogBoxIndirectParam(
+		hInstance, lpTemplate, hWndParent,
+		lpDialogFunc, lParamInit);
 	free(lpTemplate);
 	return DlgResult;
+#endif
 }
 
 /**
- *	DialogBox() 互換関数
+ *	DialogBoxParam() 互換関数
  *		EndDialog()ではなく、TTEndDialog()を使用すること
  */
-INT_PTR TTDialogBox(HINSTANCE hInstance, LPCTSTR lpTemplateName, HWND hWndParent, DLGPROC lpDialogFunc)
+INT_PTR TTDialogBox(
+	HINSTANCE hInstance,
+	LPCTSTR lpTemplateName,
+	HWND hWndParent,
+	DLGPROC lpDialogFunc)
 {
-	return TTDialogBoxParam(hInstance, lpTemplateName, hWndParent, lpDialogFunc, NULL);
+	return TTDialogBoxParam(
+		hInstance, lpTemplateName,
+		hWndParent, lpDialogFunc, (LPARAM)NULL);
 }
 
 /**
@@ -152,7 +284,7 @@ void SetDialogFont(const char *FontName, int FontPoint, int FontCharSet,
 	if (logfont.lfHeight < 0) {
 		logfont.lfHeight = GetFontPointFromPixel(NULL, -logfont.lfHeight);
 	}
-	TTSetDlgFontA(logfont.lfFaceName, logfont.lfHeight, logfont.lfCharSet);
+	TTSetDlgFont(logfont.lfFaceName, logfont.lfHeight, logfont.lfCharSet);
 }
 
 
@@ -184,140 +316,4 @@ int GetFontPointFromPixel(HWND hWnd, int point)
 	int pixel = MulDiv(point, 72, dpi);			// point = pixel / dpi * 72
 	ReleaseDC(hWnd, DC);
 	return pixel;
-}
-
-/**
- *	リストの横幅を拡張する(元の幅より狭くなることはない)
- *	@param[in]	dlg		ダイアログのハンドル
- *	@param[in]	ID		コンボボックスのID
- */
-void ExpandCBWidth(HWND dlg, int ID)
-{
-	HWND hCtrlWnd = GetDlgItem(dlg, ID);
-	int count = (int)SendMessage(hCtrlWnd, CB_GETCOUNT, 0, 0);
-	HFONT hFont = (HFONT)SendMessage(hCtrlWnd, WM_GETFONT, 0, 0);
-	int i, max_width = 0;
-	HDC TmpDC = GetDC(hCtrlWnd);
-	hFont = (HFONT)SelectObject(TmpDC, hFont);
-	for (i=0; i<count; i++) {
-		SIZE s;
-		int len = (int)SendMessage(hCtrlWnd, CB_GETLBTEXTLEN, i, 0);
-		char *lbl = (char *)calloc(len+1, sizeof(char));
-		SendMessage(hCtrlWnd, CB_GETLBTEXT, i, (LPARAM)lbl);
-		GetTextExtentPoint32(TmpDC, lbl, len, &s);
-		if (s.cx > max_width)
-			max_width = s.cx;
-		free(lbl);
-	}
-	max_width += GetSystemMetrics(SM_CXVSCROLL);	// スクロールバーの幅も足し込んでおく
-	SendMessage(hCtrlWnd, CB_SETDROPPEDWIDTH, max_width, 0);
-	SelectObject(TmpDC, hFont);
-	ReleaseDC(hCtrlWnd, TmpDC);
-}
-
-/**
- *	GetOpenFileName(), GetSaveFileName() 用フィルタ文字列取得
- *
- *	@param[in]	user_filter_mask	ユーザーフィルタ文字列
- *									"*.txt", "*.txt;*.log" など
- *									NULLのとき使用しない
- *	@param[in]	UILanguageFile
- *	@param[out]	len					生成した文字列長(wchar_t単位)
- *									NULLのときは返さない
- *	@retval		"User define(*.txt)\0*.txt\0All(*.*)\0*.*\0" など
- *				終端は "\0\0" となる
- */
-wchar_t *GetCommonDialogFilterW(const char *user_filter_mask, const char *UILanguageFile, size_t *len)
-{
-	// "ユーザ定義(*.txt)\0*.txt"
-	wchar_t *user_filter_str = NULL;
-	size_t user_filter_len = 0;
-	if (user_filter_mask != NULL && user_filter_mask[0] != 0) {
-		wchar_t user_filter_name[MAX_UIMSG];
-		GetI18nStrW("Tera Term", "FILEDLG_USER_FILTER_NAME", user_filter_name, sizeof(user_filter_name), L"User define",
-					 UILanguageFile);
-		size_t user_filter_name_len = wcslen(user_filter_name);
-		wchar_t *user_filter_maskW = ToWcharA(user_filter_mask);
-		size_t user_filter_mask_len = wcslen(user_filter_maskW);
-		user_filter_len = user_filter_name_len + 1 + user_filter_mask_len + 1 + 1 + user_filter_mask_len + 1;
-		user_filter_str = (wchar_t *)malloc(user_filter_len * sizeof(wchar_t));
-		wchar_t *p = user_filter_str;
-		wmemcpy(p, user_filter_name, user_filter_name_len);
-		p += user_filter_name_len;
-		*p++ = '(';
-		wmemcpy(p, user_filter_maskW, user_filter_mask_len);
-		p += user_filter_mask_len;
-		*p++ = ')';
-		*p++ = '\0';
-		wmemcpy(p, user_filter_maskW, user_filter_mask_len);
-		p += user_filter_mask_len;
-		*p++ = '\0';
-		free(user_filter_maskW);
-	}
-
-	// "すべてのファイル(*.*)\0*.*"
-	wchar_t all_filter_str[MAX_UIMSG];
-	GetI18nStrW("Tera Term", "FILEDLG_ALL_FILTER", all_filter_str, _countof(all_filter_str), L"All(*.*)\\0*.*", UILanguageFile);
-	size_t all_filter_len;
-	{
-		size_t all_filter_title_len = wcsnlen(all_filter_str, _countof(all_filter_str));
-		if (all_filter_title_len == 0 || all_filter_title_len == _countof(all_filter_str)) {
-			all_filter_str[0] = 0;
-			all_filter_len = 0;
-		} else {
-			size_t all_filter_mask_max = _countof(all_filter_str) - all_filter_title_len - 1;
-			size_t all_filter_mask_len = wcsnlen(all_filter_str + all_filter_title_len + 1, all_filter_mask_max);
-			if (all_filter_mask_len == 0 || all_filter_mask_len == _countof(all_filter_str)) {
-				all_filter_str[0] = 0;
-				all_filter_len = 0;
-			} else {
-				all_filter_len = all_filter_title_len + 1 + all_filter_mask_len + 1;
-			}
-		}
-	}
-
-	// フィルタ文字列を作る
-	size_t filter_len = user_filter_len + all_filter_len;
-	wchar_t* filter_str;
-	if (filter_len != 0) {
-		filter_len++;
-		filter_str = (wchar_t*)malloc(filter_len * sizeof(wchar_t));
-		wchar_t *p = filter_str;
-		if (user_filter_len != 0) {
-			wmemcpy(p, user_filter_str, user_filter_len);
-			p += user_filter_len;
-		}
-		wmemcpy(p, all_filter_str, all_filter_len);
-		p += all_filter_len;
-		*p = '\0';
-	} else {
-		filter_len = 2;
-		filter_str = (wchar_t*)malloc(filter_len * sizeof(wchar_t));
-		filter_str[0] = 0;
-		filter_str[1] = 0;
-	}
-
-	if (user_filter_len != 0) {
-		free(user_filter_str);
-	}
-
-	if (len != NULL) {
-		*len = filter_len;
-	}
-
-	return filter_str;
-}
-
-wchar_t *GetCommonDialogFilterW(const char *user_filter_mask, const char *UILanguageFile)
-{
-	return GetCommonDialogFilterW(user_filter_mask, UILanguageFile, NULL);
-}
-
-char *GetCommonDialogFilterA(const char *user_filter_mask, const char *UILanguageFile)
-{
-	size_t filterW_len;
-	wchar_t *filterW_ptr = GetCommonDialogFilterW(user_filter_mask, UILanguageFile, &filterW_len);
-	char *filterA_ptr = _WideCharToMultiByte(filterW_ptr, filterW_len, CP_ACP, NULL);
-	free(filterW_ptr);
-	return filterA_ptr;
 }

@@ -208,19 +208,11 @@
 			Filter="cpp;c;cxx;rc;def;r;odl;hpj;bat;for;f90"
 			>
 			<File
-				RelativePath="..\common\compat_w95_vs2005.c"
-				>
-			</File>
-			<File
 				RelativePath="..\common\ttlib.c"
 				>
 			</File>
 			<File
 				RelativePath="ttset.c"
-				>
-			</File>
-			<File
-				RelativePath=".\ttset_keyboard_entry.c"
 				>
 			</File>
 		</Filter>

@@ -24,7 +24,7 @@ if(("${CMAKE_BUILD_TYPE}" STREQUAL "") AND ("${CMAKE_CONFIGURATION_TYPE}" STREQU
 	  -P SFMT.cmake
 	  )
 	return()
-  elseif(("$ENV{MSYSTEM}" MATCHES "MINGW") OR ("${CMAKE_COMMAND}" MATCHES "mingw"))
+  elseif("$ENV{MSYSTEM}" MATCHES "MINGW")
 	# mingw on msys2
 	if("${CMAKE_BUILD_TYPE}" STREQUAL "")
 	  set(CMAKE_BUILD_TYPE Release)
@@ -68,7 +68,7 @@ set(EXTRACT_DIR "${CMAKE_SOURCE_DIR}/build/SFMT/src")
 set(SRC_DIR "${CMAKE_SOURCE_DIR}/build/SFMT/src/${SRC_DIR_BASE}")
 set(BUILD_DIR "${CMAKE_SOURCE_DIR}/build/SFMT/build_${TOOLSET}")
 set(INSTALL_DIR "${CMAKE_SOURCE_DIR}/SFMT_${TOOLSET}")
-if(("${CMAKE_GENERATOR}" MATCHES "Win64") OR ("${ARCHITECTURE}" MATCHES "x64") OR ("$ENV{MSYSTEM_CHOST}" STREQUAL "x86_64-w64-mingw32") OR ("${CMAKE_COMMAND}" MATCHES "mingw64"))
+if(("${CMAKE_GENERATOR}" MATCHES "Win64") OR ("${ARCHITECTURE}" MATCHES "x64") OR ("$ENV{MSYSTEM_CHOST}" STREQUAL "x86_64-w64-mingw32"))
   set(BUILD_DIR "${BUILD_DIR}_x64")
   set(INSTALL_DIR "${INSTALL_DIR}_x64")
 endif()
@@ -90,13 +90,6 @@ if(NOT EXISTS ${SRC_DIR}/README.txt)
     COMMAND ${CMAKE_COMMAND} -E tar "xvf" ${DOWN_DIR}/${SRC_ARC}
     WORKING_DIRECTORY ${EXTRACT_DIR}
     )
-
-  file(COPY
-    ${SRC_DIR}/LICENSE.txt
-    DESTINATION ${CMAKE_CURRENT_LIST_DIR}/doc_help)
-  file(RENAME
-    ${CMAKE_CURRENT_LIST_DIR}/doc_help/LICENSE.txt
-    ${CMAKE_CURRENT_LIST_DIR}/doc_help/SFMT-LICENSE.txt)
 endif()
 
 ########################################

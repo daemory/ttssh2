@@ -28,7 +28,7 @@
 
 #pragma once
 
-#include "ttcstd.h"
+#include <tchar.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -54,18 +54,11 @@ size_t UTF32ToMBCP(unsigned int u32, int code_page, char *mb_ptr, size_t mb_len)
 // MultiByteToWideChar() wrappers
 void WideCharToUTF8(const wchar_t *wstr_ptr, size_t *wstr_len, char *u8_ptr, size_t *u8_len);
 void WideCharToCP932(const wchar_t *wstr_ptr, size_t *wstr_len, char *cp932_ptr, size_t *cp932_len);
-void WideCharToUTF32(const wchar_t *wstr_ptr, size_t *wstr_len_,
-					 char32_t *u32_ptr, size_t *u32_len_);
 int UTF8ToWideChar(const char *u8_ptr, int u8_len, wchar_t *wstr_ptr, int wstr_len);
 
 // API wrappers
 char *_WideCharToMultiByte(const wchar_t *wstr_ptr, size_t wstr_len, int code_page, size_t *mb_len_);
-char32_t *_WideCharToUTF32(const wchar_t *wstr_ptr, size_t wstr_len, size_t *u32_len_);
 wchar_t *_MultiByteToWideChar(const char *str_ptr, size_t str_len, int code_page, size_t *w_len_);
-
-// UTF-16
-int IsHighSurrogate(wchar_t u16);
-int IsLowSurrogate(wchar_t u16);
 
 // convinience funcs  (for windows api params)
 char *ToCharA(const char *strA);
@@ -76,7 +69,20 @@ wchar_t *ToWcharW(const wchar_t *strW);
 wchar_t *ToWcharU8(const char *strU8);
 char *ToU8A(const char *strA);
 char *ToU8W(const wchar_t *strW);
-char32_t *ToU32W(const wchar_t *strW);
+
+#if defined(_UNICODE)
+#define ToTcharA(s)		ToWcharA(s)
+#define ToTcharW(s)		ToWcharW(s)
+#define ToTcharU8(s)	ToWcharU8(s)
+#define ToCharT(s)		ToCharW(s)
+#define ToU8T(s)		ToU8W(s)
+#else
+#define ToTcharA(s)		ToCharA(s)
+#define ToTcharW(s)		ToCharW(s)
+#define ToTcharU8(s)	ToCharU8(s)
+#define ToCharT(s)		ToCharA(s)
+#define ToU8T(s)		ToU8A(s)
+#endif
 
 #ifdef __cplusplus
 }
@@ -116,34 +122,32 @@ private:
 	void move(u8 &obj);
 };
 
-class wc
+class tc
 {
 public:
-	wc();
-	wc(const char *strA);
-	wc(const char *strA, int code_page);
-	wc(const wchar_t *strW);
-	wc(const wc &obj);
+	tc();
+	tc(const char *strA);
+	tc(const char *strA, int code_page);
+	tc(const wchar_t *strW);
+	tc(const tc &obj);
 #if defined(MOVE_CONSTRUCTOR_ENABLE)
-	wc(wc &&obj) noexcept;
+	tc(tc &&obj) noexcept;
 #endif
-	~wc();
-	wc& operator=(const char *strA);
-	wc& operator=(const wchar_t *strW);
-	wc& operator=(const wc &obj);
+	~tc();
+	tc& operator=(const char *strA);
+	tc& operator=(const wchar_t *strW);
+	tc& operator=(const tc &obj);
 #if defined(MOVE_CONSTRUCTOR_ENABLE)
-	wc& operator=(wc &&obj) noexcept;
+	tc& operator=(tc &&obj) noexcept;
 #endif
-	static wc fromUtf8(const char *strU8);
-	operator const wchar_t *() const;
-	const wchar_t *cstr() const;
-	operator const char *() const;
-//	const char *cstr() const;
+	static tc fromUtf8(const char *strU8);
+	operator const TCHAR *() const;
+	const TCHAR *cstr() const;
 private:
-	wchar_t *tstr_;
+	TCHAR *tstr_;
 	void assign(const char *strA, int code_page);
 	void assign(const wchar_t *strW);
-	void copy(const wc &obj);
-	void move(wc &obj);
+	void copy(const tc &obj);
+	void move(tc &obj);
 };
 #endif

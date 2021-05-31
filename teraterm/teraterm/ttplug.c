@@ -27,31 +27,35 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-#include <winsock2.h>
 #include "teraterm.h"
 #include "tttypes.h"
 #include "ttlib.h"
 
-#define _CRTDBG_MAP_ALLOC
+// #include <windows.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include <crtdbg.h>
+/* for _findXXXX() functions */
+#include <io.h>
 #include "ttwinman.h"
 #include "ttplugin.h"
-#include "codeconv.h"
-#include "asprintf.h"
-
 #include "ttplug.h"
+#undef TTXOpenTCP
+#undef TTXCloseTCP
+#undef TTXOpenFile
+#undef TTXCloseFile
+#undef TTXGetUIHooks
+#undef TTXGetSetupHooks
 
+#define MAXNUMEXTENSIONS 32
+static HANDLE LibHandle[MAXNUMEXTENSIONS];
 static int NumExtensions = 0;
+static TTXExports * * Extensions;
 
 typedef struct _ExtensionList {
-	TTXExports * exports;
-	HANDLE LibHandle;
+  TTXExports * exports;
+  struct _ExtensionList * next;
 } ExtensionList;
-
-static ExtensionList *Extensions;
 
 static int compareOrder(const void * e1, const void * e2) {
   TTXExports * * exports1 = (TTXExports * *)e1;
@@ -60,242 +64,161 @@ static int compareOrder(const void * e1, const void * e2) {
   return (*exports1)->loadOrder - (*exports2)->loadOrder;
 }
 
-static void loadExtension(wchar_t const *fileName)
-{
-	DWORD err;
-	const wchar_t *sub_message;
-	HMODULE hPlugin;
+static void loadExtension(ExtensionList * * extensions, char const * fileName) {
+  char buf[1024];
+  DWORD err;
+  char uimsg[MAX_UIMSG];
 
-	hPlugin = LoadLibraryW(fileName);
-	if (hPlugin != NULL) {
-		TTXBindProc bind = NULL;
-		FARPROC *pbind = (FARPROC *)&bind;
+  if (NumExtensions>=MAXNUMEXTENSIONS) return;
+  LibHandle[NumExtensions] = LoadLibrary(fileName);
+  if (LibHandle[NumExtensions] != NULL) {
 #if defined(_MSC_VER)
-		if (bind == NULL)
-			*pbind = GetProcAddress(hPlugin, "_TTXBind@8");
+    const char *TTXBIND = "_TTXBind@8";
 #else
-		if (bind == NULL)
-			*pbind = GetProcAddress(hPlugin, "TTXBind@8");
+    const char *TTXBIND = "TTXBind@8";
 #endif
-		if (bind == NULL)
-			*pbind = GetProcAddress(hPlugin, "TTXBind");
-		if (bind != NULL) {
-			TTXExports * exports = (TTXExports *)malloc(sizeof(TTXExports));
-			if (exports == NULL) {
-				return;
-			}
-			memset(exports, 0, sizeof(TTXExports));
-			exports->size = sizeof(TTXExports);
+    TTXBindProc bind = (TTXBindProc)GetProcAddress(LibHandle[NumExtensions], TTXBIND);
+    if (bind==NULL)
+      bind = (TTXBindProc)GetProcAddress(LibHandle[NumExtensions], "TTXBind");
+    if (bind != NULL) {
+      ExtensionList * newExtension =
+        (ExtensionList *)malloc(sizeof(ExtensionList));
 
-			if (bind(TTVERSION, exports)) {
-				ExtensionList *newExtension;
-				ExtensionList *extensions = (ExtensionList *)realloc(Extensions, sizeof(ExtensionList) * (NumExtensions + 1));
-				if (extensions == NULL) {
-					free(exports);
-					FreeLibrary(hPlugin);
-					return;
-				}
-				Extensions = extensions;
-				newExtension = &extensions[NumExtensions];
-				NumExtensions++;
+      newExtension->exports = (TTXExports *)malloc(sizeof(TTXExports));
+      memset(newExtension->exports, 0, sizeof(TTXExports));
+      newExtension->exports->size = sizeof(TTXExports);
+      if (bind(TTVERSION,(TTXExports *)newExtension->exports)) {
+        newExtension->next = *extensions;
+        *extensions = newExtension;
+        NumExtensions++;
+        return;
+      } else {
+	free(newExtension->exports);
+	free(newExtension);
+      }
+    }
+    FreeLibrary(LibHandle[NumExtensions]);
+  }
 
-				newExtension->exports = exports;
-				newExtension->LibHandle = hPlugin;
-				return;
-			}
-			else {
-				free(exports);
-			}
-		}
-		FreeLibrary(hPlugin);
-	}
-
-	err = GetLastError();
-	switch (err) {
-		case 31:
-			sub_message = L"Unresolved dll entry";
-			break;
-		case 1114:
-			sub_message = L"tls entry exists";
-			break;
-		case 2:
-			sub_message = L"rejected by plugin";
-			break;
-		case 193:
-			sub_message = L"invalid dll image";
-			break;
-		default:
-			sub_message = L"unknown";
-			break;
-	}
-	// 言語ファイルによるメッセージの国際化を行っているが、この時点では設定が
-	// まだ読み込まれていない為、メッセージが英語のままとなる。要検討。
-	{
-		static const TTMessageBoxInfoW info = {"Tera Term", "MSG_TT_ERROR", L"Tera Term: Error", "MSG_LOAD_EXT_ERROR",
-			L"Cannot load extension %s (%d, %s)"};
-		TTMessageBoxW(NULL, &info, MB_OK | MB_ICONEXCLAMATION, ts.UILanguageFile, fileName, err, sub_message);
-	}
+  err = GetLastError();
+  // 言語ファイルによるメッセージの国際化を行っているが、この時点では設定が
+  // まだ読み込まれていない為、メッセージが英語のままとなる。要検討。
+  get_lang_msg("MSG_TT_ERROR", uimsg, sizeof(uimsg), "Tera Term: Error", ts.UILanguageFile);
+  get_lang_msg("MSG_LOAD_EXT_ERROR", ts.UIMsg, sizeof(ts.UIMsg), "Cannot load extension %s (%d)", ts.UILanguageFile);
+  _snprintf_s(buf, sizeof(buf), _TRUNCATE, ts.UIMsg, fileName, err);
+  MessageBox(NULL, buf, uimsg, MB_OK | MB_ICONEXCLAMATION);
 }
 
-void PASCAL TTXInit(PTTSet ts_, PComVar cv_)
-{
-	int i;
-	wchar_t *load_mask;
-	WIN32_FIND_DATAW fd;
-	HANDLE hFind;
-	wchar_t *HomeDirW = ToWcharA(ts_->HomeDir);
+void PASCAL TTXInit(PTTSet ts, PComVar cv) {
+  ExtensionList * extensionList = NULL;
+  int i;
 
-	aswprintf(&load_mask, L"%s\\TTX*.DLL", HomeDirW);
+  // 環境変数の設定有無に関わらず、TTXを有効にする。
+  //if (getenv("TERATERM_EXTENSIONS") != NULL) {
+  if (1) {
+    char buf[1024];
+    struct _finddata_t searchData;
+	intptr_t searchHandle;
 
-	hFind = FindFirstFileW(load_mask, &fd);
-	if (hFind != INVALID_HANDLE_VALUE) {
-		do {
-			wchar_t *filename;
-			aswprintf(&filename, L"%s\\%s", HomeDirW, fd.cFileName);
-			loadExtension(filename);
-			free(filename);
-		} while (FindNextFileW(hFind, &fd));
-		FindClose(hFind);
-	}
-	free(load_mask);
-	free(HomeDirW);
+    _snprintf_s(buf, sizeof(buf), _TRUNCATE, "%s\\TTX*.DLL", ts->HomeDir);
 
-	if (NumExtensions==0) return;
+    searchHandle = _findfirst(buf, &searchData);
+    if (searchHandle != -1L) {
+      do {
+	_snprintf_s(buf, sizeof(buf), _TRUNCATE, "%s\\%s", ts->HomeDir, searchData.name);
+	loadExtension(&extensionList, buf);
+      } while (_findnext(searchHandle, &searchData)==0);
+      _findclose(searchHandle);
+    }
 
-	qsort(Extensions, NumExtensions, sizeof(Extensions[0]), compareOrder);
+    if (NumExtensions==0) return;
 
-	for (i = 0; i < NumExtensions; i++) {
-		if (Extensions[i].exports->TTXInit != NULL) {
-			Extensions[i].exports->TTXInit(ts_, cv_);
-		}
-	}
+    Extensions = (TTXExports * *)malloc(sizeof(TTXExports *)*NumExtensions);
+    for (i = 0; i < NumExtensions; i++) {
+      ExtensionList * old;
+
+      Extensions[i] = extensionList->exports;
+      old = extensionList;
+      extensionList = extensionList->next;
+      free(old);
+    }
+
+    qsort(Extensions, NumExtensions, sizeof(Extensions[0]), compareOrder);
+
+    for (i = 0; i < NumExtensions; i++) {
+      if (Extensions[i]->TTXInit != NULL) {
+        Extensions[i]->TTXInit(ts, cv);
+      }
+    }
+  }
 }
 
-static void PASCAL TTXInternalOpenTCP(TTXSockHooks * hooks) {
+void PASCAL TTXInternalOpenTCP(TTXSockHooks * hooks) {
   int i;
 
   for (i = 0; i < NumExtensions; i++) {
-    if (Extensions[i].exports->TTXOpenTCP != NULL) {
-      Extensions[i].exports->TTXOpenTCP(hooks);
+    if (Extensions[i]->TTXOpenTCP != NULL) {
+      Extensions[i]->TTXOpenTCP(hooks);
     }
   }
 }
 
-void PASCAL TTXOpenTCP(void)
-{
-	static TTXSockHooks SockHooks = {
-		&Pclosesocket, &Pconnect, &Phtonl, &Phtons, &Pinet_addr,
-		&Pioctlsocket, &Precv, &Pselect, &Psend, &Psetsockopt,
-		&Psocket, &PWSAAsyncSelect, &PWSAAsyncGetHostByName,
-		&PWSACancelAsyncRequest, &PWSAGetLastError,
-		/* &Pgetaddrinfo,*/ &Pfreeaddrinfo, &PWSAAsyncGetAddrInfo
-	};
-	TTXInternalOpenTCP(&SockHooks);
-}
-
-static void PASCAL TTXInternalCloseTCP(TTXSockHooks * hooks) {
+void PASCAL TTXInternalCloseTCP(TTXSockHooks * hooks) {
   int i;
 
   for (i = NumExtensions - 1; i >= 0; i--) {
-    if (Extensions[i].exports->TTXCloseTCP != NULL) {
-      Extensions[i].exports->TTXCloseTCP(hooks);
+    if (Extensions[i]->TTXCloseTCP != NULL) {
+      Extensions[i]->TTXCloseTCP(hooks);
     }
   }
 }
 
-void PASCAL TTXCloseTCP(void)
-{
-	static TTXSockHooks SockHooks = {
-		&Pclosesocket, &Pconnect, &Phtonl, &Phtons, &Pinet_addr,
-		&Pioctlsocket, &Precv, &Pselect, &Psend, &Psetsockopt,
-		&Psocket, &PWSAAsyncSelect, &PWSAAsyncGetHostByName,
-		&PWSACancelAsyncRequest, &PWSAGetLastError,
-		/* &Pgetaddrinfo,*/ &Pfreeaddrinfo, &PWSAAsyncGetAddrInfo
-	};
-	TTXInternalCloseTCP(&SockHooks);
-}
-
-static void PASCAL TTXInternalOpenFile(TTXFileHooks * hooks) {
+void PASCAL TTXInternalOpenFile(TTXFileHooks * hooks) {
   int i;
 
   for (i = 0; i < NumExtensions; i++) {
-    if (Extensions[i].exports->TTXOpenFile != NULL) {
-      Extensions[i].exports->TTXOpenFile(hooks);
+    if (Extensions[i]->TTXOpenFile != NULL) {
+      Extensions[i]->TTXOpenFile(hooks);
     }
   }
 }
 
-void PASCAL TTXOpenFile(void)
-{
-	static TTXFileHooks FileHooks = {
-		&PCreateFile, &PCloseFile, &PReadFile, &PWriteFile
-	};
-	TTXInternalOpenFile(&FileHooks);
-}
-
-static void PASCAL TTXInternalCloseFile(TTXFileHooks * hooks) {
+void PASCAL TTXInternalCloseFile(TTXFileHooks * hooks) {
   int i;
 
   for (i = NumExtensions - 1; i >= 0; i--) {
-    if (Extensions[i].exports->TTXCloseFile != NULL) {
-      Extensions[i].exports->TTXCloseFile(hooks);
+    if (Extensions[i]->TTXCloseFile != NULL) {
+      Extensions[i]->TTXCloseFile(hooks);
     }
   }
 }
 
-void PASCAL TTXCloseFile(void)
-{
-	static TTXFileHooks FileHooks = {
-		&PCreateFile, &PCloseFile, &PReadFile, &PWriteFile
-	};
-	TTXInternalCloseFile(&FileHooks);
-}
-
-static void PASCAL TTXInternalGetUIHooks(TTXUIHooks * hooks) {
+void PASCAL TTXInternalGetUIHooks(TTXUIHooks * hooks) {
   int i;
 
   for (i = 0; i < NumExtensions; i++) {
-    if (Extensions[i].exports->TTXGetUIHooks != NULL) {
-      Extensions[i].exports->TTXGetUIHooks(hooks);
+    if (Extensions[i]->TTXGetUIHooks != NULL) {
+      Extensions[i]->TTXGetUIHooks(hooks);
     }
   }
 }
 
-void PASCAL TTXGetUIHooks(void)
-{
-	static TTXUIHooks UIHooks = {
-		&SetupTerminal, &SetupWin, &SetupKeyboard, &SetupSerialPort,
-		&SetupTCPIP, &GetHostName, &ChangeDirectory, &AboutDialog,
-		&ChooseFontDlg, &SetupGeneral, &WindowWindow
-	};
-	TTXInternalGetUIHooks(&UIHooks);
-}
-
-static void PASCAL TTXInternalGetSetupHooks(TTXSetupHooks * hooks) {
+void PASCAL TTXInternalGetSetupHooks(TTXSetupHooks * hooks) {
   int i;
 
   for (i = NumExtensions - 1; i >= 0; i--) {
-    if (Extensions[i].exports->TTXGetSetupHooks != NULL) {
-      Extensions[i].exports->TTXGetSetupHooks(hooks);
+    if (Extensions[i]->TTXGetSetupHooks != NULL) {
+      Extensions[i]->TTXGetSetupHooks(hooks);
     }
   }
-}
-
-void PASCAL TTXGetSetupHooks(void)
-{
-	static TTXSetupHooks SetupHooks = {
-		&ReadIniFile, &WriteIniFile, &ReadKeyboardCnf, &CopyHostList,
-		&AddHostToList, &ParseParam
-	};
-	TTXInternalGetSetupHooks(&SetupHooks);
 }
 
 void PASCAL TTXSetWinSize(int rows, int cols) {
   int i;
 
   for (i = 0; i < NumExtensions; i++) {
-    if (Extensions[i].exports->TTXSetWinSize != NULL) {
-      Extensions[i].exports->TTXSetWinSize(rows, cols);
+    if (Extensions[i]->TTXSetWinSize != NULL) {
+      Extensions[i]->TTXSetWinSize(rows, cols);
     }
   }
 }
@@ -304,8 +227,8 @@ void PASCAL TTXModifyMenu(HMENU menu) {
   int i;
 
   for (i = 0; i < NumExtensions; i++) {
-    if (Extensions[i].exports->TTXModifyMenu != NULL) {
-      Extensions[i].exports->TTXModifyMenu(menu);
+    if (Extensions[i]->TTXModifyMenu != NULL) {
+      Extensions[i]->TTXModifyMenu(menu);
     }
   }
 }
@@ -314,8 +237,8 @@ void PASCAL TTXModifyPopupMenu(HMENU menu) {
   int i;
 
   for (i = 0; i < NumExtensions; i++) {
-    if (Extensions[i].exports->TTXModifyPopupMenu != NULL) {
-      Extensions[i].exports->TTXModifyPopupMenu(menu);
+    if (Extensions[i]->TTXModifyPopupMenu != NULL) {
+      Extensions[i]->TTXModifyPopupMenu(menu);
     }
   }
 }
@@ -324,8 +247,8 @@ BOOL PASCAL TTXProcessCommand(HWND hWin, WORD cmd) {
   int i;
 
   for (i = NumExtensions - 1; i >= 0; i--) {
-    if (Extensions[i].exports->TTXProcessCommand != NULL) {
-      if (Extensions[i].exports->TTXProcessCommand(hWin,cmd)) {
+    if (Extensions[i]->TTXProcessCommand != NULL) {
+      if (Extensions[i]->TTXProcessCommand(hWin,cmd)) {
         return TRUE;
       }
     }
@@ -334,35 +257,34 @@ BOOL PASCAL TTXProcessCommand(HWND hWin, WORD cmd) {
   return FALSE;
 }
 
-void PASCAL TTXEnd(void)
-{
-	int i;
+void PASCAL TTXEnd(void) {
+  int i;
 
-	if (NumExtensions == 0)
-		return;
+  if (NumExtensions==0) return;
 
-	for (i = NumExtensions - 1; i >= 0; i--) {
-		if (Extensions[i].exports->TTXEnd != NULL) {
-			Extensions[i].exports->TTXEnd();
-		}
-	}
+  for (i = NumExtensions - 1; i >= 0; i--) {
+    if (Extensions[i]->TTXEnd != NULL) {
+      Extensions[i]->TTXEnd();
+    }
+  }
 
-	for (i = 0; i < NumExtensions; i++) {
-		free(Extensions[i].exports);
-		FreeLibrary(Extensions[i].LibHandle);
-	}
+  for (i=0; i<NumExtensions; i++)
+    FreeLibrary(LibHandle[i]);
 
-	free(Extensions);
-	Extensions = NULL;
-	NumExtensions = 0;
+  for (i = 0; i < NumExtensions; i++) {
+	  free(Extensions[i]);
+  }
+
+  free(Extensions);
+  NumExtensions = 0;
 }
 
 void PASCAL TTXSetCommandLine(PCHAR cmd, int cmdlen, PGetHNRec rec) {
   int i;
 
   for (i = 0; i < NumExtensions; i++) {
-    if (Extensions[i].exports->TTXSetCommandLine != NULL) {
-      Extensions[i].exports->TTXSetCommandLine(cmd, cmdlen, rec);
+    if (Extensions[i]->TTXSetCommandLine != NULL) {
+      Extensions[i]->TTXSetCommandLine(cmd, cmdlen, rec);
     }
   }
 }

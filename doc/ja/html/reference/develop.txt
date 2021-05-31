@@ -8,10 +8,9 @@
    Windows Vista 以上でビルドする場合は、Visual Studio 2005 Service Pack 1 Update for Windows Vista (VS80sp1-KB932236-X86-JPN.exe)
    Windows Server 2003 R2 Platform SDK(Microsoft Windows SDK for Windows 7 and .NET Framework 3.5 SP1)
    注: Visual Studio 2005 Standard Editionでは、OpenSSL のビルドが失敗します。Windows Server 2003 R2 Platform SDK をインストールし、"Crypt32.Lib"をリンクできるようにしておく必要があります。
-       SDK でインストールされたディレクトリが最優先になるよう、INCLUDE および LIB 環境変数を設定します。
+       Platform SDK の INCLUDE, LIB ディレクトリが優先されるよう、C:\Program Files\Microsoft Visual Studio 8\Common7\Tools\vsvars32.bat の INCLUDE および LIB の先頭に追記します。
        例: INCLUDE "C:\Program Files\Microsoft Platform SDK for Windows Server 2003 R2\Include"
            LIB     "C:\Program Files\Microsoft Platform SDK for Windows Server 2003 R2\Lib"
-           修正バッチファイル C:\Program Files\Microsoft Visual Studio 8\Common7\Tools\vsvars32.bat
 - サポートされているコンパイラ
 -- Visual Studio 2005 (Express EditionはTera Term 4.103から対応)
    - SDK 7.0
@@ -44,42 +43,34 @@
        Windows Vista, XP をサポートするには v141_xp を指定してください。
 -- Visual Studio Community 2019
    注: コンパイルされた実行ファイルは Windows Vista, XP, 2000, NT 4.0, 95, 98, Me で動きません。
-- バッチファイルからビルドするために
-  Visual Studio のコマンドプロンプトからバッチファイルを実行するか、以下のように環境変数を設定してください。
-  使用したいバージョンの Visual Studio の "(x86) Native Tools Command Prompt" を実行し、コンパイラのパスに関係する PATH と VSINSTALLDIR 変数を環境変数に登録してください。
-  例: INCLUDE       C:\Program Files (x86)\Microsoft Visual Studio 12.0\VC\INCLUDE;C:\Program Files (x86)\Microsoft Visual Studio 12.0\VC\ATLMFC\INCLUDE;C:\Program Files (x86)\Windows Kits\8.1\include\shared;C:\Program Files (x86)\Windows Kits\8.1\include\um;
-      LIB           C:\Program Files (x86)\Microsoft Visual Studio 12.0\VC\LIB;C:\Program Files (x86)\Microsoft Visual Studio 12.0\VC\ATLMFC\LIB;C:\Program Files (x86)\Windows Kits\8.1\lib\winv6.3\um\x86;
-      PATH          C:\Program Files (x86)\Microsoft Visual Studio 12.0\Common7\IDE;C:\Program Files (x86)\Microsoft Visual Studio 12.0\VC\BIN;C:\Program Files (x86)\Windows Kits\8.1\bin\x86
-      VSINSTALLDIR  C:\Program Files (x86)\Microsoft Visual Studio 12.0\VC
 - インストーラ
   Inno Setup 5.6.1 ANSI (http://www.jrsoftware.org/isinfo.php)
   Inno Setup Preprocessor
   ISTool 5.3.0.1 (https://sourceforge.net/projects/istool/)
 - その他
-  Cygwin 1.5.x (1.7.x は Windows 9x をサポートしていないので不可)
-  ActivePerl 5.10 以上 または Strawberry perl 5.30.1.1 以上
-    ビルド過程で使用します
-    - OpenSSL のコンパイル(必須)
-    - ドキュメントファイルの文字コード・改行コード変換(必須)
-    - リビジョン番号取得 (perlがない場合リビジョン番号を取得せずにビルドします)
+  Cygwin 最新版(v4.105からCygTerm+はVista以降対応となったため)
+  ActivePerl 5.10 以上
+    OpenSSL のコンパイル、ドキュメントファイルの文字コード・改行コード変換に必要です。
   Subversion for Windows (http://sourceforge.net/projects/win32svn/)
-    リビジョン番号取得時に使用します
-    svnrev_perl/toolinfo.txt に svn.exe のフルパスを記述いてください。
-    詳しくは svnrev_perl/readme.md を参照ください
+    ソースのチェックアウトに使った svn と互換性のあるバージョン。
+    libs\svn へ解凍します。("svnversion.exe" が libs\svn\bin に配置されるようにしてください)
+  Patch
+    PATH の通ったところに patch がない場合は、libs\openssl_patch に "patch.exe" が配置されるようにしてください。
+    https://gitforwindows.org/ (https://github.com/git-for-windows/git/releases/latest) からであれば、Git-x.xx.x-32-bit.tar.bz2 をダウンロードして展開し、usr\bin 内の patch.exe, msys-gcc_s-1.dll, msys-2.0.dll をコピーします。
 
 
 ■ ライブラリ
-- Oniguruma 6.9.6 (https://github.com/kkos/oniguruma)
-- OpenSSL 1.1.1j (http://www.openssl.org/)
+- Oniguruma 6.9.7.1 (https://github.com/kkos/oniguruma)
+- OpenSSL 1.1.1k (http://www.openssl.org/)
 - zlib 1.2.11 (http://www.zlib.net/)
 - PuTTY 0.70 (http://www.chiark.greenend.org.uk/~sgtatham/putty/)
 - SFMT 1.5.1 (http://www.math.sci.hiroshima-u.ac.jp/~m-mat/MT/SFMT/index-jp.html)
-- cJSON 1.7.14 (https://github.com/DaveGamble/cJSON/)
 - The reference C implementation of Argon2 20190702 (https://github.com/P-H-C/phc-winner-argon2)
+
 
 ■ SVN コミッターへの注意
 - SVN リポジトリは一般向けとは違い、以下の通りです。
-  svn+ssh://svn.osdn.net/svnroot/ttssh2/trunk
+  svn+ssh://svn.osdn.net/svnroot/ttssh2/branches/4-stable
 
 - ファイルを別のディレクトリで編集しないでください。
   コミットしたときに別の人の修正を削除してしまうことがあります。
@@ -176,10 +167,7 @@
      (3) コマンドプロンプト上から libs ディレクトリに移動し、buildSFMT.bat を実行する。
      (4) 必要に応じて libs/SFMT/SFMT_version_for_teraterm.h のバージョン番号を修正する。
 
-  6. cJSON (used by TTXCheckUpdate plugin)
-     (1) cJSON のソースを libs/cJSON の中に展開する。
-
-  7. The reference C implementation of Argon2 (used by TTSSH)
+  6. The reference C implementation of Argon2 (used by TTSSH)
      (1) argon2 のソースを libs/argon2 の中に展開する。
      * argon2 リファレンス実装には静的ライブラリを生成するプロジェクトファイルが含まれていない。ttssh ソリューション配下の argon2 プロジェクトにより静的ライブラリが生成され、ttxssh.dll にリンクされるため、展開するだけでよい。
 
@@ -243,9 +231,7 @@
 ■ CygTermのビルド方法
   CygTermのビルド方法について以下に示します。
 
-   1. Cygwin(http://www.cygwin.com/win-9x.html)をインストールする。
-      注意: 1.7.x は Windows 9x をサポートしていないので、1.5.x を利用する。
-            1.5.x は Windows 7 をサポートしていないようだが、1.5.x でコンパイルされたバイナリは 1.7.x 環境で実行できる。
+   1. Cygwin(https://www.cygwin.com/)をインストールする。
    2. Cygwinのシェルを起動し、cygterm ディレクトリへ移動する。
       # cd cygterm
    3. CygTermをコンパイルする。
@@ -334,9 +320,6 @@
        http://www.math.sci.hiroshima-u.ac.jp/~m-mat/MT/SFMT/index-jp.html
      CygTerm
        https://googledrive.com/host/0B1s-dM6d6yC4fmhEZ3c0VTNFWEFtV3daUlRGQmFHVnBmVHRybUNnUVliNWktNDRlZ2NnZTQ/index.html
-     LogMeTT
-       http://logmett.com/logmett-freeware
-       http://logmett.com/ttleditor
 
   2. ドキュメントを確認する。
      - ダイアログ上の設定項目・UIのない特別オプション・コマンドラインパラメータ・新規マクロコマンドなど、対応するドキュメントに漏れがないか確認する。
@@ -353,37 +336,63 @@
      パッチがコミットされると即リリース扱いになり、リリース日はその日付となる。
      これは、バージョンの末尾が patchlevel であり、コンパイラの入手が容易なため。
 
-  4. 動作確認をする
+  4. 前回のリリースからCygTerm+に変更がある場合は、64bit Cygwinでビルドして cygterm\cygterm+-x86_64\cygterm.exe の差し替えを行う。
+
+  5. 動作確認をする
      - インストーラを作成する。
        ISTool で teraterm\installer\teraterm.iss を開き、[Project]-[Compile Setup]で作成される。
      - インストールおよび実行をテストする。
 
-  5. SVN のタグを作成する。
-     タグ名は「teraterm-バージョン」。たとえば、v4.82ならば"teraterm-4_82"。
-     svn copy -m "Release 4.82" svn+ssh://svn.osdn.net/svnroot/ttssh2/trunk svn+ssh://svn.osdn.net/svnroot/ttssh2/tags/teraterm-4_82
+  6. SVN のタグを作成する。
+     タグ名は「teraterm-バージョン」。たとえば、v4.106ならば"teraterm-4_106"。
+     svn copy -m "Release 4.106" svn+ssh://svn.osdn.net/svnroot/ttssh2/branches/4-stable svn+ssh://svn.osdn.net/svnroot/ttssh2/tags/teraterm-4_106
 
-  6. リリース用のタグでチェックアウトし直す。
+  7. リリース用のタグでチェックアウトし直す。
 
-  7. インストーラを作成する。
-     ISTool で teraterm\installer\teraterm.iss を開き、[Project]-[Compile Setup]で作成される
+  8. インストーラを作成する。
+     - teraterm\installer\teraterm.iss を編集する
+       #define AppVer "4.???"
+       ;#define snapshot GetDateTimeString('yyyymmdd_hhnnss', '', '');
+       
+       [InnoIDE_PreCompile]
+       Name: makechm.bat
+       ;Name: build.bat
+       Name: build.bat; Parameters: rebuild
 
-  8. OSDN を更新する。
+       [InnoIDE_PostCompile]
+       Name: makearchive.bat; Parameters: release
+
+       [PreCompile]
+       Name: makechm.bat
+       ;Name: build.bat
+       Name: build.bat; Parameters: rebuild
+
+       [PostCompile]
+       Name: makearchive.bat; Parameters: release
+
+       [_ISToolPreCompile]
+       Name: makechm.bat
+       ;Name: build.bat
+       Name: build.bat; Parameters: rebuild
+
+       [_ISToolPostCompile]
+       Name: makearchive.bat; Parameters: release   
+       
+  
+     - ISTool で teraterm\installer\teraterm.iss を開き、[Project]-[Compile Setup]で作成される
+
+
+  9. OSDN を更新する。
      - [ダウンロード]-[管理]-[新規作成]
          変更履歴を入力してリリースを作成する。
      - [ニュース一覧]-[新規登録]
          ニュース記事を作成する。
 
-  9. メーリングリストにアナウンスする。
+  10. メーリングリストにアナウンスする。
 
-  10. プロジェクトページを更新する。
+  11. プロジェクトページを更新する。
 
-  11. スナップショットを削除する。
-
-  12. フォーラムに告知する。
-      - Announcements http://logmett.com/support-forums/5
-        Announcements に新規投稿する。種類は Announcement。
-        一つ前の Announcement の種類を Normal に変更する。
-        Announcement は三個残すことになっているので、三つ前の Announcement を削除する。
+  12. スナップショットを削除する。
 
   13. Twitter に告知する。
       https://twitter.com/Tera_Term

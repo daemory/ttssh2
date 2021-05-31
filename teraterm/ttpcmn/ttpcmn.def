@@ -1,5 +1,9 @@
 EXPORTS
   StartTeraTerm @1
+  ChangeDefaultSet @2
+  GetDefaultSet @3
+  GetKeyCode @4
+  GetKeyStr @5
   SetCOMFlag @44
   ClearCOMFlag @45
   CheckCOMFlag @46
@@ -88,6 +92,6 @@ EXPORTS
   service_name @92
   get_OPENFILENAME_SIZEA @93
 
-  SetI18nDlgStrs
-  SetI18nMenuStrs
+  SetI18DlgStrs
+  SetI18MenuStrs
   GetMessageboxFont

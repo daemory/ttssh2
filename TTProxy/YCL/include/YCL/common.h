@@ -5,7 +5,9 @@
 #ifndef _YCL_COMMON_H_
 #define _YCL_COMMON_H_
 
+#if _MSC_VER >= 1000
 #pragma once
+#endif // _MSC_VER >= 1000
 
 #ifndef STRICT
 #define STRICT

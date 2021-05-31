@@ -31,12 +31,48 @@
 
 #include "teraterm.h"
 #include "tttypes.h"
+#include "ttftypes.h"
 #include "ttlib.h"
 #include <stdio.h>
 #include <string.h>
+#include "win16api.h"
 
-#include "ftlib.h"
 #include "tt_res.h"
+
+void FTConvFName(PCHAR FName)
+{ // replace ' ' by '_' in FName
+  int i;
+
+  i = 0;
+  while (FName[i]!=0)
+  {
+    if (FName[i]==' ')
+      FName[i] = '_';
+    i++;
+  }
+}
+
+BOOL GetNextFname(PFileVar fv)
+{
+  /* next file name exists? */
+
+  if (fv->FNCount >= fv->NumFname)
+    return FALSE; /* no more file name */
+
+  fv->FNCount++;
+  if (fv->NumFname==1) return TRUE;
+
+  GlobalLock(fv->FnStrMemHandle);
+
+  strncpy_s(&fv->FullName[fv->DirLen],sizeof(fv->FullName) - fv->DirLen,
+    &fv->FnStrMem[fv->FnPtr],_TRUNCATE);
+  fv->FnPtr = fv->FnPtr + strlen(&fv->FnStrMem[fv->FnPtr]) + 1;
+
+  GlobalUnlock(fv->FnStrMemHandle);
+
+  return TRUE;
+}
+
 
 WORD UpdateCRC(BYTE b, WORD CRC)
 {
@@ -64,120 +100,124 @@ LONG UpdateCRC32(BYTE b, LONG CRC)
   return CRC;
 }
 
-//
-// プロトコル用ログ
-//
-
-static BOOL Open(TProtoLog *pv, const char *file)
+void FTLog1Byte(PFileVar fv, BYTE b)
 {
-	pv->LogFile = CreateFileA(file,
-							  GENERIC_WRITE, FILE_SHARE_WRITE, NULL,
-							  CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-	pv->LogCount = 0;
-	pv->LogState = 0;
-	return pv->LogFile == INVALID_HANDLE_VALUE ? FALSE : TRUE;
+  char d[3];
+
+  if (fv->FlushLogLineBuf) {
+	  int rest = 16 - fv->LogCount;
+	  int i;
+
+	  for (i = 0 ; i < rest ; i++)
+		 _lwrite(fv->LogFile,"   ", 3);
+  }
+
+  if (fv->LogCount == 16 || fv->FlushLogLineBuf)
+  {
+	  int i;
+
+      // ASCII表示を追加 (2008.6.3 yutaka)
+	  _lwrite(fv->LogFile,"    ", 4);
+	  for (i = 0 ; i < fv->LogCount ; i++) {
+		  char ch[5];
+		  if (isprint(fv->LogLineBuf[i])) {
+			  _snprintf_s(ch, sizeof(ch), _TRUNCATE, "%c", fv->LogLineBuf[i]);
+			  _lwrite(fv->LogFile, ch, 1);
+
+		  } else {
+			  _lwrite(fv->LogFile, ".", 1);
+
+		  }
+
+	  }
+
+    fv->LogCount = 0;
+    _lwrite(fv->LogFile,"\015\012",2);
+
+	if (fv->FlushLogLineBuf)
+		return;
+  }
+
+  if (b<=0x9f)
+    d[0] = (b >> 4) + 0x30;
+  else
+    d[0] = (b >> 4) + 0x37;
+
+  if ((b & 0x0f) <= 0x9)
+    d[1] = (b & 0x0F) + 0x30;
+  else
+    d[1] = (b & 0x0F) + 0x37;
+
+  d[2] = 0x20;
+  _lwrite(fv->LogFile,d,3);
+  fv->LogLineBuf[fv->LogCount] = b;    // add (2008.6.3 yutaka)
+  fv->LogCount++;
 }
 
-static void Close(TProtoLog *pv)
+void FTSetTimeOut(PFileVar fv, int T)
 {
-	if (pv->LogFile != INVALID_HANDLE_VALUE) {
-		if (pv->LogCount > 0) {
-			pv->DumpFlush(pv);
-		}
-		CloseHandle(pv->LogFile);
-		pv->LogFile = INVALID_HANDLE_VALUE;
-	}
+  KillTimer(fv->HMainWin, IdProtoTimer);
+  if (T==0) return;
+  SetTimer(fv->HMainWin, IdProtoTimer, T*1000, NULL);
 }
 
-static size_t WriteRawData(struct ProtoLog *pv, const void *data, size_t len)
+void AddNum(PCHAR FName, int n)
 {
-	DWORD NumberOfBytesWritten;
-	BOOL result = WriteFile(pv->LogFile, data, len, &NumberOfBytesWritten, NULL);
-	if (result == FALSE) {
-		return 0;
-	}
-	return NumberOfBytesWritten;
+  char Num[11];
+  int i, j, k, dLen;
+
+  _snprintf_s(Num,sizeof(Num),_TRUNCATE,"%u",n);
+  GetFileNamePos(FName,&i,&j);
+  k = strlen(FName);
+  while ((k>j) && (FName[k]!='.'))
+    k--;
+  if (FName[k]!='.') k = strlen(FName);
+  dLen = strlen(Num);
+
+  if (strlen(FName)+dLen > MAX_PATH - 1)
+    dLen = MAX_PATH - 1 - strlen(FName);
+  memmove(&FName[k+dLen],&FName[k],strlen(FName)-k+1);
+  memcpy(&FName[k+dLen-strlen(Num)],Num,strlen(Num));
 }
 
-static size_t WriteStr(TProtoLog *pv, const char *str)
+BOOL FTCreateFile(PFileVar fv)
 {
-	size_t len = strlen(str);
-	size_t r = WriteRawData(pv, str, len);
-	return r;
-}
+  int i;
+  char Temp[MAX_PATH];
 
-static void DumpByte(TProtoLog *pv, BYTE b)
-{
-	char d[3];
+  replaceInvalidFileNameChar(&(fv->FullName[fv->DirLen]), '_');
 
-	if (pv->LogCount == _countof(pv->LogLineBuf)) {
-		pv->DumpFlush(pv);
-	}
+  if (fv->FullName[fv->DirLen] == 0) {
+    strncpy_s(&(fv->FullName[fv->DirLen]), sizeof(fv->FullName) - fv->DirLen, "noname", _TRUNCATE);
+  }
 
-	if (b<=0x9f)
-		d[0] = (b >> 4) + 0x30;
-	else
-		d[0] = (b >> 4) + 0x37;
+  FitFileName(&(fv->FullName[fv->DirLen]),sizeof(fv->FullName) - fv->DirLen,NULL);
+  if (! fv->OverWrite)
+  {
+    i = 0;
+    strncpy_s(Temp, sizeof(Temp),fv->FullName, _TRUNCATE);
+    while (DoesFileExist(Temp))
+    {
+      i++;
+      strncpy_s(Temp, sizeof(Temp),fv->FullName, _TRUNCATE);
+      AddNum(Temp,i);
+    }
+    strncpy_s(fv->FullName, sizeof(fv->FullName),Temp, _TRUNCATE);
+  }
+  fv->FileHandle = _lcreat(fv->FullName,0);
+  fv->FileOpen = fv->FileHandle>0;
+  if (! fv->FileOpen && ! fv->NoMsg)
+    MessageBox(fv->HMainWin,"Cannot create file",
+	       "Tera Term: Error",MB_ICONEXCLAMATION);
+  SetDlgItemText(fv->HWin, IDC_PROTOFNAME,&(fv->FullName[fv->DirLen]));
+  fv->ByteCount = 0;
+  fv->FileSize = 0;
 
-	if ((b & 0x0f) <= 0x9)
-		d[1] = (b & 0x0F) + 0x30;
-	else
-		d[1] = (b & 0x0F) + 0x37;
+  if (fv->ProgStat != -1) {
+    fv->ProgStat = 0;
+  }
 
-	d[2] = 0x20;
-	pv->WriteRaw(pv,d,3);
-	pv->LogLineBuf[pv->LogCount] = b;    // add (2008.6.3 yutaka)
-	pv->LogCount++;
-}
+  fv->StartTime = GetTickCount();
 
-static void DumpFlush(TProtoLog *pv)
-{
-	int rest = 16 - pv->LogCount;
-	int i;
-
-	for (i = 0 ; i < rest ; i++)
-		pv->WriteRaw(pv,"   ", 3);
-
-	// ASCII表示を追加 (2008.6.3 yutaka)
-	pv->WriteRaw(pv,"    ", 4);
-	for (i = 0 ; i < pv->LogCount ; i++) {
-		char ch[5];
-		if (isprint(pv->LogLineBuf[i])) {
-			_snprintf_s(ch, sizeof(ch), _TRUNCATE, "%c", pv->LogLineBuf[i]);
-			pv->WriteRaw(pv, ch, 1);
-
-		} else {
-			pv->WriteRaw(pv, ".", 1);
-
-		}
-
-	}
-
-	pv->LogCount = 0;
-	pv->WriteRaw(pv,"\015\012",2);
-}
-
-static void ProtoLogDestroy(TProtoLog *pv)
-{
-	pv->Close(pv);
-	free(pv);
-}
-
-TProtoLog *ProtoLogCreate()
-{
-	TProtoLog *pv = (TProtoLog *)malloc(sizeof(TProtoLog));
-	if (pv == NULL) {
-		return NULL;
-	}
-
-	memset(pv, 0, sizeof(TProtoLog));
-	pv->Open = Open;
-	pv->Close = Close;
-	pv->WriteStr = WriteStr;
-	pv->DumpByte = DumpByte;
-	pv->DumpFlush = DumpFlush;
-	pv->WriteRaw = WriteRawData;
-	pv->Destory = ProtoLogDestroy;
-	pv->LogFile = INVALID_HANDLE_VALUE;
-	return pv;
+  return fv->FileOpen;
 }

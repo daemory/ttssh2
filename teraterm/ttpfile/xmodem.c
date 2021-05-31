@@ -30,94 +30,62 @@
 /* TTFILE.DLL, XMODEM protocol */
 #include "teraterm.h"
 #include "tttypes.h"
+#include "ttftypes.h"
 #include <stdio.h>
 
+#include "tt_res.h"
 #include "ttcommon.h"
 #include "ttlib.h"
 #include "ftlib.h"
+#include "dlglib.h"
+#include "win16api.h"
 
 #include "xmodem.h"
 
-/* XMODEM */
-typedef struct {
-  BYTE PktIn[1030], PktOut[1030];
-  int PktBufCount, PktBufPtr;
-  BYTE PktNum, PktNumSent;
-  int PktNumOffset;
-  int PktReadMode;
-  WORD XMode, XOpt, TextFlag;
-  WORD NAKMode;
-  int NAKCount;
-  WORD DataLen, CheckLen;
-  BOOL CRRecv;
-  int TOutShort;
-  int TOutLong;
-  int TOutInit;
-  int TOutInitCRC;
-  int TOutVLong;
-  int CANCount;
-	TProtoLog *log;
-	const char *FullName;		// Windows上のファイル名 UTF-8
-} TXVar;
-typedef TXVar far *PXVar;
-
-/* prototypes */
-
-/* XMODEM states */
-#define XpktSOH 1
-#define XpktBLK 2
-#define XpktBLK2 3
-#define XpktDATA 4
-
-#define XnakNAK 1
-#define XnakC 2
-
-BOOL XParse(PFileVarProto fv, PComVar cv);
-void XTimeOutProc(PFileVarProto fv, PComVar cv);
-void XCancel(PFileVarProto fv, PComVar cv);
-static int SetOptV(PFileVarProto fv, int request, va_list ap);
-
-static int XRead1Byte(PFileVarProto fv, PXVar xv, PComVar cv, LPBYTE b)
+int XRead1Byte(PFileVar fv, PXVar xv, PComVar cv, LPBYTE b)
 {
 	if (CommRead1Byte(cv, b) == 0)
 		return 0;
 
-	if (xv->log != NULL) {
-		TProtoLog *log = xv->log;
-
-		if (log->LogState == 0) {
+	if (fv->LogFlag) {
+		if (fv->LogState == 0) {
 			// 残りのASCII表示を行う
-			log->DumpFlush(log);
+			fv->FlushLogLineBuf = 1;
+			FTLog1Byte(fv, 0);
+			fv->FlushLogLineBuf = 0;
 
-			log->LogState = 1;
-			log->WriteRaw(log, "\015\012<<<\015\012", 7);
+			fv->LogState = 1;
+			fv->LogCount = 0;
+			_lwrite(fv->LogFile, "\015\012<<<\015\012", 7);
 		}
-		log->DumpByte(log, *b);
+		FTLog1Byte(fv, *b);
 	}
 	return 1;
 }
 
-static int XWrite(PFileVarProto fv, PXVar xv, PComVar cv, PCHAR B, int C)
+int XWrite(PFileVar fv, PXVar xv, PComVar cv, PCHAR B, int C)
 {
 	int i, j;
 
 	i = CommBinaryOut(cv, B, C);
-	if (xv->log != NULL && (i > 0)) {
-		TProtoLog* log = xv->log;
-		if (log->LogState != 0) {
+	if (fv->LogFlag && (i > 0)) {
+		if (fv->LogState != 0) {
 			// 残りのASCII表示を行う
-			log->DumpFlush(log);
+			fv->FlushLogLineBuf = 1;
+			FTLog1Byte(fv, 0);
+			fv->FlushLogLineBuf = 0;
 
-			log->LogState = 0;
-			log->WriteRaw(log, "\015\012>>>\015\012", 7);
+			fv->LogState = 0;
+			fv->LogCount = 0;
+			_lwrite(fv->LogFile, "\015\012>>>\015\012", 7);
 		}
 		for (j = 0; j <= i - 1; j++)
-			log->DumpByte(log, B[j]);
+			FTLog1Byte(fv, B[j]);
 	}
 	return i;
 }
 
-static void XSetOpt(PFileVarProto fv, PXVar xv, WORD Opt)
+void XSetOpt(PFileVar fv, PXVar xv, WORD Opt)
 {
 	char Tmp[21];
 
@@ -146,10 +114,10 @@ static void XSetOpt(PFileVarProto fv, PXVar xv, WORD Opt)
 		xv->CheckLen = 1;
 		break;
 	}
-	fv->SetDlgProtoText(fv, Tmp);
+	SetDlgItemText(fv->HWin, IDC_PROTOPROT, Tmp);
 }
 
-static void XSendNAK(PFileVarProto fv, PXVar xv, PComVar cv)
+void XSendNAK(PFileVar fv, PXVar xv, PComVar cv)
 {
 	BYTE b;
 	int t;
@@ -165,7 +133,7 @@ static void XSendNAK(PFileVarProto fv, PXVar xv, PComVar cv)
 			xv->NAKMode = XnakNAK;
 			xv->NAKCount = 9;
 		} else {
-			XCancel(fv, cv);
+			XCancel(fv, xv, cv);
 			return;
 		}
 	}
@@ -182,10 +150,10 @@ static void XSendNAK(PFileVarProto fv, PXVar xv, PComVar cv)
 	}
 	XWrite(fv, xv, cv, &b, 1);
 	xv->PktReadMode = XpktSOH;
-	fv->FTSetTimeOut(fv, t);
+	FTSetTimeOut(fv, t);
 }
 
-static WORD XCalcCheck(PXVar xv, PCHAR PktBuf)
+WORD XCalcCheck(PXVar xv, PCHAR PktBuf)
 {
 	int i;
 	WORD Check;
@@ -204,7 +172,7 @@ static WORD XCalcCheck(PXVar xv, PCHAR PktBuf)
 	}
 }
 
-static BOOL XCheckPacket(PXVar xv)
+BOOL XCheckPacket(PXVar xv)
 {
 	WORD Check;
 
@@ -216,36 +184,26 @@ static BOOL XCheckPacket(PXVar xv)
 				(LOBYTE(Check) == xv->PktIn[xv->DataLen + 4]));
 }
 
-BOOL XInit(PFileVarProto fv, PComVar cv, PTTSet ts)
-{
-	TFileIO *file = fv->file;
-	PXVar xv = fv->data;
-	BOOL LogFlag = ((ts->LogFlag & LOG_X) != 0);
-	if (LogFlag) {
-		TProtoLog* log = ProtoLogCreate();
-		xv->log = log;
-		log->Open(log, "XMODEM.LOG");
-		log->LogState = 0;
-	}
+void XInit(PFileVar fv, PXVar xv, PComVar cv, PTTSet ts) {
+	char inistr[MAX_PATH + 10];
 
-	xv->FullName = fv->GetNextFname(fv);
-	if (xv->XMode == IdXSend) {
-		fv->FileOpen = file->OpenRead(file, xv->FullName);
-		if (fv->FileOpen == FALSE) {
-			return FALSE;
-		}
-		fv->FileSize = file->GetFSize(file, xv->FullName);
-		fv->InitDlgProgress(fv, &fv->ProgStat);
+	fv->LogFlag = ((ts->LogFlag & LOG_X) != 0);
+	if (fv->LogFlag)
+		fv->LogFile = _lcreat("XMODEM.LOG", 0);
+	fv->LogState = 0;
+	fv->LogCount = 0;
+
+	fv->FileSize = 0;
+	if ((xv->XMode == IdXSend) && fv->FileOpen) {
+		fv->FileSize = GetFSize(fv->FullName);
+		InitDlgProgress(fv->HWin, IDC_PROTOPROGRESS, &fv->ProgStat);
 	} else {
-		fv->FileOpen = file->OpenWrite(file, xv->FullName);
-		if (fv->FileOpen == FALSE) {
-			return FALSE;
-		}
-		fv->FileSize = 0;
 		fv->ProgStat = -1;
 	}
-	fv->SetDlgProtoFileName(fv, xv->FullName);
 	fv->StartTime = GetTickCount();
+
+	SetWindowText(fv->HWin, fv->DlgCaption);
+	SetDlgItemText(fv->HWin, IDC_PROTOFNAME, &(fv->FullName[fv->DirLen]));
 
 	xv->PktNumOffset = 0;
 	xv->PktNum = 0;
@@ -284,28 +242,22 @@ BOOL XInit(PFileVarProto fv, PComVar cv, PTTSet ts)
 
 		// ファイル送信開始前に、"rx ファイル名"を自動的に呼び出す。(2007.12.20 yutaka)
 		if (ts->XModemRcvCommand[0] != '\0') {
-			TFileIO *file = fv->file;
-			char inistr[MAX_PATH + 10];
-			char *filename = file->GetSendFilename(file, xv->FullName, FALSE, TRUE, FALSE);
 			_snprintf_s(inistr, sizeof(inistr), _TRUNCATE, "%s %s\015",
-						ts->XModemRcvCommand, filename);
+						ts->XModemRcvCommand, &(fv->FullName[fv->DirLen]));
+			FTConvFName(inistr + strlen(ts->XModemRcvCommand) + 1);
 			XWrite(fv, xv, cv, inistr, strlen(inistr));
-			free(filename);
 		}
 
-		fv->FTSetTimeOut(fv, xv->TOutVLong);
+		FTSetTimeOut(fv, xv->TOutVLong);
 		break;
 	case IdXReceive:
 		XSendNAK(fv, xv, cv);
 		break;
 	}
-
-	return TRUE;
 }
 
-void XCancel(PFileVarProto fv, PComVar cv)
+void XCancel(PFileVar fv, PXVar xv, PComVar cv)
 {
-	PXVar xv = fv->data;
 	// five cancels & five backspaces per spec
 	BYTE cancel[] = { CAN, CAN, CAN, CAN, CAN, BS, BS, BS, BS, BS };
 
@@ -313,9 +265,8 @@ void XCancel(PFileVarProto fv, PComVar cv)
 	xv->XMode = 0;				// quit
 }
 
-void XTimeOutProc(PFileVarProto fv, PComVar cv)
+void XTimeOutProc(PFileVar fv, PXVar xv, PComVar cv)
 {
-	PXVar xv = fv->data;
 	switch (xv->XMode) {
 	case IdXSend:
 		xv->XMode = 0;			// quit
@@ -326,13 +277,11 @@ void XTimeOutProc(PFileVarProto fv, PComVar cv)
 	}
 }
 
-static BOOL XReadPacket(PFileVarProto fv, PComVar cv)
+BOOL XReadPacket(PFileVar fv, PXVar xv, PComVar cv)
 {
-	PXVar xv = fv->data;
 	BYTE b, d;
 	int i, c;
 	BOOL GetPkt = FALSE;
-	TFileIO *file = fv->file;
 
 	for (c=XRead1Byte(fv, xv, cv, &b); (c > 0) && !GetPkt; c=XRead1Byte(fv, xv, cv, &b)) {
 		switch (xv->PktReadMode) {
@@ -345,7 +294,7 @@ static BOOL XReadPacket(PFileVarProto fv, PComVar cv)
 					XSetOpt(fv, xv, XoptCRC);
 				else if (xv->XOpt == Xopt1kCksum)
 					XSetOpt(fv, xv, XoptCheck);
-				fv->FTSetTimeOut(fv, xv->TOutShort);
+				FTSetTimeOut(fv, xv->TOutShort);
 				break;
 			case STX:
 				xv->PktIn[0] = b;
@@ -354,7 +303,7 @@ static BOOL XReadPacket(PFileVarProto fv, PComVar cv)
 					XSetOpt(fv, xv, Xopt1kCRC);
 				else if (xv->XOpt == XoptCheck)
 					XSetOpt(fv, xv, Xopt1kCksum);
-				fv->FTSetTimeOut(fv, xv->TOutShort);
+				FTSetTimeOut(fv, xv->TOutShort);
 				break;
 			case EOT:
 				b = ACK;
@@ -383,7 +332,7 @@ static BOOL XReadPacket(PFileVarProto fv, PComVar cv)
 		case XpktBLK:
 			xv->PktIn[1] = b;
 			xv->PktReadMode = XpktBLK2;
-			fv->FTSetTimeOut(fv, xv->TOutShort);
+			FTSetTimeOut(fv, xv->TOutShort);
 			break;
 		case XpktBLK2:
 			xv->PktIn[2] = b;
@@ -391,7 +340,7 @@ static BOOL XReadPacket(PFileVarProto fv, PComVar cv)
 				xv->PktBufPtr = 3;
 				xv->PktBufCount = xv->DataLen + xv->CheckLen;
 				xv->PktReadMode = XpktDATA;
-				fv->FTSetTimeOut(fv, xv->TOutShort);
+				FTSetTimeOut(fv, xv->TOutShort);
 			} else
 				XSendNAK(fv, xv, cv);
 			break;
@@ -401,10 +350,10 @@ static BOOL XReadPacket(PFileVarProto fv, PComVar cv)
 			xv->PktBufCount--;
 			GetPkt = xv->PktBufCount == 0;
 			if (GetPkt) {
-				fv->FTSetTimeOut(fv, xv->TOutLong);
+				FTSetTimeOut(fv, xv->TOutLong);
 				xv->PktReadMode = XpktSOH;
 			} else
-				fv->FTSetTimeOut(fv, xv->TOutShort);
+				FTSetTimeOut(fv, xv->TOutShort);
 			break;
 		}
 	}
@@ -430,7 +379,7 @@ static BOOL XReadPacket(PFileVarProto fv, PComVar cv)
 
 	d = xv->PktIn[1] - xv->PktNum;
 	if (d > 1) {
-		XCancel(fv, cv);
+		XCancel(fv, xv, cv);
 		return FALSE;
 	}
 
@@ -455,28 +404,27 @@ static BOOL XReadPacket(PFileVarProto fv, PComVar cv)
 		for (i = 0; i <= c - 1; i++) {
 			b = xv->PktIn[3 + i];
 			if ((b == LF) && (!xv->CRRecv))
-				file->WriteFile(file, "\015", 1);
+				_lwrite(fv->FileHandle, "\015", 1);
 			if (xv->CRRecv && (b != LF))
-				file->WriteFile(file, "\012", 1);
+				_lwrite(fv->FileHandle, "\012", 1);
 			xv->CRRecv = b == CR;
-			file->WriteFile(file, &b, 1);
+			_lwrite(fv->FileHandle, &b, 1);
 	} else
-		file->WriteFile(file, &(xv->PktIn[3]), c);
+		_lwrite(fv->FileHandle, &(xv->PktIn[3]), c);
 
 	fv->ByteCount = fv->ByteCount + c;
 
-	fv->SetDlgPaketNum(fv, xv->PktNumOffset + xv->PktNum);
-	fv->SetDlgByteCount(fv, fv->ByteCount);
-	fv->SetDlgTime(fv, fv->StartTime, fv->ByteCount);
+	SetDlgNum(fv->HWin, IDC_PROTOPKTNUM, xv->PktNumOffset + xv->PktNum);
+	SetDlgNum(fv->HWin, IDC_PROTOBYTECOUNT, fv->ByteCount);
+	SetDlgTime(fv->HWin, IDC_PROTOELAPSEDTIME, fv->StartTime, fv->ByteCount);
 
-	fv->FTSetTimeOut(fv, xv->TOutLong);
+	FTSetTimeOut(fv, xv->TOutLong);
 
 	return TRUE;
 }
 
-static BOOL XSendPacket(PFileVarProto fv, PComVar cv)
+BOOL XSendPacket(PFileVar fv, PXVar xv, PComVar cv)
 {
-	PXVar xv = fv->data;
 	BYTE b;
 	int i;
 	BOOL SendFlag;
@@ -536,15 +484,13 @@ static BOOL XSendPacket(PFileVarProto fv, PComVar cv)
 			xv->CANCount = 0;
 		}
 		// reset timeout timer
-		fv->FTSetTimeOut(fv, xv->TOutVLong);
+		FTSetTimeOut(fv, xv->TOutVLong);
 
 		do {
 			i = XRead1Byte(fv, xv, cv, &b);
 		} while (i != 0);
 
 		if (xv->PktNumSent == xv->PktNum) {	/* make a new packet */
-			TFileIO *file = fv->file;
-
 			xv->PktNumSent++;
 			if (xv->DataLen == 128)
 				xv->PktOut[0] = SOH;
@@ -555,7 +501,7 @@ static BOOL XSendPacket(PFileVarProto fv, PComVar cv)
 
 			i = 1;
 			while ((i <= xv->DataLen) && fv->FileOpen &&
-				   (file->ReadFile(file, &b, 1) == 1)) {
+				   (_lread(fv->FileHandle, &b, 1) == 1)) {
 				xv->PktOut[2 + i] = b;
 				i++;
 				fv->ByteCount++;
@@ -577,7 +523,8 @@ static BOOL XSendPacket(PFileVarProto fv, PComVar cv)
 				xv->PktBufCount = 3 + xv->DataLen + xv->CheckLen;
 			} else {			/* send EOT */
 				if (fv->FileOpen) {
-					file->Close(file);
+					_lclose(fv->FileHandle);
+					fv->FileHandle = 0;
 					fv->FileOpen = FALSE;
 				}
 				xv->PktOut[0] = EOT;
@@ -609,87 +556,16 @@ static BOOL XSendPacket(PFileVarProto fv, PComVar cv)
 
 	if (xv->PktBufCount == 0) {
 		if (xv->PktNumSent == 0) {
-			fv->SetDlgPaketNum(fv, xv->PktNumOffset + 256);
+			SetDlgNum(fv->HWin, IDC_PROTOPKTNUM, xv->PktNumOffset + 256);
 		}
 		else {
-			fv->SetDlgPaketNum(fv, xv->PktNumOffset + xv->PktNumSent);
+			SetDlgNum(fv->HWin, IDC_PROTOPKTNUM, xv->PktNumOffset + xv->PktNumSent);
 		}
-		fv->SetDlgByteCount(fv, fv->ByteCount);
-		fv->SetDlgPercent(fv, fv->ByteCount, fv->FileSize, &fv->ProgStat);
-		fv->SetDlgTime(fv, fv->StartTime, fv->ByteCount);
+		SetDlgNum(fv->HWin, IDC_PROTOBYTECOUNT, fv->ByteCount);
+		SetDlgPercent(fv->HWin, IDC_PROTOPERCENT, IDC_PROTOPROGRESS,
+		              fv->ByteCount, fv->FileSize, &fv->ProgStat);
+		SetDlgTime(fv->HWin, IDC_PROTOELAPSEDTIME, fv->StartTime, fv->ByteCount);
 	}
-
-	return TRUE;
-}
-
-BOOL XParse(PFileVarProto fv, PComVar cv)
-{
-	PXVar xv = fv->data;
-	switch (xv->XMode) {
-	case IdXReceive:
-		return XReadPacket(fv,cv);
-	case IdXSend:
-		return XSendPacket(fv,cv);
-	default:
-		return FALSE;
-	}
-}
-
-static int SetOptV(PFileVarProto fv, int request, va_list ap)
-{
-	PXVar xv = fv->data;
-	switch(request) {
-	case XMODEM_MODE: {
-		int Mode = va_arg(ap, int);
-		xv->XMode = Mode;
-		return 0;
-	}
-	case XMODEM_OPT: {
-		WORD Opt1 = va_arg(ap, int);
-		xv->XOpt = Opt1;
-		return 0;
-	}
-	case XMODEM_TEXT_FLAG: {
-		WORD Opt2 = va_arg(ap, int);
-		xv->TextFlag = Opt2;
-		return 0;
-	}
-	}
-	return -1;
-}
-
-static void Destroy(PFileVarProto fv)
-{
-	PXVar xv = fv->data;
-	if (xv->log != NULL) {
-		TProtoLog* log = xv->log;
-		log->Destory(log);
-		xv->log = NULL;
-	}
-	free((void*)xv->FullName);
-	xv->FullName = NULL;
-	free(xv);
-	fv->data = NULL;
-}
-
-BOOL XCreate(PFileVarProto fv)
-{
-	PXVar xv;
-	xv = malloc(sizeof(TXVar));
-	if (xv == NULL) {
-		return FALSE;
-	}
-	memset(xv, 0, sizeof(*xv));
-	fv->data = xv;
-
-	fv->Destroy = Destroy;
-	fv->Init = XInit;
-	fv->Parse = XParse;
-	fv->TimeOutProc = XTimeOutProc;
-	fv->Cancel = XCancel;
-	fv->SetOptV = SetOptV;
-
-	xv->log = ProtoLogCreate();
 
 	return TRUE;
 }

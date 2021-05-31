@@ -29,26 +29,16 @@
 
 /* TTFILE.DLL, ZMODEM protocol */
 
-#pragma once
-#include "filesys_proto.h"
-
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-  /* ZMODEM function id */
-#define IdZReceive 1
-#define IdZSend    2
-#define IdZAutoR   3
-#define IdZAutoS   4
-
-enum {
-	ZMODEM_MODE,
-	ZMODEM_BINFLAG,
-};
-
 /* prototypes */
-BOOL ZCreate(PFileVarProto fv);
+void ZInit
+  (PFileVar fv, PZVar zv, PComVar cv, PTTSet ts);
+void ZTimeOutProc(PFileVar fv, PZVar zv, PComVar cv);
+BOOL ZParse(PFileVar fv, PZVar zv, PComVar cv);
+void ZCancel(PZVar zv);
 
 #ifdef __cplusplus
 }

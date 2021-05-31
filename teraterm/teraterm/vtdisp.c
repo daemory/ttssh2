@@ -30,23 +30,20 @@
 /* TERATERM.EXE, VT terminal display routines */
 #include "teraterm.h"
 #include "tttypes.h"
-#include <string.h>
-#include <olectl.h>
+#include "string.h"
 
 #include "ttwinman.h"
 #include "ttime.h"
 #include "ttdialog.h"
 #include "ttcommon.h"
 #include "compat_win.h"
-#include "unicode_test.h"
-#include "setting.h"
-#include "codeconv.h"
-#include "libsusieplugin.h"
 
 #include "vtdisp.h"
 
+#include <locale.h>
+#include <olectl.h>
+
 #define CurWidth 2
-// #define DRAW_RED_BOX	1
 
 static const BYTE DefaultColorTable[256][3] = {
   {  0,  0,  0}, {255,  0,  0}, {  0,255,  0}, {255,255,  0}, {  0,  0,255}, {255,  0,255}, {  0,255,255}, {255,255,255},  //   0 -   7
@@ -108,6 +105,7 @@ static BOOL SaveWinSize = FALSE;
 static int WinWidthOld, WinHeightOld;
 static HBRUSH Background;
 static COLORREF ANSIColor[256];
+static int Dx[TermWidthMax];
 
 // caret variables
 static int CaretStatus;
@@ -125,9 +123,6 @@ static HFONT DCPrevFont;
 TCharAttr DefCharAttr = {
   AttrDefault,
   AttrDefault,
-#if UNICODE_INTERNAL_BUFF
-  AttrDefault,
-#endif
   AttrDefaultFG,
   AttrDefaultBG
 };
@@ -170,6 +165,8 @@ static int  BGReverseTextAlpha;
 static int  BGUseAlphaBlendAPI;
 BOOL BGNoFrame;
 static BOOL BGFastSizeMove;
+
+static char BGSPIPath[MAX_PATH];
 
 static COLORREF BGVTColor[2];
 static COLORREF BGVTBoldColor[2];
@@ -426,7 +423,60 @@ void RandomFile(char *filespec_src,char *filename, int destlen)
   strncat_s(filename,destlen,fd.cFileName,_TRUNCATE);
 }
 
-static BOOL SaveBitmapFile(const char *nameFile,unsigned char *pbuf,BITMAPINFO *pbmi)
+BOOL LoadPictureWithSPI(char *nameSPI,char *nameFile,unsigned char *bufFile,long sizeFile,HLOCAL *hbuf,HLOCAL *hbmi)
+{
+  HINSTANCE hSPI;
+  char spiVersion[8];
+  int (PASCAL *SPI_IsSupported)(LPSTR,DWORD);
+  int (PASCAL *SPI_GetPicture)(LPSTR,long,unsigned int,HANDLE *,HANDLE *,FARPROC,long);
+  int (PASCAL *SPI_GetPluginInfo)(int,LPSTR,int);
+  int ret;
+
+  ret  = FALSE;
+  hSPI = NULL;
+
+  //SPI をロード
+  hSPI = LoadLibrary(nameSPI);
+
+  if(!hSPI)
+    goto error;
+
+  SPI_GetPluginInfo = (void *)GetProcAddress(hSPI,"GetPluginInfo");
+  SPI_IsSupported   = (void *)GetProcAddress(hSPI,"IsSupported");
+  SPI_GetPicture    = (void *)GetProcAddress(hSPI,"GetPicture");
+
+  if(!SPI_GetPluginInfo || !SPI_IsSupported || !SPI_GetPicture)
+    goto error;
+
+  //バージョンチェック
+  SPI_GetPluginInfo(0,spiVersion,8);
+
+  if(spiVersion[2] != 'I' || spiVersion[3] != 'N')
+    goto error;
+
+#if !defined(_M_X64)
+  if(!(SPI_IsSupported)(nameFile,(unsigned long)bufFile))
+    goto error;
+#else
+  // TODO ポインタを unsigned long に変換している
+  // 64bit版Susie Plug-in が存在する?
+  goto error;
+#endif
+
+  if((SPI_GetPicture)(bufFile,sizeFile,1,hbmi,hbuf,NULL,0))
+    goto error;
+
+  ret = TRUE;
+
+  error :
+
+  if(hSPI)
+    FreeLibrary(hSPI);
+
+  return ret;
+}
+
+BOOL SaveBitmapFile(char *nameFile,unsigned char *pbuf,BITMAPINFO *pbmi)
 {
   int    bmiSize;
   DWORD  writtenByte;
@@ -473,29 +523,6 @@ static BOOL SaveBitmapFile(const char *nameFile,unsigned char *pbuf,BITMAPINFO *
   return TRUE;
 }
 
-static BOOL LoadWithSPI(const char *src, const char *spi_path, const char *out)
-{
-	HANDLE hbmi;
-	HANDLE hbuf;
-	BOOL r;
-	wchar_t *spi_pathW = ToWcharA(spi_path);
-	wchar_t *srcW = ToWcharA(src);
-
-	r = SusieLoadPicture(srcW, spi_pathW, &hbmi, &hbuf);
-	free(spi_pathW);
-	free(srcW);
-	if (r == FALSE) {
-		return FALSE;
-	}
-
-	SaveBitmapFile(out, hbuf, hbmi);
-
-	LocalFree(hbmi);
-	LocalFree(hbuf);
-
-	return TRUE;
-}
-
 static BOOL WINAPI AlphaBlendWithoutAPI(HDC hdcDest,int dx,int dy,int width,int height,HDC hdcSrc,int sx,int sy,int sw,int sh,BLENDFUNCTION bf)
 {
   HDC hdcDestWork,hdcSrcWork;
@@ -531,24 +558,110 @@ static BOOL WINAPI AlphaBlendWithoutAPI(HDC hdcDest,int dx,int dy,int width,int 
 }
 
 // 画像読み込み関係
+
 static void BGPreloadPicture(BGSrc *src)
 {
-  HBITMAP hbm;
-  char *load_file = src->file;
-  const char *spi_path = ts.EtermLookfeel.BGSPIPath;
+  char  spiPath[MAX_PATH];
+  char  filespec[MAX_PATH];
+  char *filePart;
+  int   fileSize;
+  DWORD readByte;
+  unsigned char *fileBuf;
 
-  if (LoadWithSPI(src->file, spi_path, src->fileTmp) == TRUE) {
-	  load_file = src->fileTmp;
+  HBITMAP hbm;
+  HANDLE  hPictureFile;
+  HANDLE  hFind;
+  WIN32_FIND_DATA fd;
+
+  #ifdef _DEBUG
+    OutputDebugPrintf("Preload Picture : %s\n",src->file);
+  #endif
+
+  //ファイルを読み込む
+  hPictureFile = CreateFile(src->file,GENERIC_READ,0,NULL,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,NULL);
+
+  if(hPictureFile == INVALID_HANDLE_VALUE)
+    return;
+
+  fileSize = GetFileSize(hPictureFile,0);
+
+  //最低 2kb は確保 (Susie plugin の仕様より)
+  fileBuf  = GlobalAlloc(GPTR,fileSize + 2048);
+
+  //頭の 2kb は０で初期化
+  ZeroMemory(fileBuf,2048);
+
+  ReadFile(hPictureFile,fileBuf,fileSize,&readByte,0);
+
+  CloseHandle(hPictureFile);
+
+  // SPIPath を絶対パスに変換
+  if(!GetFullPathName(BGSPIPath,MAX_PATH,filespec,&filePart))
+    return;
+
+  //プラグインを当たっていく
+  hFind = FindFirstFile(filespec,&fd);
+
+  if(hFind != INVALID_HANDLE_VALUE && filePart)
+  {
+    //ディレクトリ取得
+    ExtractDirName(filespec, spiPath);
+    AppendSlash(spiPath, sizeof(spiPath));
+
+    do{
+      HLOCAL hbuf,hbmi;
+      BITMAPINFO *pbmi;
+      char       *pbuf;
+      char spiFileName[MAX_PATH];
+	  const char *ext;
+
+      if(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+        continue;
+	  ext = strrchr(fd.cFileName, '.');
+	  if (ext == NULL) {
+		  // 拡張子がないファイル?
+		  continue;
+	  }
+	  if (strcmp(ext, ".dll") != 0 && strcmp(ext, ".spi") != 0) {
+		  // .dll or .spi 以外のファイル
+		  continue;
+	  }
+
+      strncpy_s(spiFileName, sizeof(spiFileName), spiPath, _TRUNCATE);
+      strncat_s(spiFileName, sizeof(spiFileName), fd.cFileName, _TRUNCATE);
+
+      if(LoadPictureWithSPI(spiFileName,src->file,fileBuf,fileSize,&hbuf,&hbmi))
+      {
+        pbuf = LocalLock(hbuf);
+        pbmi = LocalLock(hbmi);
+
+        SaveBitmapFile(src->fileTmp,pbuf,pbmi);
+
+        LocalUnlock(hbmi);
+        LocalUnlock(hbuf);
+
+        LocalFree(hbmi);
+        LocalFree(hbuf);
+
+        strncpy_s(src->file, sizeof(src->file),src->fileTmp, _TRUNCATE);
+
+        break;
+      }
+    }while(FindNextFile(hFind,&fd));
+
+    FindClose(hFind);
   }
+
+  GlobalFree(fileBuf);
 
   if (IsLoadImageOnlyEnabled()) {
     //画像をビットマップとして読み込み
-    hbm = LoadImage(0,load_file,IMAGE_BITMAP,0,0,LR_LOADFROMFILE);
+    hbm = LoadImage(0,src->file,IMAGE_BITMAP,0,0,LR_LOADFROMFILE);
 
   } else {
 	  // Susie pluginで読み込めないJPEGファイルが存在した場合、
 	  // OLE を利用して読む。
-    hbm = GetBitmapHandle(load_file);
+    hbm = GetBitmapHandle(src->file);
 
   }
 
@@ -1362,14 +1475,13 @@ void BGDestruct(void)
 /*
  * Eterm lookfeel機能による初期化処理
  *
- * initialize_once:
+ * initialize_once: 
  *    TRUE: Tera Termの起動時
  *    FALSE: Tera Termの起動時以外
  */
 void BGInitialize(BOOL initialize_once)
 {
   char path[MAX_PATH],config_file[MAX_PATH],tempPath[MAX_PATH];
-  char BGSPIPath[MAX_PATH];
 
   ZeroMemory(path, sizeof(path));
   ZeroMemory(config_file, sizeof(config_file));
@@ -1442,7 +1554,7 @@ void BGInitialize(BOOL initialize_once)
   // Tera Termの起動時のみに初期化する。
   if (initialize_once) {
 	  // Tera Term起動時に一度だけ読む。
-	  ts.EtermLookfeel.BGIgnoreThemeFile = BGGetOnOff("BGIgnoreThemeFile", FALSE ,ts.SetupFName);
+	  ts.EtermLookfeel_BGIgnoreThemeFile = BGGetOnOff("BGIgnoreThemeFile", FALSE ,ts.SetupFName);
   }
 
   if(!BGEnable)
@@ -1458,6 +1570,11 @@ void BGInitialize(BOOL initialize_once)
   BGNoFrame = ts.EtermLookfeel.BGNoFrame;
   BGFastSizeMove = ts.EtermLookfeel.BGFastSizeMove;
   BGNoCopyBits = ts.EtermLookfeel.BGNoCopyBits;
+
+#if 0
+  GetPrivateProfileString(BG_SECTION,"BGSPIPath","plugin",BGSPIPath,MAX_PATH,ts.SetupFName);
+  strncpy_s(ts.EtermLookfeel.BGSPIPath, sizeof(ts.EtermLookfeel.BGSPIPath), BGSPIPath, _TRUNCATE);
+#endif
 
   //テンポラリーファイル名を生成
   GetTempPath(MAX_PATH,tempPath);
@@ -1498,7 +1615,7 @@ void BGInitialize(BOOL initialize_once)
   // ImageFile.INIではない場合はランダムに選ぶ。
   if (strstr(path, BG_THEME_IMAGEFILE_NAME) == NULL) {
 	  // テーマファイルを無視する場合は空にする。
-	  if (ts.EtermLookfeel.BGIgnoreThemeFile) {
+	  if (ts.EtermLookfeel_BGIgnoreThemeFile) {
 		ZeroMemory(config_file, sizeof(config_file));
 	  }
   }
@@ -1518,6 +1635,10 @@ void BGInitialize(BOOL initialize_once)
 
     SetCurrentDirectory(prevDir);
   }
+
+  //SPI のパスを整形
+  AppendSlash(BGSPIPath,sizeof(BGSPIPath));
+  strncat_s(BGSPIPath,sizeof(BGSPIPath),"*",_TRUNCATE);
 
   //壁紙 or 背景をプリロード
   BGPreloadSrc(&BGDest);
@@ -1963,6 +2084,9 @@ void ChangeFont()
 		VTFont[AttrSpecial | AttrBold] = VTFont[AttrSpecial];
 		VTFont[AttrSpecial | AttrBold | AttrUnder] = VTFont[AttrSpecial | AttrUnder];
 	}
+
+	for (i = 0 ; i < TermWidthMax; i++)
+		Dx[i] = FontWidth;
 }
 
 void ResetIME()
@@ -2121,9 +2245,6 @@ void UpdateCaretPosition(BOOL enforce)
 void CaretOn()
 // Turn on the cursor
 {
-#if UNICODE_DEBUG_CARET_OFF
-	return;
-#endif
 	if (ts.KillFocusCursor == 0 && !Active)
 		return;
 
@@ -2221,9 +2342,6 @@ BOOL IsCaretOn()
 
 void DispEnableCaret(BOOL On)
 {
-#if UNICODE_DEBUG_CARET_OFF
-  On = FALSE;
-#endif
   if (! On) CaretOff();
   CaretEnabled = On;
 }
@@ -2682,223 +2800,167 @@ void DispSetupDC(TCharAttr Attr, BOOL Reverse)
   }
 }
 
-static void DrawTextBGImage(HDC hdcBGBuffer, int X, int Y, int width, int height)
+#if 1
+// 当面はこちらの関数を使う。(2004.11.4 yutaka)
+void DispStr(PCHAR Buff, int Count, int Y, int* X)
+// Display a string
+//   Buff: points the string
+//   Y: vertical position in window cordinate
+//  *X: horizontal position
+// Return:
+//  *X: horizontal position shifted by the width of the string
 {
-	RECT  rect;
-	SetRect(&rect,0,0,width,height);
+  RECT RText;
 
-	//窓の移動、リサイズ中は背景を BGBrushInSizeMove で塗りつぶす
-	if(BGInSizeMove)
-		FillRect(hdcBGBuffer,&rect,BGBrushInSizeMove);
+  if ((ts.Language==IdRussian) &&
+      (ts.RussClient!=ts.RussFont))
+    RussConvStr(ts.RussClient,ts.RussFont,Buff,Count);
 
-	BitBlt(hdcBGBuffer,0,0,width,height,hdcBG,X,Y,SRCCOPY);
+  RText.top = Y;
+  RText.bottom = Y+FontHeight;
+  RText.left = *X;
+  RText.right = *X + Count*FontWidth;
 
-	if(BGReverseText == TRUE)
-	{
-		if(BGReverseTextAlpha < 255)
-		{
-			BLENDFUNCTION bf;
-			HBRUSH hbr;
-
-			hbr = CreateSolidBrush(GetBkColor(hdcBGBuffer));
-			FillRect(hdcBGWork,&rect,hbr);
-			DeleteObject(hbr);
-
-			ZeroMemory(&bf,sizeof(bf));
-			bf.BlendOp             = AC_SRC_OVER;
-			bf.SourceConstantAlpha = BGReverseTextAlpha;
-
-			BGAlphaBlend(hdcBGBuffer,0,0,width,height,hdcBGWork,0,0,width,height,bf);
-		}
-	}
-}
-
-// draw red box for debug
-#if DRAW_RED_BOX
-static void DrawRedBox(HDC DC, int sx, int sy, int width, int height)
-{
-	HPEN red_pen = CreatePen(PS_SOLID, 0, RGB(0xff, 0, 0));
-	HGDIOBJ old_pen = SelectObject(DC, red_pen);
-	MoveToEx(DC, sx, sy, NULL);
-	LineTo(DC, sx + width, sy);
-	LineTo(DC, sx + width, sy + height);
-	LineTo(DC, sx, sy + height);
-	LineTo(DC, sx, sy);
-	MoveToEx(DC, sx, sy, NULL);
-	LineTo(DC, sx + width, sy + height);
-	MoveToEx(DC, sx + width, sy, NULL);
-	LineTo(DC, sx, sy + height);
-	SelectObject(DC, old_pen);
-	DeleteObject(red_pen);
-}
-#endif
-
-/**
- *	1行描画 ANSI
- */
-void DrawStrA(HDC DC, HDC BGDC, const char *StrA, int Count, int font_width, int font_height, int Y, int *X)
-{
-	int Dx[TermWidthMax];
-	int i;
-	int width;
-	int height;
-
-	for (i = 0; i < Count; i++) {
-		Dx[i] = font_width;
-	}
-
-	// テキスト描画領域
-	width = Count * font_width;
-	height = font_height;
-	if (BGDC == NULL) {
-		RECT RText;
-		SetRect(&RText, *X, Y, *X + width, Y + height);
-
-		ExtTextOutA(DC, *X + ts.FontDX, Y + ts.FontDY, ETO_CLIPPED | ETO_OPAQUE, &RText, StrA, Count, &Dx[0]);
-	}
-	else {
-		HFONT hPrevFont;
-		RECT rect;
-		int eto_options;
-
-		SetRect(&rect, 0, 0, 0 + width, 0 + height);
-
-		// BGDC の属性を設定
-		hPrevFont = SelectObject(BGDC, GetCurrentObject(DC, OBJ_FONT));
-		SetTextColor(BGDC, GetTextColor(DC));
-		SetBkColor(BGDC, GetBkColor(DC));
-
-		// 文字の背景を描画
-		DrawTextBGImage(BGDC, *X, Y, width, height);
-
-		// 文字を描画
-		eto_options = ETO_CLIPPED;
-		if (BGReverseText == TRUE && BGReverseTextAlpha < 255) {
-			eto_options |= ETO_OPAQUE;
-		}
-		ExtTextOutA(BGDC, ts.FontDX, ts.FontDY, eto_options, &rect, StrA, Count, &Dx[0]);
-
-		// Windowに貼り付け
-		BitBlt(DC, *X, Y, width, height, BGDC, 0, 0, SRCCOPY);
-
-		SelectObject(BGDC, hPrevFont);
-	}
-
-#if DRAW_RED_BOX
-	DrawRedBox(DC, *X, Y, width, height);
-#endif
-
-	*X += width;
-}
-
-/**
- *	1行描画 Unicode
- *		Windows 95 にも ExtTextOutW() は存在するが
- *		動作が異なるようだ
- *		TODO 文字間に対応していない?
- */
-void DrawStrW(HDC DC, HDC BGDC, const wchar_t *StrW, const char *WidthInfo, int Count, int font_width, int font_height,
-			  int Y, int *X)
-{
-	int Dx[TermWidthMax];
-	int HalfCharCount = 0;
-	int i;
-	int width;
-	int height;
-
-	for (i = 0; i < Count; i++) {
-		if (WidthInfo[i] == 'H') {
-			HalfCharCount++;
-			Dx[i] = font_width;
-		}
-		else if (WidthInfo[i] == '0') {
-			if (i == 0) {
-				Dx[i] = 0;
-			}
-			else {
-				Dx[i] = Dx[i - 1];
-				Dx[i - 1] = 0;
-			}
-		}
-		else {
-			HalfCharCount += 2;
-			Dx[i] = font_width * 2;
-		}
-	}
-
-	// テキスト描画領域
-	width = HalfCharCount * font_width;
-	height = font_height;
-	if (BGDC == NULL) {
-		RECT RText;
-		SetRect(&RText, *X, Y, *X + width, Y + height);
-
-		ExtTextOutW(DC, *X + ts.FontDX, Y + ts.FontDY, ETO_CLIPPED | ETO_OPAQUE, &RText, StrW, Count, &Dx[0]);
-	}
-	else {
-		HFONT hPrevFont;
-		RECT rect;
-		int eto_options;
-
-		SetRect(&rect, 0, 0, 0 + width, 0 + height);
-
-		// BGDC の属性を設定
-		hPrevFont = SelectObject(BGDC, GetCurrentObject(DC, OBJ_FONT));
-		SetTextColor(BGDC, GetTextColor(DC));
-		SetBkColor(BGDC, GetBkColor(DC));
-
-		// 文字の背景を描画
-		DrawTextBGImage(BGDC, *X, Y, width, height);
-
-		// 文字を描画
-		eto_options = ETO_CLIPPED;
-		if (BGReverseText == TRUE && BGReverseTextAlpha < 255) {
-			eto_options |= ETO_OPAQUE;
-		}
-		ExtTextOutW(BGDC, ts.FontDX, ts.FontDY, eto_options, &rect, StrW, Count, &Dx[0]);
-
-		// Windowに貼り付け
-		BitBlt(DC, *X, Y, width, height, BGDC, 0, 0, SRCCOPY);
-
-		SelectObject(BGDC, hPrevFont);
-	}
-
-#if DRAW_RED_BOX
-	DrawRedBox(DC, *X, Y, width, height);
-#endif
-
-	*X += width;
-}
-
-/**
- *	Display a string
- *	@param   	Buff	points the string
- *	@param   	Y		vertical position in window cordinate
- *  @param[in]	*X		horizontal position
- *  @param[out]	*X		horizontal position shifted by the width of the string
- */
-void DispStr(const char *Buff, int Count, int Y, int* X)
-{
 #ifdef ALPHABLEND_TYPE2
-	HDC BGDC = BGEnable ? hdcBGBuffer : NULL;
+//<!--by AKASI
+  if(!BGEnable)
+  {
+    ExtTextOut(VTDC,*X+ts.FontDX,Y+ts.FontDY,
+               ETO_CLIPPED | ETO_OPAQUE,
+               &RText,Buff,Count,&Dx[0]);
+  }else{
+
+    int   width;
+    int   height;
+    int   eto_options = ETO_CLIPPED;
+    RECT  rect;
+    HFONT hPrevFont;
+
+    width  = Count*FontWidth;
+    height = FontHeight;
+    SetRect(&rect,0,0,width,height);
+
+    //hdcBGBuffer の属性を設定
+    hPrevFont = SelectObject(hdcBGBuffer,GetCurrentObject(VTDC,OBJ_FONT));
+    SetTextColor(hdcBGBuffer,GetTextColor(VTDC));
+    SetBkColor(hdcBGBuffer,GetBkColor(VTDC));
+
+    //窓の移動、リサイズ中は背景を BGBrushInSizeMove で塗りつぶす
+    if(BGInSizeMove)
+      FillRect(hdcBGBuffer,&rect,BGBrushInSizeMove);
+
+    BitBlt(hdcBGBuffer,0,0,width,height,hdcBG,*X,Y,SRCCOPY);
+
+    if(BGReverseText == TRUE)
+    {
+      if(BGReverseTextAlpha < 255)
+      {
+        BLENDFUNCTION bf;
+        HBRUSH hbr;
+
+        hbr = CreateSolidBrush(GetBkColor(hdcBGBuffer));
+        FillRect(hdcBGWork,&rect,hbr);
+        DeleteObject(hbr);
+
+        ZeroMemory(&bf,sizeof(bf));
+        bf.BlendOp             = AC_SRC_OVER;
+        bf.SourceConstantAlpha = BGReverseTextAlpha;
+
+        BGAlphaBlend(hdcBGBuffer,0,0,width,height,hdcBGWork,0,0,width,height,bf);
+      }else{
+        eto_options |= ETO_OPAQUE;
+      }
+    }
+
+    ExtTextOut(hdcBGBuffer,ts.FontDX,ts.FontDY,eto_options,&rect,Buff,Count,&Dx[0]);
+    BitBlt(VTDC,*X,Y,width,height,hdcBGBuffer,0,0,SRCCOPY);
+
+    SelectObject(hdcBGBuffer,hPrevFont);
+  }
+//-->
 #else
-	HDC BGDC = NULL;
+  ExtTextOut(VTDC,*X+ts.FontDX,Y+ts.FontDY,
+             ETO_CLIPPED | ETO_OPAQUE,
+             &RText,Buff,Count,&Dx[0]);
 #endif
-	DrawStrA(VTDC, BGDC, Buff, Count, FontWidth, FontHeight, Y, X);
+  *X = RText.right;
+
+  if ((ts.Language==IdRussian) &&
+      (ts.RussClient!=ts.RussFont))
+    RussConvStr(ts.RussFont,ts.RussClient,Buff,Count);
 }
 
-/**
- *	DispStr() の wchar_t版
- */
-void DispStrW(const wchar_t *StrW, const char *WidthInfo, int Count, int Y, int* X)
-{
-#ifdef ALPHABLEND_TYPE2
-	HDC BGDC = BGEnable ? hdcBGBuffer : NULL;
 #else
-	HDC BGDC = NULL;
+void DispStr(PCHAR Buff, int Count, int Y, int* X)
+// Display a string
+//   Buff: points the string
+//   Y: vertical position in window cordinate
+//  *X: horizontal position
+// Return:
+//  *X: horizontal position shifted by the width of the string
+{
+	RECT RText;
+	wchar_t *wc;
+	int len, wclen;
+	CHAR ch;
+
+#if 0
+#include <crtdbg.h>
+	_CrtSetBreakAlloc(52);
+	Buff[0] = 0x82;
+	Buff[1] = 0xe4;
+	Buff[2] = 0x82;
+	Buff[3] = 0xbd;
+	Buff[4] = 0x82;
+	Buff[5] = 0xa9;
+	Count = 6;
 #endif
-	DrawStrW(VTDC, BGDC, StrW, WidthInfo, Count, FontWidth, FontHeight, Y, X);
+
+	setlocale(LC_ALL, ts.Locale);	// TODO コード変換ここでする?,無効化されたコード
+
+	ch = Buff[Count];
+	Buff[Count] = 0;
+	len = mbstowcs(NULL, Buff, 0);
+
+	wc = malloc(sizeof(wchar_t) * (len + 1));
+	if (wc == NULL)
+		return;
+	wclen = mbstowcs(wc, Buff, len + 1);
+	Buff[Count] = ch;
+
+	if ((ts.Language==IdRussian) &&
+		(ts.RussClient!=ts.RussFont))
+		RussConvStr(ts.RussClient,ts.RussFont,Buff,Count);
+
+	RText.top = Y;
+	RText.bottom = Y+FontHeight;
+	RText.left = *X;
+	RText.right = *X + Count*FontWidth; //
+
+	// Unicodeで出力する。
+#if 1
+	// UTF-8環境において、tcshがEUC出力した場合、画面に何も表示されないことがある。
+	// マウスでドラッグしたり、ログファイルへ保存してみると、文字化けした文字列を
+	// 確認することができる。(2004.8.6 yutaka)
+	ExtTextOutW(VTDC,*X+ts.FontDX,Y+ts.FontDY,
+		ETO_CLIPPED | ETO_OPAQUE,
+		&RText, wc, wclen, NULL);
+//		&RText, wc, wclen, &Dx[0]);
+#else
+	TextOutW(VTDC, *X+ts.FontDX, Y+ts.FontDY, wc, wclen);
+
+#endif
+
+	*X = RText.right;
+
+	if ((ts.Language==IdRussian) &&
+		(ts.RussClient!=ts.RussFont))
+		RussConvStr(ts.RussFont,ts.RussClient,Buff,Count);
+
+	free(wc);
 }
+#endif
+
 
 void DispEraseCurToEnd(int YEnd)
 {
@@ -3334,31 +3396,6 @@ void DispVScroll(int Func, int Pos)
 
 //-------------- end of scrolling functions --------
 
-/**
- *	フォントのCharSet(LOGFONT.charlfCharSet)から
- *	表示に妥当なCodePageを得る
- */
-static int GetCodePageFromFontCharSet(BYTE char_set)
-{
-	static const struct {
-		BYTE CharSet;	// LOGFONT.lfCharSet
-		int CodePage;
-	} table[] = {
-		{ SHIFTJIS_CHARSET,  	932 },
-		{ HANGUL_CHARSET,		51949 },
-		{ GB2312_CHARSET,	 	936 },
-		{ CHINESEBIG5_CHARSET,	950 },
-		{ RUSSIAN_CHARSET,		1251 },
-	};
-	int i;
-	for (i = 0; i < _countof(table); i++) {
-		if (table[i].CharSet == char_set) {
-			return table[i].CodePage;
-		}
-	}
-	return CP_ACP;
-}
-
 void DispSetupFontDlg()
 //  Popup the Setup Font dialogbox and
 //  reset window
@@ -3377,8 +3414,6 @@ void DispSetupFontDlg()
   ts.VTFontSize.x = VTlf.lfWidth;
   ts.VTFontSize.y = VTlf.lfHeight;
   ts.VTFontCharSet = VTlf.lfCharSet;
-
-  UnicodeDebugParam.CodePageForANSIDraw = GetCodePageFromFontCharSet(VTlf.lfCharSet);
 
   ChangeFont();
 

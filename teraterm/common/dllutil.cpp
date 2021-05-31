@@ -27,6 +27,7 @@
  */
 
 #include <windows.h>
+#include <tchar.h>
 #include <assert.h>
 #if !defined(_CRTDBG_MAP_ALLOC)
 #define _CRTDBG_MAP_ALLOC
@@ -36,7 +37,7 @@
 #include "dllutil.h"
 
 typedef struct {
-	const wchar_t *dllName;
+	const TCHAR *dllName;
 	DLLLoadFlag LoadFlag;
 	HMODULE handle;
 	int refCount;
@@ -45,16 +46,16 @@ typedef struct {
 static HandleList_t *HandleList;
 static int HandleListCount;
 
-static HMODULE GetHandle(const wchar_t *dllName, DLLLoadFlag LoadFlag)
+static HMODULE GetHandle(const TCHAR *dllName, DLLLoadFlag LoadFlag)
 {
-	wchar_t dllPath[MAX_PATH];
+	TCHAR dllPath[MAX_PATH];
 	HMODULE module;
 	int i;
 	HandleList_t *p;
 	int r;
 
 	if (LoadFlag == DLL_GET_MODULE_HANDLE) {
-		module = GetModuleHandleW(dllName);
+		module = GetModuleHandle(dllName);
 		assert(module != NULL);
 		return module;
 	}
@@ -62,7 +63,7 @@ static HMODULE GetHandle(const wchar_t *dllName, DLLLoadFlag LoadFlag)
 	// 以前にロードした?
 	p = HandleList;
 	for (i = 0; i < HandleListCount; i++) {
-		if (wcscmp(p->dllName, dllName) == 0) {
+		if (_tcscmp(p->dllName, dllName) == 0) {
 			p->refCount++;
 			return p->handle;
 		}
@@ -73,22 +74,22 @@ static HMODULE GetHandle(const wchar_t *dllName, DLLLoadFlag LoadFlag)
 	dllPath[0] = 0;
 	switch (LoadFlag) {
 	case DLL_LOAD_LIBRARY_SYSTEM:
-		r = GetSystemDirectoryW(dllPath, _countof(dllPath));
+		r = GetSystemDirectory(dllPath, _countof(dllPath));
 		assert(r != 0);
 		if (r == 0) return NULL;
 		break;
 	case DLL_LOAD_LIBRARY_CURRENT:
-		r = GetModuleFileNameW(NULL, dllPath, _countof(dllPath));
+		r = GetModuleFileName(NULL, dllPath, _countof(dllPath));
 		assert(r != 0);
 		if (r == 0) return NULL;
-		*wcsrchr(dllPath, L'\\') = 0;
+		*_tcsrchr(dllPath, _T('\\')) = 0;
 		break;
 	default:
 		return NULL;
 	}
-	wcscat_s(dllPath, _countof(dllPath), L"\\");
-	wcscat_s(dllPath, _countof(dllPath), dllName);
-	module = LoadLibraryW(dllPath);
+	_tcscat_s(dllPath, _countof(dllPath), _T("\\"));
+	_tcscat_s(dllPath, _countof(dllPath), dllName);
+	module = LoadLibrary(dllPath);
 	if (module == NULL) {
 		// 存在しない,dllじゃない?
 		return NULL;
@@ -98,14 +99,14 @@ static HMODULE GetHandle(const wchar_t *dllName, DLLLoadFlag LoadFlag)
 	HandleListCount++;
 	HandleList = (HandleList_t *)realloc(HandleList, sizeof(HandleList_t)*HandleListCount);
 	p = &HandleList[i];
-	p->dllName = wcsdup(dllName);
+	p->dllName = _tcsdup(dllName);
 	p->handle = module;
 	p->LoadFlag = LoadFlag;
 	p->refCount = 1;
 	return module;
 }
 
-static void FreeHandle(const wchar_t *dllName, DLLLoadFlag LoadFlag)
+static void FreeHandle(const TCHAR *dllName, DLLLoadFlag LoadFlag)
 {
 	int i;
 	HandleList_t *p;
@@ -118,7 +119,7 @@ static void FreeHandle(const wchar_t *dllName, DLLLoadFlag LoadFlag)
 	// リストから削除する
 	p = HandleList;
 	for (i = 0; i < HandleListCount; i++) {
-		if (wcscmp(p->dllName, dllName) != 0) {
+		if (_tcscmp(p->dllName, dllName) != 0) {
 			continue;
 		}
 
@@ -150,7 +151,7 @@ static void FreeHandle(const wchar_t *dllName, DLLLoadFlag LoadFlag)
  * @retval	ERROR_FILE_NOT_FOUND	DLLが見つからない(不正なファイル)
  * @retval	ERROR_PROC_NOT_FOUND	関数エントリが見つからない
  */
-DWORD DLLGetApiAddress(const wchar_t *dllPath, DLLLoadFlag LoadFlag,
+DWORD DLLGetApiAddress(const TCHAR *dllPath, DLLLoadFlag LoadFlag,
 					   const char *ApiName, void **pFunc)
 {
 	HMODULE hDll = GetHandle(dllPath, LoadFlag);
@@ -175,7 +176,7 @@ DWORD DLLGetApiAddress(const wchar_t *dllPath, DLLLoadFlag LoadFlag,
  * @retval	ERROR_FILE_NOT_FOUND	DLLが見つからない(不正なファイル)
  * @retval	ERROR_PROC_NOT_FOUND	関数エントリが見つからない
  */
-DWORD DLLGetApiAddressFromList(const wchar_t *dllPath, DLLLoadFlag LoadFlag,
+DWORD DLLGetApiAddressFromList(const TCHAR *dllPath, DLLLoadFlag LoadFlag,
 							   DLLFuncFlag FuncFlag, const APIInfo *ApiInfo)
 {
 	HMODULE hDll = GetHandle(dllPath, LoadFlag);
@@ -232,7 +233,7 @@ static void SetupLoadLibraryPath(void)
 {
 	BOOL (WINAPI *pSetDefaultDllDirectories)(DWORD);
 	BOOL (WINAPI *pSetDllDirectoryA)(LPCSTR);
-	const wchar_t *kernel32 = L"kernel32.dll";
+	const TCHAR *kernel32 = _T("kernel32.dll");
 
 #if !defined(LOAD_LIBRARY_SEARCH_SYSTEM32)
 #define LOAD_LIBRARY_SEARCH_SYSTEM32        0x00000800
@@ -250,7 +251,6 @@ static void SetupLoadLibraryPath(void)
 	// SetDefaultDllDirectories() が使えなくても
 	// SetDllDirectory() が使える場合は
 	// カレントディレクトリだけでも検索パスからはずしておく。
-	// カレントを外す(""をセットする)だけなので、ANSI版でok
 	DLLGetApiAddress(kernel32, DLL_GET_MODULE_HANDLE,
 					 "SetDllDirectoryA", (void **)&pSetDllDirectoryA);
 	if (pSetDllDirectoryA != NULL) {
@@ -260,9 +260,6 @@ static void SetupLoadLibraryPath(void)
 
 void DLLInit()
 {
-	if (HandleListCount != 0) {
-		return;		// 初期化済み
-	}
 	HandleList = NULL;
 	HandleListCount = 0;
 	SetupLoadLibraryPath();
@@ -271,9 +268,6 @@ void DLLInit()
 void DLLExit()
 {
 	int i;
-	if (HandleListCount == 0) {
-		return;		// 未使用
-	}
 	for (i = 0; i < HandleListCount; i++) {
 		HandleList_t *p = &HandleList[i];
 		if (p->LoadFlag != DLL_GET_MODULE_HANDLE) {

@@ -122,7 +122,7 @@ const EVP_CIPHER *get_cipher_EVP_CIPHER(const struct ssh2cipher *cipher);
 char *get_cipher_string(const struct ssh2cipher *cipher);
 const struct ssh2cipher* get_cipher_by_name(char *name);
 char *get_cipher_name(int cipher_id);
-wchar_t *get_listbox_cipher_nameW(int cipher_id, PTInstVar pvar);
+char *get_listbox_cipher_name(int cipher_id, PTInstVar pvar);
 
 void normalize_cipher_order(char *buf);
 const struct ssh2cipher *choose_SSH2_cipher_algorithm(char *server_proposal, char *my_proposal);

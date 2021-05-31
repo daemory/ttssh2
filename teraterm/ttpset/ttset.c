@@ -41,7 +41,8 @@
 #include "ttlib.h"
 #include "tt_res.h"
 #include "servicenames.h"
-#include "codeconv.h"
+
+#include "compat_w95.h"
 
 #define DllExport __declspec(dllexport)
 #include "ttset.h"
@@ -49,7 +50,6 @@
 #ifndef CLEARTYPE_QUALITY
 #define CLEARTYPE_QUALITY 5
 #endif
-#define INI_FILE_IS_UNICODE	1
 
 #define Section "Tera Term"
 
@@ -153,91 +153,6 @@ int WINAPI SerialPortConfconvertId2Str(enum serial_port_conf type, WORD id, PCHA
 error:
 	return (ret);
 }
-
-/**
- *	GetPrivateProfileStringA() のファイル名だけが wchar_t 版
- */
-DWORD GetPrivateProfileStringAFileW(const char *appA, const char *keyA, const char* defA, char *strA, DWORD size, const wchar_t *filenameW)
-{
-	DWORD lenA;
-	wchar_t *appW = ToWcharA(appA);
-	wchar_t *keyW = ToWcharA(keyA);
-	wchar_t *defW = ToWcharA(defA);
-	DWORD lenW_max = size;
-	wchar_t *strW = malloc(sizeof(wchar_t) * lenW_max);
-	DWORD lenW = GetPrivateProfileStringW(appW, keyW, defW, strW, lenW_max, filenameW);
-	free(appW);
-	free(keyW);
-	free(defW);
-	if (lenW == 0) {
-		free(strW);
-		*strA = '\0';
-		return 0;
-	}
-	if (lenW < lenW_max) {
-		lenW++;	// for L'\0'
-	}
-	lenA = WideCharToMultiByte(CP_ACP, 0, strW, lenW, strA, size, NULL, NULL);
-	// GetPrivateProfileStringW() の戻り値は '\0' を含まない文字列長
-	// WideCharToMultiByte() の戻り値は '\0' を含む文字列長
-	if (lenW != 0 && strA[lenA-1] == 0) {
-		lenA--;
-	}
-	return lenA;
-}
-
-/**
- *	WritePrivateProfileStringA() のファイル名だけが wchar_t 版
- */
-BOOL WritePrivateProfileStringAFileW(const char *appA, const char *keyA, const char *strA, const wchar_t *filenameW)
-{
-	wchar_t *appW = ToWcharA(appA);
-	wchar_t *keyW = ToWcharA(keyA);
-	wchar_t *strW = ToWcharA(strA);
-	BOOL r = WritePrivateProfileStringW(appW, keyW, strW, filenameW);
-	free(appW);
-	free(keyW);
-	free(strW);
-	return r;
-}
-
-/**
- *	GetPrivateProfileIntFileA() のファイル名だけが wchar_t 版
- */
-UINT GetPrivateProfileIntFileW(const char *appA, const char *keyA, int def, const wchar_t *filenameW)
-{
-	wchar_t *appW = ToWcharA(appA);
-	wchar_t *keyW = ToWcharA(keyA);
-	UINT r = GetPrivateProfileIntW(appW, keyW, def, filenameW);
-	free(appW);
-	free(keyW);
-	return r;
-}
-
-/**
- *	WritePrivateProfileInt() のファイル名だけが wchar_t 版
- */
-BOOL WritePrivateProfileIntFileW(const char *appA, const char *keyA, int val, const wchar_t *filenameW)
-{
-	wchar_t strW[MAX_PATH];
-	wchar_t *appW = ToWcharA(appA);
-	wchar_t *keyW = ToWcharA(keyA);
-	BOOL r;
-	_snwprintf_s(strW, _countof(strW), _TRUNCATE, L"%d", val);
-	r = WritePrivateProfileStringW(appW, keyW, strW, filenameW);
-	free(appW);
-	free(keyW);
-	return r;
-}
-
-#if INI_FILE_IS_UNICODE
-#undef GetPrivateProfileInt
-#undef GetPrivateProfileString
-#define GetPrivateProfileInt(p1, p2, p3, p4) GetPrivateProfileIntFileW(p1, p2, p3, p4)
-#define GetPrivateProfileString(p1, p2, p3, p4, p5, p6) GetPrivateProfileStringAFileW(p1, p2, p3, p4, p5, p6)
-#define GetPrivateProfileStringA(p1, p2, p3, p4, p5, p6) GetPrivateProfileStringAFileW(p1, p2, p3, p4, p5, p6)
-#define WritePrivateProfileStringA(p1, p2, p3, p4) WritePrivateProfileStringAFileW(p1, p2, p3, p4)
-#endif
 
 /*
  * シリアルポート関連の設定
@@ -385,11 +300,7 @@ void IconId2IconName(char *name, int len, int id) {
 	strncpy_s(name, len, icon, _TRUNCATE);
 }
 
-#if INI_FILE_IS_UNICODE
-static WORD GetOnOff(PCHAR Sect, PCHAR Key, const wchar_t *FName, BOOL Default)
-#else
-static WORD GetOnOff(PCHAR Sect, PCHAR Key, const char *FName, BOOL Default)
-#endif
+WORD GetOnOff(PCHAR Sect, PCHAR Key, PCHAR FName, BOOL Default)
 {
 	char Temp[4];
 	GetPrivateProfileString(Sect, Key, "", Temp, sizeof(Temp), FName);
@@ -407,85 +318,59 @@ static WORD GetOnOff(PCHAR Sect, PCHAR Key, const char *FName, BOOL Default)
 	}
 }
 
-#if INI_FILE_IS_UNICODE
-void WriteOnOff(PCHAR Sect, PCHAR Key, const wchar_t *FName, WORD Flag)
-#else
-void WriteOnOff(PCHAR Sect, PCHAR Key, const char *FName, WORD Flag)
-#endif
+void WriteOnOff(PCHAR Sect, PCHAR Key, PCHAR FName, WORD Flag)
 {
-	const char *on_off = (Flag != 0) ? "on" : "off";
-	WritePrivateProfileStringA(Sect, Key, on_off, FName);
+	char Temp[4];
+
+	if (Flag != 0)
+		strncpy_s(Temp, sizeof(Temp), "on", _TRUNCATE);
+	else
+		strncpy_s(Temp, sizeof(Temp), "off", _TRUNCATE);
+	WritePrivateProfileString(Sect, Key, Temp, FName);
 }
 
-#if INI_FILE_IS_UNICODE
-void WriteInt(PCHAR Sect, PCHAR Key, const wchar_t *FName, int i)
-#else
-void WriteInt(PCHAR Sect, PCHAR Key, const char *FName, int i)
-#endif
+void WriteInt(PCHAR Sect, PCHAR Key, PCHAR FName, int i)
 {
 	char Temp[15];
 	_snprintf_s(Temp, sizeof(Temp), _TRUNCATE, "%d", i);
-	WritePrivateProfileStringA(Sect, Key, Temp, FName);
+	WritePrivateProfileString(Sect, Key, Temp, FName);
 }
 
-#if INI_FILE_IS_UNICODE
-void WriteUint(PCHAR Sect, PCHAR Key, const wchar_t *FName, UINT i)
-#else
-void WriteUint(PCHAR Sect, PCHAR Key, const char *FName, UINT i)
-#endif
+void WriteUint(PCHAR Sect, PCHAR Key, PCHAR FName, UINT i)
 {
 	char Temp[15];
 	_snprintf_s(Temp, sizeof(Temp), _TRUNCATE, "%u", i);
-	WritePrivateProfileStringA(Sect, Key, Temp, FName);
+	WritePrivateProfileString(Sect, Key, Temp, FName);
 }
 
-#if INI_FILE_IS_UNICODE
-void WriteInt2(PCHAR Sect, PCHAR Key, const wchar_t *FName, int i1, int i2)
-#else
-void WriteInt2(PCHAR Sect, PCHAR Key, const char *FName, int i1, int i2)
-#endif
+void WriteInt2(PCHAR Sect, PCHAR Key, PCHAR FName, int i1, int i2)
 {
 	char Temp[32];
 	_snprintf_s(Temp, sizeof(Temp), _TRUNCATE, "%d,%d", i1, i2);
-	WritePrivateProfileStringA(Sect, Key, Temp, FName);
+	WritePrivateProfileString(Sect, Key, Temp, FName);
 }
 
-#if INI_FILE_IS_UNICODE
-void WriteInt4(PCHAR Sect, PCHAR Key, const wchar_t *FName,
+void WriteInt4(PCHAR Sect, PCHAR Key, PCHAR FName,
 			   int i1, int i2, int i3, int i4)
-#else
-void WriteInt4(PCHAR Sect, PCHAR Key, const char *FName,
-			   int i1, int i2, int i3, int i4)
-#endif
 {
 	char Temp[64];
 	_snprintf_s(Temp, sizeof(Temp), _TRUNCATE, "%d,%d,%d,%d",
 	            i1, i2, i3, i4);
-	WritePrivateProfileStringA(Sect, Key, Temp, FName);
+	WritePrivateProfileString(Sect, Key, Temp, FName);
 }
 
-#if INI_FILE_IS_UNICODE
-void WriteInt6(PCHAR Sect, PCHAR Key, const wchar_t *FName,
+void WriteInt6(PCHAR Sect, PCHAR Key, PCHAR FName,
 			   int i1, int i2, int i3, int i4, int i5, int i6)
-#else
-void WriteInt6(PCHAR Sect, PCHAR Key, const char *FName,
-			   int i1, int i2, int i3, int i4, int i5, int i6)
-#endif
 {
 	char Temp[96];
 	_snprintf_s(Temp, sizeof(Temp), _TRUNCATE, "%d,%d,%d,%d,%d,%d",
 	            i1, i2,i3, i4, i5, i6);
-	WritePrivateProfileStringA(Sect, Key, Temp, FName);
+	WritePrivateProfileString(Sect, Key, Temp, FName);
 }
 
 // フォント情報書き込み、4パラメータ版
-#if INI_FILE_IS_UNICODE
-static void WriteFont(PCHAR Sect, PCHAR Key, const wchar_t *FName,
+static void WriteFont(PCHAR Sect, PCHAR Key, PCHAR FName,
 					  PCHAR Name, int x, int y, int charset)
-#else
-static void WriteFont(PCHAR Sect, PCHAR Key, const char *FName,
-					  PCHAR Name, int x, int y, int charset)
-#endif
 {
 	char Temp[80];
 	if (Name[0] != 0)
@@ -493,19 +378,13 @@ static void WriteFont(PCHAR Sect, PCHAR Key, const char *FName,
 		            Name, x, y, charset);
 	else
 		Temp[0] = 0;
-	WritePrivateProfileStringA(Sect, Key, Temp, FName);
+	WritePrivateProfileString(Sect, Key, Temp, FName);
 }
 
 // フォント情報読み込み、4パラメータ版
-#if INI_FILE_IS_UNICODE
-static void ReadFont(
-	const char *Sect, const char *Key, const char *Default, const wchar_t *FName,
-	char *FontName, size_t FontNameLen, POINT *FontSize, int *FontCharSet)
-#else
 static void ReadFont(
 	const char *Sect, const char *Key, const char *Default, const char *FName,
 	char *FontName, size_t FontNameLen, POINT *FontSize, int *FontCharSet)
-#endif
 {
 	char Temp[MAX_PATH];
 	GetPrivateProfileString(Sect, Key, Default,
@@ -526,15 +405,9 @@ static void ReadFont(
 }
 
 // フォント情報読み込み、3パラメータ版
-#if INI_FILE_IS_UNICODE
-static void ReadFont3(
-	const char *Sect, const char *Key, const char *Default, const wchar_t *FName,
-	char *FontName, size_t FontNameLen, int *FontPoint, int *FontCharSet)
-#else
 static void ReadFont3(
 	const char *Sect, const char *Key, const char *Default, const char *FName,
 	char *FontName, size_t FontNameLen, int *FontPoint, int *FontCharSet)
-#endif
 {
 	char Temp[MAX_PATH];
 	GetPrivateProfileString(Sect, Key, Default,
@@ -583,7 +456,7 @@ static void ReadCygtermConfFile(PTTSet ts)
 	fp = fopen(cfg, "r");
 	if (fp != NULL) {
 		while (fgets(buf, sizeof(buf), fp) != NULL) {
-			size_t len = strlen(buf);
+			int len = strlen(buf);
 
 			if (buf[len - 1] == '\n')
 				buf[len - 1] = '\0';
@@ -661,7 +534,7 @@ static void WriteCygtermConfFile(PTTSet ts)
 	char uimsg[MAX_UIMSG];
 	cygterm_t settings;
 	char *line[CYGTERM_FILE_MAXLINE];
-	int i, linenum;
+	int i, linenum, len;
 
 	// Cygwin設定が変更されていない場合は、ファイルを書き込まない。
 	if (ts->CygtermSettings.update_flag == FALSE)
@@ -686,7 +559,7 @@ static void WriteCygtermConfFile(PTTSet ts)
 	if (fp) {
 		i = 0;
 		while (fgets(buf, sizeof(buf), fp) != NULL) {
-			size_t len = strlen(buf);
+			len = strlen(buf);
 			if (buf[len - 1] == '\n')
 				buf[len - 1] = '\0';
 			if (i < CYGTERM_FILE_MAXLINE)
@@ -833,16 +706,11 @@ static void WriteCygtermConfFile(PTTSet ts)
 
 }
 
-void PASCAL ReadIniFile(PCHAR FNameA, PTTSet ts)
+void PASCAL ReadIniFile(PCHAR FName, PTTSet ts)
 {
 	int i;
 	HDC TmpDC;
 	char Temp[MAX_PATH], Temp2[MAX_PATH], *p;
-#if	INI_FILE_IS_UNICODE
-	const wchar_t *FName = ToWcharA(FNameA);
-#else
-	const char *FName = FNameA;
-#endif
 
 	ts->Minimize = 0;
 	ts->HideWindow = 0;
@@ -2277,6 +2145,10 @@ void PASCAL ReadIniFile(PCHAR FNameA, PTTSet ts)
 	if (GetOnOff(Section, "TrimTrailingNLonPaste", FName, FALSE))
 		ts->PasteFlag |= CPF_TRIM_TRAILING_NL;
 
+	// Normalize line break when pasting
+	if (GetOnOff(Section, "NormalizeLineBreakOnPaste", FName, FALSE))
+		ts->PasteFlag |= CPF_NORMALIZE_LINEBREAK;
+
 	// List Inactive Font
 	ts->ListHiddenFonts = GetOnOff(Section, "ListHiddenFonts", FName, FALSE);
 
@@ -2372,35 +2244,15 @@ void PASCAL ReadIniFile(PCHAR FNameA, PTTSet ts)
 	ReadFont3("Tera Term", "DlgFont", NULL, FName,
 			  ts->DialogFontName, sizeof(ts->DialogFontName),
 			  &ts->DialogFontPoint, &ts->DialogFontCharSet);
-
-	// Unicode設定
-	ts->UnicodeAmbiguousWidth = GetPrivateProfileInt(Section, "UnicodeAmbiguousWidth", 1, FName);
-	if (ts->UnicodeAmbiguousWidth < 1 || 2 < ts->UnicodeAmbiguousWidth) {
-		ts->UnicodeAmbiguousWidth = 1;
-	}
-	ts->UnicodeEmojiOverride = GetOnOff(Section, "UnicodeEmojiOverride", FName, FALSE);
-	ts->UnicodeEmojiWidth = GetPrivateProfileInt(Section, "UnicodeEmojiWidth", 1, FName);
-	if (ts->UnicodeEmojiWidth < 1 || 2 < ts->UnicodeEmojiWidth) {
-		ts->UnicodeEmojiWidth = 1;
-	}
-
-#if	INI_FILE_IS_UNICODE
-	free((void *)FName);
-#endif
 }
 
-void PASCAL WriteIniFile(PCHAR FNameA, PTTSet ts)
+void PASCAL WriteIniFile(PCHAR FName, PTTSet ts)
 {
 	int i;
 	char Temp[MAX_PATH];
 	char buf[20];
 	int ret;
 	char uimsg[MAX_UIMSG], uimsg2[MAX_UIMSG], msg[MAX_UIMSG];
-#if	INI_FILE_IS_UNICODE
-	const wchar_t *FName = ToWcharA(FNameA);
-#else
-	const char *FName = FNameA;
-#endif
 
 	/* version */
 	ret = WritePrivateProfileString(Section, "Version", TT_VERSION_STR("."), FName);
@@ -3316,20 +3168,12 @@ void PASCAL WriteIniFile(PCHAR FNameA, PTTSet ts)
 	           ts->EtermLookfeel.BGNoFrame);
 	WritePrivateProfileString(ETERM_SECTION, "BGThemeFile",
 	                          ts->EtermLookfeel.BGThemeFile, FName);
-	{
-#if	INI_FILE_IS_UNICODE
-		wchar_t TempW[MAX_PATH];
-		_snwprintf_s(TempW, _countof(TempW), _TRUNCATE, L"%hs\\%hs", ts->HomeDir, BG_THEME_IMAGEFILE);
-#else
-		char TempW[MAX_PATH];
-		_snprintf_s(TempW, _countof(TempW), _TRUNCATE, "%s\\%s", ts->HomeDir, BG_THEME_IMAGEFILE);
-#endif
-		WritePrivateProfileStringA(BG_SECTION, BG_DESTFILE, ts->BGImageFilePath, TempW);
-		WriteInt(BG_SECTION, BG_THEME_IMAGE_BRIGHTNESS1, TempW, ts->BGImgBrightness);
-		WriteInt(BG_SECTION, BG_THEME_IMAGE_BRIGHTNESS2, TempW, ts->BGImgBrightness);
-	}
+	_snprintf_s(Temp, sizeof(Temp), _TRUNCATE, "%s\\%s", ts->HomeDir, BG_THEME_IMAGEFILE);
+	WritePrivateProfileString(BG_SECTION, BG_DESTFILE, ts->BGImageFilePath, Temp);
+	WriteInt(BG_SECTION, BG_THEME_IMAGE_BRIGHTNESS1, Temp, ts->BGImgBrightness);
+	WriteInt(BG_SECTION, BG_THEME_IMAGE_BRIGHTNESS2, Temp, ts->BGImgBrightness);
 	WriteOnOff(ETERM_SECTION, "BGIgnoreThemeFile", FName,
-		ts->EtermLookfeel.BGIgnoreThemeFile);
+		ts->EtermLookfeel_BGIgnoreThemeFile);
 
 #ifdef USE_NORMAL_BGCOLOR
 	// UseNormalBGColor
@@ -3650,6 +3494,10 @@ void PASCAL WriteIniFile(PCHAR FNameA, PTTSet ts)
 	WriteOnOff(Section, "TrimTrailingNLonPaste", FName,
 		(WORD) (ts->PasteFlag & CPF_TRIM_TRAILING_NL));
 
+	// Normalize line break when pasting
+	WriteOnOff(Section, "NormalizeLineBreakOnPaste", FName,
+		(WORD) (ts->PasteFlag & CPF_NORMALIZE_LINEBREAK));
+
 	// List Inactive Font
 	WriteOnOff(Section, "ListHiddenFonts", FName, ts->ListHiddenFonts);
 
@@ -3722,38 +3570,292 @@ void PASCAL WriteIniFile(PCHAR FNameA, PTTSet ts)
 				ts->DialogFontPoint,
 				ts->DialogFontCharSet);
 	WritePrivateProfileStringA("Tera Term", "DlgFont", Temp, FName);
-
-	// Unicode設定
-	WriteInt(Section, "UnicodeAmbiguousWidth", FName, ts->UnicodeAmbiguousWidth);
-	WriteOnOff(Section, "UnicodeEmojiOverride", FName, ts->UnicodeEmojiOverride);
-	WriteInt(Section, "UnicodeEmojiWidth", FName, ts->UnicodeEmojiWidth);
-
-#if	INI_FILE_IS_UNICODE
-	free((void *)FName);
-#endif
 }
 
-void PASCAL CopySerialList(PCHAR IniSrcA, PCHAR IniDestA, PCHAR section,
+#define VTEditor "VT editor keypad"
+#define VTNumeric "VT numeric keypad"
+#define VTFunction "VT function keys"
+#define XFunction "X function keys"
+#define ShortCut "Shortcut keys"
+
+void GetInt(PKeyMap KeyMap, int KeyId, PCHAR Sect, PCHAR Key, PCHAR FName)
+{
+	char Temp[11];
+	WORD Num;
+
+	GetPrivateProfileString(Sect, Key, "", Temp, sizeof(Temp), FName);
+	if (Temp[0] == 0)
+		Num = 0xFFFF;
+	else if (_stricmp(Temp, "off") == 0)
+		Num = 0xFFFF;
+	else if (sscanf(Temp, "%hd", &Num) != 1)
+		Num = 0xFFFF;
+
+	KeyMap->Map[KeyId - 1] = Num;
+}
+
+void PASCAL ReadKeyboardCnf
+	(PCHAR FName, PKeyMap KeyMap, BOOL ShowWarning) {
+	int i, j, Ptr;
+	char EntName[7];
+	char TempStr[221];
+	char KStr[201];
+
+	// clear key map
+	for (i = 0; i <= IdKeyMax - 1; i++)
+		KeyMap->Map[i] = 0xFFFF;
+	for (i = 0; i <= NumOfUserKey - 1; i++) {
+		KeyMap->UserKeyPtr[i] = 0;
+		KeyMap->UserKeyLen[i] = 0;
+	}
+
+	// VT editor keypad
+	GetInt(KeyMap, IdUp, VTEditor, "Up", FName);
+
+	GetInt(KeyMap, IdDown, VTEditor, "Down", FName);
+
+	GetInt(KeyMap, IdRight, VTEditor, "Right", FName);
+
+	GetInt(KeyMap, IdLeft, VTEditor, "Left", FName);
+
+	GetInt(KeyMap, IdFind, VTEditor, "Find", FName);
+
+	GetInt(KeyMap, IdInsert, VTEditor, "Insert", FName);
+
+	GetInt(KeyMap, IdRemove, VTEditor, "Remove", FName);
+
+	GetInt(KeyMap, IdSelect, VTEditor, "Select", FName);
+
+	GetInt(KeyMap, IdPrev, VTEditor, "Prev", FName);
+
+	GetInt(KeyMap, IdNext, VTEditor, "Next", FName);
+
+	// VT numeric keypad
+	GetInt(KeyMap, Id0, VTNumeric, "Num0", FName);
+
+	GetInt(KeyMap, Id1, VTNumeric, "Num1", FName);
+
+	GetInt(KeyMap, Id2, VTNumeric, "Num2", FName);
+
+	GetInt(KeyMap, Id3, VTNumeric, "Num3", FName);
+
+	GetInt(KeyMap, Id4, VTNumeric, "Num4", FName);
+
+	GetInt(KeyMap, Id5, VTNumeric, "Num5", FName);
+
+	GetInt(KeyMap, Id6, VTNumeric, "Num6", FName);
+
+	GetInt(KeyMap, Id7, VTNumeric, "Num7", FName);
+
+	GetInt(KeyMap, Id8, VTNumeric, "Num8", FName);
+
+	GetInt(KeyMap, Id9, VTNumeric, "Num9", FName);
+
+	GetInt(KeyMap, IdMinus, VTNumeric, "NumMinus", FName);
+
+	GetInt(KeyMap, IdComma, VTNumeric, "NumComma", FName);
+
+	GetInt(KeyMap, IdPeriod, VTNumeric, "NumPeriod", FName);
+
+	GetInt(KeyMap, IdEnter, VTNumeric, "NumEnter", FName);
+
+	GetInt(KeyMap, IdSlash, VTNumeric, "NumSlash", FName);
+
+	GetInt(KeyMap, IdAsterisk, VTNumeric, "NumAsterisk", FName);
+
+	GetInt(KeyMap, IdPlus, VTNumeric, "NumPlus", FName);
+
+	GetInt(KeyMap, IdPF1, VTNumeric, "PF1", FName);
+
+	GetInt(KeyMap, IdPF2, VTNumeric, "PF2", FName);
+
+	GetInt(KeyMap, IdPF3, VTNumeric, "PF3", FName);
+
+	GetInt(KeyMap, IdPF4, VTNumeric, "PF4", FName);
+
+	// VT function keys
+	GetInt(KeyMap, IdHold, VTFunction, "Hold", FName);
+
+	GetInt(KeyMap, IdPrint, VTFunction, "Print", FName);
+
+	GetInt(KeyMap, IdBreak, VTFunction, "Break", FName);
+
+	GetInt(KeyMap, IdF6, VTFunction, "F6", FName);
+
+	GetInt(KeyMap, IdF7, VTFunction, "F7", FName);
+
+	GetInt(KeyMap, IdF8, VTFunction, "F8", FName);
+
+	GetInt(KeyMap, IdF9, VTFunction, "F9", FName);
+
+	GetInt(KeyMap, IdF10, VTFunction, "F10", FName);
+
+	GetInt(KeyMap, IdF11, VTFunction, "F11", FName);
+
+	GetInt(KeyMap, IdF12, VTFunction, "F12", FName);
+
+	GetInt(KeyMap, IdF13, VTFunction, "F13", FName);
+
+	GetInt(KeyMap, IdF14, VTFunction, "F14", FName);
+
+	GetInt(KeyMap, IdHelp, VTFunction, "Help", FName);
+
+	GetInt(KeyMap, IdDo, VTFunction, "Do", FName);
+
+	GetInt(KeyMap, IdF17, VTFunction, "F17", FName);
+
+	GetInt(KeyMap, IdF18, VTFunction, "F18", FName);
+
+	GetInt(KeyMap, IdF19, VTFunction, "F19", FName);
+
+	GetInt(KeyMap, IdF20, VTFunction, "F20", FName);
+
+	// UDK
+	GetInt(KeyMap, IdUDK6, VTFunction, "UDK6", FName);
+
+	GetInt(KeyMap, IdUDK7, VTFunction, "UDK7", FName);
+
+	GetInt(KeyMap, IdUDK8, VTFunction, "UDK8", FName);
+
+	GetInt(KeyMap, IdUDK9, VTFunction, "UDK9", FName);
+
+	GetInt(KeyMap, IdUDK10, VTFunction, "UDK10", FName);
+
+	GetInt(KeyMap, IdUDK11, VTFunction, "UDK11", FName);
+
+	GetInt(KeyMap, IdUDK12, VTFunction, "UDK12", FName);
+
+	GetInt(KeyMap, IdUDK13, VTFunction, "UDK13", FName);
+
+	GetInt(KeyMap, IdUDK14, VTFunction, "UDK14", FName);
+
+	GetInt(KeyMap, IdUDK15, VTFunction, "UDK15", FName);
+
+	GetInt(KeyMap, IdUDK16, VTFunction, "UDK16", FName);
+
+	GetInt(KeyMap, IdUDK17, VTFunction, "UDK17", FName);
+
+	GetInt(KeyMap, IdUDK18, VTFunction, "UDK18", FName);
+
+	GetInt(KeyMap, IdUDK19, VTFunction, "UDK19", FName);
+
+	GetInt(KeyMap, IdUDK20, VTFunction, "UDK20", FName);
+
+	// XTERM function / extended keys
+	GetInt(KeyMap, IdXF1, XFunction, "XF1", FName);
+
+	GetInt(KeyMap, IdXF2, XFunction, "XF2", FName);
+
+	GetInt(KeyMap, IdXF3, XFunction, "XF3", FName);
+
+	GetInt(KeyMap, IdXF4, XFunction, "XF4", FName);
+
+	GetInt(KeyMap, IdXF5, XFunction, "XF5", FName);
+
+	GetInt(KeyMap, IdXBackTab, XFunction, "XBackTab", FName);
+
+	// accelerator keys
+	GetInt(KeyMap, IdCmdEditCopy, ShortCut, "EditCopy", FName);
+
+	GetInt(KeyMap, IdCmdEditPaste, ShortCut, "EditPaste", FName);
+
+	GetInt(KeyMap, IdCmdEditPasteCR, ShortCut, "EditPasteCR", FName);
+
+	GetInt(KeyMap, IdCmdEditCLS, ShortCut, "EditCLS", FName);
+
+	GetInt(KeyMap, IdCmdEditCLB, ShortCut, "EditCLB", FName);
+
+	GetInt(KeyMap, IdCmdCtrlOpenTEK, ShortCut, "ControlOpenTEK", FName);
+
+	GetInt(KeyMap, IdCmdCtrlCloseTEK, ShortCut, "ControlCloseTEK", FName);
+
+	GetInt(KeyMap, IdCmdLineUp, ShortCut, "LineUp", FName);
+
+	GetInt(KeyMap, IdCmdLineDown, ShortCut, "LineDown", FName);
+
+	GetInt(KeyMap, IdCmdPageUp, ShortCut, "PageUp", FName);
+
+	GetInt(KeyMap, IdCmdPageDown, ShortCut, "PageDown", FName);
+
+	GetInt(KeyMap, IdCmdBuffTop, ShortCut, "BuffTop", FName);
+
+	GetInt(KeyMap, IdCmdBuffBottom, ShortCut, "BuffBottom", FName);
+
+	GetInt(KeyMap, IdCmdNextWin, ShortCut, "NextWin", FName);
+
+	GetInt(KeyMap, IdCmdPrevWin, ShortCut, "PrevWin", FName);
+
+	GetInt(KeyMap, IdCmdNextSWin, ShortCut, "NextShownWin", FName);
+
+	GetInt(KeyMap, IdCmdPrevSWin, ShortCut, "PrevShownWin", FName);
+
+	GetInt(KeyMap, IdCmdLocalEcho, ShortCut, "LocalEcho", FName);
+
+	GetInt(KeyMap, IdCmdScrollLock, ShortCut, "ScrollLock", FName);
+
+	/* user keys */
+
+	Ptr = 0;
+
+	i = IdUser1;
+	do {
+		_snprintf_s(EntName, sizeof(EntName), _TRUNCATE, "User%d", i - IdUser1 + 1);
+		GetPrivateProfileString("User keys", EntName, "",
+								TempStr, sizeof(TempStr), FName);
+		if (strlen(TempStr) > 0) {
+			/* scan code */
+			GetNthString(TempStr, 1, sizeof(KStr), KStr);
+			if (_stricmp(KStr, "off") == 0)
+				KeyMap->Map[i - 1] = 0xFFFF;
+			else {
+				GetNthNum(TempStr, 1, &j);
+				KeyMap->Map[i - 1] = (WORD) j;
+			}
+			/* conversion flag */
+			GetNthNum(TempStr, 2, &j);
+			KeyMap->UserKeyType[i - IdUser1] = (BYTE) j;
+			/* key string */
+/*	GetNthString(TempStr,3,sizeof(KStr),KStr); */
+			KeyMap->UserKeyPtr[i - IdUser1] = Ptr;
+/*	KeyMap->UserKeyLen[i-IdUser1] =
+	Hex2Str(KStr,&(KeyMap->UserKeyStr[Ptr]),KeyStrMax-Ptr+1);
+*/
+			GetNthString(TempStr, 3, KeyStrMax - Ptr + 1,
+			             &(KeyMap->UserKeyStr[Ptr]));
+			KeyMap->UserKeyLen[i - IdUser1] =
+				strlen(&(KeyMap->UserKeyStr[Ptr]));
+			Ptr = Ptr + KeyMap->UserKeyLen[i - IdUser1];
+		}
+
+		i++;
+	}
+	while ((i <= IdKeyMax) && (strlen(TempStr) > 0) && (Ptr <= KeyStrMax));
+
+	for (j = 1; j <= IdKeyMax - 1; j++)
+		if (KeyMap->Map[j] != 0xFFFF)
+			for (i = 0; i <= j - 1; i++)
+				if (KeyMap->Map[i] == KeyMap->Map[j]) {
+					if (ShowWarning) {
+						_snprintf_s(TempStr, sizeof(TempStr), _TRUNCATE,
+						            "Keycode %d is used more than once",
+						            KeyMap->Map[j]);
+						MessageBox(0, TempStr,
+						           "Tera Term: Error in keyboard setup file",
+						           MB_ICONEXCLAMATION);
+					}
+					KeyMap->Map[i] = 0xFFFF;
+				}
+}
+
+void PASCAL CopySerialList(PCHAR IniSrc, PCHAR IniDest, PCHAR section,
                                PCHAR key, int MaxList)
 {
 	int i, j;
 	char EntName[10], EntName2[10];
 	char TempHost[HostNameMaxLength + 1];
-#if	INI_FILE_IS_UNICODE
-	const wchar_t *IniSrc = ToWcharA(IniSrcA);
-	const wchar_t *IniDest = ToWcharA(IniDestA);
-#else
-	const char *IniSrc = IniSrcA;
-	const char *IniDest = IniDestA;
-#endif
 
-#if	INI_FILE_IS_UNICODE
-	if (_wcsicmp(IniSrc, IniDest) == 0)
-		return;
-#else
 	if (_stricmp(IniSrc, IniDest) == 0)
 		return;
-#endif
 
 	WritePrivateProfileString(section, NULL, NULL, IniDest);
 
@@ -3778,7 +3880,7 @@ void PASCAL CopySerialList(PCHAR IniSrcA, PCHAR IniDestA, PCHAR section,
 	WritePrivateProfileString(NULL, NULL, NULL, IniDest);
 }
 
-void PASCAL AddValueToList(PCHAR FNameA, PCHAR Host, PCHAR section,
+void PASCAL AddValueToList(PCHAR FName, PCHAR Host, PCHAR section,
                                PCHAR key, int MaxList)
 {
 	HANDLE MemH;
@@ -3786,11 +3888,6 @@ void PASCAL AddValueToList(PCHAR FNameA, PCHAR Host, PCHAR section,
 	char EntName[13];
 	int i, j, Len;
 	BOOL Update;
-#if	INI_FILE_IS_UNICODE
-	wchar_t *FName = ToWcharA(FNameA);
-#else
-	char *FName = FNameA;
-#endif
 
 	if ((FName[0] == 0) || (Host[0] == 0))
 		return;
@@ -3807,9 +3904,9 @@ void PASCAL AddValueToList(PCHAR FNameA, PCHAR Host, PCHAR section,
 			_snprintf_s(EntName, sizeof(EntName), _TRUNCATE, "%s%i", key, i);
 
 			/* Get a hostname */
-			GetPrivateProfileStringA(section, EntName, "",
-									 &MemP[j], HostNameMaxLength + 1,
-									 FName);
+			GetPrivateProfileString(section, EntName, "",
+			                        &MemP[j], HostNameMaxLength + 1,
+			                        FName);
 			Len = strlen(&MemP[j]);
 			if (_stricmp(&MemP[j], Host) == 0) {
 				if (i == 1)
@@ -3822,7 +3919,7 @@ void PASCAL AddValueToList(PCHAR FNameA, PCHAR Host, PCHAR section,
 		} while ((i <= MaxList) && Update);
 
 		if (Update) {
-			WritePrivateProfileStringA(section, NULL, NULL, FName);
+			WritePrivateProfileString(section, NULL, NULL, FName);
 
 			j = 0;
 			i = 1;
@@ -3830,8 +3927,8 @@ void PASCAL AddValueToList(PCHAR FNameA, PCHAR Host, PCHAR section,
 				_snprintf_s(EntName, sizeof(EntName), _TRUNCATE, "%s%i", key, i);
 
 				if (MemP[j] != 0)
-					WritePrivateProfileStringA(section, EntName, &MemP[j],
-											   FName);
+					WritePrivateProfileString(section, EntName, &MemP[j],
+					                          FName);
 				j = j + strlen(&MemP[j]) + 1;
 				i++;
 			} while ((i <= MaxList) && (MemP[j] != 0));
@@ -3942,7 +4039,7 @@ static void ParseHostName(char *HostStr, WORD * port)
 			if (*s == ']') {
 				/* found IPv6 raw address */
 				/* triming [ ] */
-				size_t len = strlen(HostStr);
+				int len = strlen(HostStr);
 				char *lastptr = &HostStr[len - 1];
 				memmove(HostStr, HostStr + 1, len - 1);
 				s = s - 1;
@@ -4373,6 +4470,7 @@ BOOL WINAPI DllMain(HANDLE hInst,
 		break;
 	case DLL_PROCESS_ATTACH:
 		/* do process initialization */
+		DoCover_IsDebuggerPresent();
 		break;
 	case DLL_PROCESS_DETACH:
 		/* do process cleanup */

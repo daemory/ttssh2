@@ -1,31 +1,11 @@
-/*
- * Copyright (C) S.Hayakawa NTT-IT 1998-2002
- * (C) 2002- TeraTerm Project
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- *
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- * 3. The name of the author may not be used to endorse or promote products
- *    derived from this software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE AUTHORS ``AS IS'' AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
- * IN NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY DIRECT, INDIRECT,
- * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
- * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
- * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- */
+/* ==========================================================================
+	Project Name		: TeraTerm Menu
+	Outline				: TeraTerm Menu Function
+	Version				: 0.94
+	Create				: 1998-11-22(Sun)
+	Update				: 2002-10-02(Wed)
+	Reference			: Copyright (C) S.Hayakawa 1997-2002
+   ======1=========2=========3=========4=========5=========6=========7======= */
 #define		STRICT
 
 #include	<windows.h>
@@ -37,6 +17,7 @@
 #include	"winmisc.h"
 #include	"resource.h"
 
+#include	"compat_w95.h"
 #include	"ttlib.h"
 
 // UTF-8 TeraTermでは、デフォルトインストール先を下記に変更した。(2004.12.2 yutaka)
@@ -701,7 +682,7 @@ BOOL InitConfigDlg(HWND hWnd)
 
 	font = (HFONT)SendMessage(hWnd, WM_GETFONT, 0, 0);
 	GetObject(font, sizeof(LOGFONT), &logfont);
-	if (UTIL_get_lang_font("DLG_TAHOMA_FONT", hWnd, &logfont, &g_ConfigFont, UILanguageFile)) {
+	if (get_lang_font("DLG_TAHOMA_FONT", hWnd, &logfont, &g_ConfigFont, UILanguageFile)) {
 		SendDlgItemMessage(hWnd, LBL_LIST, WM_SETFONT, (WPARAM)g_ConfigFont, MAKELPARAM(TRUE,0));
 		SendDlgItemMessage(hWnd, LIST_HOST, WM_SETFONT, (WPARAM)g_ConfigFont, MAKELPARAM(TRUE,0));
 		SendDlgItemMessage(hWnd, GRP_CONFIG, WM_SETFONT, (WPARAM)g_ConfigFont, MAKELPARAM(TRUE,0));
@@ -827,7 +808,7 @@ BOOL InitEtcDlg(HWND hWnd)
 
 	font = (HFONT)SendMessage(hWnd, WM_GETFONT, 0, 0);
 	GetObject(font, sizeof(LOGFONT), &logfont);
-	if (UTIL_get_lang_font("DLG_TAHOMA_FONT", hWnd, &logfont, &g_DetailFont, UILanguageFile)) {
+	if (get_lang_font("DLG_TAHOMA_FONT", hWnd, &logfont, &g_DetailFont, UILanguageFile)) {
 		SendDlgItemMessage(hWnd, LBL_TTMPATH, WM_SETFONT, (WPARAM)g_DetailFont, MAKELPARAM(TRUE,0));
 		SendDlgItemMessage(hWnd, EDIT_TTMPATH, WM_SETFONT, (WPARAM)g_DetailFont, MAKELPARAM(TRUE,0));
 		SendDlgItemMessage(hWnd, BUTTON_TTMPATH, WM_SETFONT, (WPARAM)g_DetailFont, MAKELPARAM(TRUE,0));
@@ -934,7 +915,7 @@ BOOL InitVersionDlg(HWND hWnd)
 
 	font = (HFONT)SendMessage(hWnd, WM_GETFONT, 0, 0);
 	GetObject(font, sizeof(LOGFONT), &logfont);
-	if (UTIL_get_lang_font("DLG_TAHOMA_FONT", hWnd, &logfont, &g_AboutFont, UILanguageFile)) {
+	if (get_lang_font("DLG_TAHOMA_FONT", hWnd, &logfont, &g_AboutFont, UILanguageFile)) {
 		SendDlgItemMessage(hWnd, IDC_VERSION, WM_SETFONT, (WPARAM)g_AboutFont, MAKELPARAM(TRUE,0));
 		SendDlgItemMessage(hWnd, IDC_INCLUDE, WM_SETFONT, (WPARAM)g_AboutFont, MAKELPARAM(TRUE,0));
 	}

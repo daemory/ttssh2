@@ -34,7 +34,6 @@
 #include "key.h"
 #include "ttcommon.h"
 #include "codeconv.h"
-#include "layer_for_unicode.h"
 
 #include <openssl/bn.h>
 #include <openssl/evp.h>
@@ -99,6 +98,8 @@ static Channel_t channels[CHANNEL_MAX];
 static char ssh_ttymodes[] = "\x01\x03\x02\x1c\x03\x08\x04\x15\x05\x04";
 
 static CRITICAL_SECTION g_ssh_scp_lock;   /* SCP受信用ロック */
+
+static int g_scp_sending;  /* SCP送信中か? */
 
 static void try_send_credentials(PTInstVar pvar);
 static void prep_compression(PTInstVar pvar);
@@ -358,6 +359,8 @@ static void ssh2_channel_delete(Channel_t *c)
 		// Windows9xで落ちる問題を修正した。
 		if (c->scp.dir == FROMREMOTE) 
 			ssh2_scp_free_packetlist(c);
+
+		g_scp_sending = FALSE;
 	}
 	if (c->type == TYPE_AGENT) {
 		buffer_free(c->agent_msg);
@@ -3322,19 +3325,19 @@ void SSH_get_compression_info(PTInstVar pvar, char *dest, int len)
 			pvar->ssh_state.compress_stream.total_out;
 
 		if (total_out > 0) {
-			UTIL_get_lang_msgU8("DLG_ABOUT_COMP_INFO", pvar,
-								"level %d; ratio %.1f (%ld:%ld)");
+			UTIL_get_lang_msg("DLG_ABOUT_COMP_INFO", pvar,
+			                  "level %d; ratio %.1f (%ld:%ld)");
 			_snprintf_s(buf, sizeof(buf), _TRUNCATE, pvar->ts->UIMsg,
 			            pvar->ssh_state.compression_level,
 			            ((double) total_in) / total_out, total_in,
 			            total_out);
 		} else {
-			UTIL_get_lang_msgU8("DLG_ABOUT_COMP_INFO2", pvar, "level %d");
+			UTIL_get_lang_msg("DLG_ABOUT_COMP_INFO2", pvar, "level %d");
 			_snprintf_s(buf, sizeof(buf), _TRUNCATE, pvar->ts->UIMsg,
 			            pvar->ssh_state.compression_level);
 		}
 	} else {
-		UTIL_get_lang_msgU8("DLG_ABOUT_COMP_NONE", pvar, "none");
+		UTIL_get_lang_msg("DLG_ABOUT_COMP_NONE", pvar, "none");
 		strncpy_s(buf, sizeof(buf), pvar->ts->UIMsg, _TRUNCATE);
 	}
 
@@ -3348,24 +3351,24 @@ void SSH_get_compression_info(PTInstVar pvar, char *dest, int len)
 			pvar->ssh_state.decompress_stream.total_out;
 
 		if (total_in > 0) {
-			UTIL_get_lang_msgU8("DLG_ABOUT_COMP_INFO", pvar,
-								"level %d; ratio %.1f (%ld:%ld)");
+			UTIL_get_lang_msg("DLG_ABOUT_COMP_INFO", pvar,
+			                  "level %d; ratio %.1f (%ld:%ld)");
 			_snprintf_s(buf2, sizeof(buf2), _TRUNCATE, pvar->ts->UIMsg,
 			            pvar->ssh_state.compression_level,
 			            ((double) total_out) / total_in, total_out,
 			            total_in);
 		} else {
-			UTIL_get_lang_msgU8("DLG_ABOUT_COMP_INFO2", pvar, "level %d");
+			UTIL_get_lang_msg("DLG_ABOUT_COMP_INFO2", pvar, "level %d");
 			_snprintf_s(buf2, sizeof(buf2), _TRUNCATE, pvar->ts->UIMsg,
 			            pvar->ssh_state.compression_level);
 		}
 	} else {
-		UTIL_get_lang_msgU8("DLG_ABOUT_COMP_NONE", pvar, "none");
+		UTIL_get_lang_msg("DLG_ABOUT_COMP_NONE", pvar, "none");
 		strncpy_s(buf2, sizeof(buf2), pvar->ts->UIMsg, _TRUNCATE);
 	}
 
-	UTIL_get_lang_msgU8("DLG_ABOUT_COMP_UPDOWN", pvar,
-						"Upstream %s; Downstream %s");
+	UTIL_get_lang_msg("DLG_ABOUT_COMP_UPDOWN", pvar,
+	                  "Upstream %s; Downstream %s");
 	_snprintf_s(dest, len, _TRUNCATE, pvar->ts->UIMsg, buf, buf2);
 }
 
@@ -3390,8 +3393,8 @@ void SSH_get_protocol_version_info(PTInstVar pvar, char *dest,
 
 void SSH_get_mac_info(PTInstVar pvar, char *dest, int len)
 {
-	UTIL_get_lang_msgU8("DLG_ABOUT_MAC_INFO", pvar,
-						"%s to server, %s from server");
+	UTIL_get_lang_msg("DLG_ABOUT_MAC_INFO", pvar,
+	                  "%s to server, %s from server");
 	_snprintf_s(dest, len, _TRUNCATE, pvar->ts->UIMsg,
 	            get_ssh2_mac_name(pvar->macs[MODE_OUT]),
 	            get_ssh2_mac_name(pvar->macs[MODE_IN]));
@@ -4091,30 +4094,6 @@ void SSH_open_channel(PTInstVar pvar, uint32 local_channel_num,
 
 }
 
-/**
- *	fopen utf-8 wrapper
- */
-static FILE *fopenU8(const char *filenameU8, const char *mode)
-{
-	wchar_t *filenameW = ToWcharU8(filenameU8);
-	wchar_t *modeW = ToWcharU8(mode);
-	FILE *fp;
-	_wfopen_s(&fp, filenameW, modeW);
-	free(modeW);
-	free(filenameW);
-	return fp;
-}
-
-/**
- * stat UTF-8 wrapper
- */
-static int statU8(const char *filenameU8, struct __stat64 *st)
-{
-	wchar_t *filenameW = ToWcharU8(filenameU8);
-	int r = _wstat64(filenameW, st);
-	free(filenameW);
-	return r;
-}
 
 //
 // SCP support
@@ -4148,7 +4127,7 @@ int SSH_scp_transaction(PTInstVar pvar, char *sendfile, char *dstfile, enum scp_
 	}
 
 	if (direction == TOREMOTE) {  // copy local to remote
-		fp = fopenU8(sendfile, "rb");
+		fp = fopen(sendfile, "rb");
 		if (fp == NULL) {
 			char buf[1024];
 			int len;
@@ -4175,7 +4154,7 @@ int SSH_scp_transaction(PTInstVar pvar, char *sendfile, char *dstfile, enum scp_
 		}
 		c->scp.localfp = fp;     // file pointer
 
-		if (statU8(c->scp.localfilefull, &st) == 0) {
+		if (_stat64(c->scp.localfilefull, &st) == 0) {
 			c->scp.filestat = st;
 		} else {
 			goto error;
@@ -4255,6 +4234,8 @@ int SSH_scp_transaction(PTInstVar pvar, char *sendfile, char *dstfile, enum scp_
 	finish_send_packet(pvar);
 	buffer_free(msg);
 
+	g_scp_sending = TRUE;
+
 	logputs(LOG_LEVEL_VERBOSE, "SSH2_MSG_CHANNEL_OPEN was sent at SSH_scp_transaction().");
 
 	return TRUE;
@@ -4271,6 +4252,11 @@ error:
 int SSH_start_scp(PTInstVar pvar, char *sendfile, char *dstfile)
 {
 	return SSH_scp_transaction(pvar, sendfile, dstfile, TOREMOTE);
+}
+
+int SSH_scp_sending_status(void)
+{
+	return g_scp_sending;
 }
 
 int SSH_start_scp_receive(PTInstVar pvar, char *filename)
@@ -7144,7 +7130,6 @@ static BOOL handle_SSH2_userauth_banner(PTInstVar pvar)
 
 	if (msglen > 0) {
 		char *msg, *msgA;
-		wchar_t *msgW;
 
 		if (pvar->authbanner_buffer == NULL) {
 			pvar->authbanner_buffer = buffer_init();
@@ -7200,17 +7185,17 @@ static BOOL handle_SSH2_userauth_banner(PTInstVar pvar)
 			}
 			break;
 		case 2:
-			msgW = ToWcharU8(msg);
-			if (msgW) {
-				_MessageBoxW(pvar->cv->HWin, msgW, L"Authentication Banner", MB_OK | MB_ICONINFORMATION);
-				free(msgW);
+			msgA = ToCharU8(msg);
+			if (msgA) {
+				MessageBox(pvar->cv->HWin, msgA, "Authentication Banner", MB_OK | MB_ICONINFORMATION);
+				free(msgA);
 			}
 			break;
 		case 3:
-			msgW = ToWcharU8(msg);
-			if (msgW) {
-				NotifyInfoMessageW(pvar->cv, msgW, L"Authentication Banner");
-				free(msgW);
+			msgA = ToCharU8(msg);
+			if (msgA) {
+				NotifyInfoMessage(pvar->cv, msgA, "Authentication Banner");
+				free(msgA);
 			}
 			break;
 		}

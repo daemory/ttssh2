@@ -36,15 +36,23 @@
 #include <string.h>
 
 #undef DllExport
-#define DllExport __declspec(dllexport)
+#define DllExport __declspec(dllexport) 
 
 #include "tekesc.h"
 #include "tttek.h"
 
-static void Log1Byte(PComVar cv, BYTE b)
+void Log1Byte(PComVar cv, BYTE b)
 {
-	if (cv->Log1Byte != NULL)
-		cv->Log1Byte(b);
+  ((PCHAR)(cv->LogBuf))[cv->LogPtr] = b;
+  cv->LogPtr++;
+  if (cv->LogPtr >= InBuffSize)
+    cv->LogPtr = cv->LogPtr - InBuffSize;
+  if (cv->LCount >= InBuffSize)
+  {
+    cv->LCount = InBuffSize;
+    cv->LStart = cv->LogPtr;
+  }
+  else cv->LCount++;
 }
 
 void ChangeTextSize(PTEKVar tk, PTTSet ts)
@@ -60,7 +68,7 @@ void BackSpace(PTEKVar tk, PComVar cv)
 {
   tk->CaretX = tk->CaretX - tk->FontWidth;
   if (tk->CaretX < 0) tk->CaretX = 0;
-  Log1Byte(cv,BS);
+  if (cv->HLogBuf != NULL) Log1Byte(cv,BS);
 }
 
 void LineFeed(PTEKVar tk, PComVar cv)
@@ -81,18 +89,18 @@ void LineFeed(PTEKVar tk, PComVar cv)
       tk->CaretOffset = 0;
     }
   }
-  Log1Byte(cv,LF);
+  if (cv->HLogBuf != NULL) Log1Byte(cv,LF);
 }
 
 void CarriageReturn(PTEKVar tk, PComVar cv)
 {
   tk->CaretX = tk->CaretOffset;
-  Log1Byte(cv,CR);
+  if (cv->HLogBuf != NULL) Log1Byte(cv,CR);
 }
 
 void Tab(PTEKVar tk, PComVar cv)
 {
-  Log1Byte(cv,HT);
+  if (cv->HLogBuf != NULL) Log1Byte(cv,HT);
   tk->CaretX = tk->CaretX + (tk->FontWidth << 3);
   if (tk->CaretX >= tk->ScreenWidth)
   {
@@ -340,7 +348,7 @@ void DispChar(PTEKVar tk, PComVar cv, BYTE b)
   InvalidateRect(tk->HWin,&R,FALSE);
   tk->CaretX = R.right;
 
-  Log1Byte(cv,b);
+  if (cv->HLogBuf != NULL) Log1Byte(cv,b);
 
   if (tk->CaretX > tk->ScreenWidth - tk->FontWidth)
   {
@@ -551,7 +559,7 @@ void SetLineIndex(PTEKVar tk, PTTSet ts, WORD w)
 
   DeleteObject(tk->Pen);
   tk->Pen = CreatePen(tk->ps,1,tk->PenColor);
-
+  
   SelectObject(tk->MemDC, tk->OldMemPen);
   DeleteObject(tk->MemPen);
   tk->MemPen = CreatePen(tk->ps,1,tk->MemPenColor);
@@ -915,7 +923,7 @@ void ParseCS(PTEKVar tk, PTTSet ts, PComVar cv)
     else if ((b>=0x30) && (b<=0x39))
     {
       if (tk->Param[tk->NParam] < 0)
-	tk->Param[tk->NParam] = 0;
+	tk->Param[tk->NParam] = 0; 
       if (tk->Param[tk->NParam]<1000)
 	tk->Param[tk->NParam] = tk->Param[tk->NParam]*10 + b - 0x30;
     }
@@ -1031,7 +1039,7 @@ void GraphText(PTEKVar tk, PTTSet ts, PComVar cv, BYTE b)
 		  (float)tk->ScreenHeight);
 	lf.lfWidth = W;
 	lf.lfHeight = H;
-	TempFont = CreateFontIndirect(&lf);
+	TempFont = CreateFontIndirect(&lf);		
 	TempOld = SelectObject(tk->MemDC,TempFont);
 	W = (int)((float)(tk->GTWidth + tk->GTSpacing) /
 		  (float)ViewSizeX *

@@ -28,9 +28,6 @@
  */
 
 /* TERATERM.EXE, VT terminal display routines */
-
-#include "buffer.h"		// for TCharAttr
-
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -82,8 +79,7 @@ void DispChangeWin();
 void DispInitDC();
 void DispReleaseDC();
 void DispSetupDC(TCharAttr Attr, BOOL Reverse);
-void DispStr(const char *Buff, int Count, int Y, int* X);
-void DispStrW(const wchar_t *StrW, const char *WidthInfo, int Count, int Y, int* X);
+void DispStr(PCHAR Buff, int Count, int Y, int* X);
 void DispEraseCurToEnd(int YEnd);
 void DispEraseHomeToCur(int YHome);
 void DispEraseCharsInLine(int XStart, int Count);
@@ -120,10 +116,6 @@ void DispGetWindowSize(int *width, int *height, BOOL client);
 void DispGetRootWinSize(int *x, int *y, BOOL inPixels);
 int DispFindClosestColor(int red, int green, int blue);
 void UpdateBGBrush(void);
-void DrawStrW(HDC DC, HDC BGDC, const wchar_t *StrW, const char *WidthInfo, int Count,
-			  int font_width, int font_height, int Y, int* X);
-void DrawStrA(HDC DC, HDC BGDC, const char *StrA, int Count,
-			  int font_width, int font_height, int Y, int* X);
 
 extern int WinWidth, WinHeight;
 extern HFONT VTFont[AttrFontMask+1];

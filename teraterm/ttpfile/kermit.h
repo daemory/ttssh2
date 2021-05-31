@@ -29,24 +29,18 @@
 
 /* TTFILE.DLL, Kermit protocol */
 
-#include "filesys_proto.h"
-
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-  /* Kermit function id */
-#define IdKmtReceive 1
-#define IdKmtGet     2
-#define IdKmtSend    3
-#define IdKmtFinish  4
-
-enum {
-	KMT_MODE
-};
-
 /* prototypes */
-BOOL KmtCreate(PFileVarProto fv);
+void KmtInit
+  (PFileVar fv, PKmtVar kv, PComVar cv, PTTSet ts);
+void KmtTimeOutProc(PFileVar fv, PKmtVar kv, PComVar cv);
+BOOL KmtReadPacket
+  (PFileVar fv,  PKmtVar kv, PComVar cv);
+void KmtCancel
+  (PFileVar fv, PKmtVar kv, PComVar cv);
 
 #ifdef __cplusplus
 }

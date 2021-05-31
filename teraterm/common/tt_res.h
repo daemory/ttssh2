@@ -14,7 +14,6 @@
 #define IDD_EXTERNAL_SETUP              111
 #define IDD_TABSHEET_GENERAL            111
 #define IDD_BROADCAST_DIALOG            112
-#define IDD_LOGDLG                      115
 #define IDD_TABSHEET_VISUAL             116
 #define IDD_TABSHEET_LOG                117
 #define IDD_TABSHEET_CYGWIN             118
@@ -26,11 +25,8 @@
 #define IDD_SETUP_DIR_DIALOG            123
 #define IDI_TTERM_3D                    124
 #define IDI_VT_3D                       125
-#define IDD_TABSHEET_DEBUG              126
-#define IDD_SENDFILEDLG                 127
-#define IDD_TABSHEET_CODING             128
-#define IDD_TABSHEET_FONT               129
 #define IDR_TEKMENU                     1000
+#define IDC_EDIT_COMMENT                1000
 #define IDC_EDIT_FULLPATH               1001
 #define IDC_FULLPATH_LABEL              1002
 #define IDC_LINECOPY                    1003
@@ -218,6 +214,7 @@
 #define IDC_SSH_SETUPDIR_STATIC_VSTORE  2562
 #define IDC_SSH_SETUPDIR_EDIT_VSTORE    2563
 #define IDC_TRIMNLCHAR                  2564
+#define IDC_NORMALIZE_LINEBREAK         2565
 #define IDC_CLIPBOARD_NOTIFY            2566
 #define IDC_LIST_HIDDEN_FONTS           2567
 #define IDC_TITLEFMT_GROUP              2568
@@ -244,21 +241,6 @@
 #define IDC_SELECT_ON_ACTIVATE          2589
 #define IDC_MIXED_THEME_FILE            2590
 #define IDC_ACCEPT_CLEAR_SBUFF          2591
-#define IDC_DEBUG_POPUP_ENABLE          2592
-#define IDC_DEBUG_POPUP_KEY1            2593
-#define IDC_DEBUG_POPUP_KEY2            2594
-#define IDC_DEBUG_CONSOLE_BUTTON        2595
-#define IDC_SENDFILE_FILENAME_BUTTON    2596
-#define IDC_SENDFILE_CHECK_BINARY       2597
-#define IDC_SENDFILE_FILENAME_TITLE     2598
-#define IDC_SENDFILE_FILENAME_EDIT      2599
-#define IDC_SENDFILE_DELAYTYPE_LABEL    2600
-#define IDC_SENDFILE_DELAYTYPE_DROPDOWN 2601
-#define IDC_SENDFILE_SEND_SIZE_DROPDOWN 2602
-#define IDC_SENDFILE_SEND_SIZE_LABEL    2603
-#define IDC_SENDFILE_DELAYTIME_LABEL    2604
-#define IDC_SENDFILE_DELAYTIME_EDIT     2605
-#define IDC_SENDFILE_CHECK_4            2606
 #define ID_ACC_SENDBREAK                50001
 #define ID_ACC_COPY                     50002
 #define ID_ACC_NEWCONNECTION            50003
@@ -353,13 +335,13 @@
 #define ID_FILE_TERATERMMENU            52006
 
 // Next default values for new objects
-//
+// 
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NO_MFC                     1
-#define _APS_NEXT_RESOURCE_VALUE        129
+#define _APS_NEXT_RESOURCE_VALUE        126
 #define _APS_NEXT_COMMAND_VALUE         52031
-#define _APS_NEXT_CONTROL_VALUE         2607
+#define _APS_NEXT_CONTROL_VALUE         2591
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

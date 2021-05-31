@@ -25,6 +25,8 @@
 			>
 			<Tool
 				Name="VCPreBuildEventTool"
+				Description="creating &quot;$(ProjectDir)..\ttpdlg\svnversion.h&quot;"
+				CommandLine="&quot;$(OutDir)\svnrev.exe&quot; &quot;$(SolutionDir)..\libs\svn\bin\svnversion.exe&quot; &quot;$(SolutionDir)..&quot; &quot;$(ProjectDir)..\ttpdlg\svnversion.h&quot;"
 			/>
 			<Tool
 				Name="VCCustomBuildTool"
@@ -48,7 +50,7 @@
 				Name="VCCLCompilerTool"
 				AdditionalOptions="/D&quot;_CRT_SECURE_NO_DEPRECATE&quot;"
 				Optimization="0"
-				AdditionalIncludeDirectories="&quot;$(SolutionDir)..\libs\SFMT&quot;;&quot;$(SolutionDir)..\libs\oniguruma\src&quot;;&quot;$(SolutionDir)teraterm&quot;;&quot;$(SolutionDir)common&quot;;&quot;$(SolutionDir)ttpfile&quot;;&quot;$(SolutionDir)ttpdlg&quot;;&quot;$(SolutionDir)ttpcmn&quot;;&quot;$(SolutionDir)susie_plugin&quot;"
+				AdditionalIncludeDirectories="$(SolutionDir)..\libs\SFMT;$(SolutionDir)..\libs\oniguruma\src;$(SolutionDir)common;$(SolutionDir)ttpfile;$(SolutionDir)ttpdlg;$(SolutionDir)ttpcmn"
 				PreprocessorDefinitions="WIN32;_DEBUG;_WINDOWS;_WIN32_WINNT=0x0501"
 				RuntimeLibrary="1"
 				BrowseInformation="0"
@@ -71,7 +73,7 @@
 			/>
 			<Tool
 				Name="VCLinkerTool"
-				AdditionalDependencies="onig_sd.lib comctl32.lib ws2_32.lib imagehlp.lib user32.lib gdi32.lib SHELL32.lib comdlg32.lib ole32.lib ADVAPI32.lib OleAut32.lib setupapi.lib"
+				AdditionalDependencies="onig_sd.lib comctl32.lib ws2_32.lib imagehlp.lib user32.lib gdi32.lib SHELL32.lib comctl32.lib comdlg32.lib ole32.lib ADVAPI32.lib OleAut32.lib"
 				LinkIncremental="1"
 				SuppressStartupBanner="true"
 				AdditionalLibraryDirectories="$(SolutionDir)..\libs\oniguruma\src;$(OutDir)"
@@ -117,6 +119,8 @@
 			>
 			<Tool
 				Name="VCPreBuildEventTool"
+				Description="creating &quot;$(ProjectDir)..\ttpdlg\svnversion.h&quot;"
+				CommandLine="&quot;$(OutDir)\svnrev.exe&quot; &quot;$(SolutionDir)..\libs\svn\bin\svnversion.exe&quot; &quot;$(SolutionDir)..&quot; &quot;$(ProjectDir)..\ttpdlg\svnversion.h&quot;"
 			/>
 			<Tool
 				Name="VCCustomBuildTool"
@@ -141,7 +145,7 @@
 				AdditionalOptions="/D&quot;_CRT_SECURE_NO_DEPRECATE&quot;"
 				Optimization="2"
 				InlineFunctionExpansion="1"
-				AdditionalIncludeDirectories="&quot;$(SolutionDir)..\libs\SFMT&quot;;&quot;$(SolutionDir)..\libs\oniguruma\src&quot;;&quot;$(SolutionDir)teraterm&quot;;&quot;$(SolutionDir)common&quot;;&quot;$(SolutionDir)ttpfile&quot;;&quot;$(SolutionDir)ttpdlg&quot;;&quot;$(SolutionDir)ttpcmn&quot;;&quot;$(SolutionDir)susie_plugin&quot;"
+				AdditionalIncludeDirectories="$(SolutionDir)..\libs\SFMT;$(SolutionDir)..\libs\oniguruma\src;$(SolutionDir)common;$(SolutionDir)ttpfile;$(SolutionDir)ttpdlg;$(SolutionDir)ttpcmn"
 				PreprocessorDefinitions="WIN32;NDEBUG;_WINDOWS;_WIN32_WINNT=0x0501"
 				StringPooling="true"
 				RuntimeLibrary="0"
@@ -164,7 +168,7 @@
 			/>
 			<Tool
 				Name="VCLinkerTool"
-				AdditionalDependencies="onig_s.lib comctl32.lib ws2_32.lib imagehlp.lib user32.lib gdi32.lib SHELL32.lib comdlg32.lib ole32.lib ADVAPI32.lib OleAut32.lib setupapi.lib"
+				AdditionalDependencies="onig_s.lib comctl32.lib ws2_32.lib imagehlp.lib user32.lib gdi32.lib SHELL32.lib comctl32.lib comdlg32.lib ole32.lib ADVAPI32.lib OleAut32.lib"
 				LinkIncremental="1"
 				SuppressStartupBanner="true"
 				AdditionalLibraryDirectories="$(SolutionDir)..\libs\oniguruma\src;$(OutDir)"
@@ -209,31 +213,27 @@
 			Filter="cpp;c;cxx;rc;def;r;odl;idl;hpj;bat"
 			>
 			<File
-				RelativePath=".\broadcast.cpp"
+				RelativePath="..\common\codeconv.cpp"
 				>
 			</File>
 			<File
-				RelativePath=".\checkeol.cpp"
+				RelativePath="..\common\compat_win.cpp"
+				>
+			</File>
+			<File
+				RelativePath="..\common\dlglib_cpp.cpp"
+				>
+			</File>
+			<File
+				RelativePath="..\common\dlglib_tmpl.cpp"
+				>
+			</File>
+			<File
+				RelativePath="..\common\dllutil.cpp"
 				>
 			</File>
 			<File
 				RelativePath="filesys.cpp"
-				>
-			</File>
-			<File
-				RelativePath=".\filesys_log.cpp"
-				>
-			</File>
-			<File
-				RelativePath=".\filesys_proto.cpp"
-				>
-			</File>
-			<File
-				RelativePath="..\susie_plugin\libsusieplugin.cpp"
-				>
-			</File>
-			<File
-				RelativePath=".\sendfiledlg.cpp"
 				>
 			</File>
 			<File
@@ -249,11 +249,23 @@
 				>
 			</File>
 			<File
-				RelativePath=".\ttdebug.cpp"
+				RelativePath="..\common\tipwin.cpp"
+				>
+			</File>
+			<File
+				RelativePath="..\common\tmfc.cpp"
+				>
+			</File>
+			<File
+				RelativePath="..\common\tmfc_frame.cpp"
 				>
 			</File>
 			<File
 				RelativePath="vtwin.cpp"
+				>
+			</File>
+			<File
+				RelativePath="..\common\win16api.c"
 				>
 			</File>
 		</Filter>
@@ -263,18 +275,6 @@
 			>
 			<File
 				RelativePath="..\..\cygterm\cygterm.ico"
-				>
-			</File>
-			<File
-				RelativePath="debug_pp.rc"
-				>
-			</File>
-			<File
-				RelativePath=".\filesys_log.rc"
-				>
-			</File>
-			<File
-				RelativePath=".\filesys_log_res.h"
 				>
 			</File>
 			<File
@@ -291,10 +291,6 @@
 			</File>
 			<File
 				RelativePath="..\common\teraterm_classic.ico"
-				>
-			</File>
-			<File
-				RelativePath=".\teraterm_manifest.rc"
 				>
 			</File>
 			<File
@@ -334,10 +330,6 @@
 				>
 			</File>
 			<File
-				RelativePath="..\common\compat_w95_vs2005.c"
-				>
-			</File>
-			<File
 				RelativePath="keyboard.c"
 				>
 			</File>
@@ -374,10 +366,6 @@
 				>
 			</File>
 			<File
-				RelativePath="..\ttpset\ttset_keyboard.c"
-				>
-			</File>
-			<File
 				RelativePath="ttsetup.c"
 				>
 			</File>
@@ -411,15 +399,7 @@
 			Filter="h;hpp;hxx;hm;inl"
 			>
 			<File
-				RelativePath=".\broadcast.h"
-				>
-			</File>
-			<File
 				RelativePath=".\buffer.h"
-				>
-			</File>
-			<File
-				RelativePath=".\checkeol.h"
 				>
 			</File>
 			<File
@@ -431,19 +411,15 @@
 				>
 			</File>
 			<File
+				RelativePath="..\common\compat_w95.h"
+				>
+			</File>
+			<File
 				RelativePath=".\filesys.h"
 				>
 			</File>
 			<File
 				RelativePath=".\keyboard.h"
-				>
-			</File>
-			<File
-				RelativePath="..\susie_plugin\libsusieplugin.h"
-				>
-			</File>
-			<File
-				RelativePath=".\sendfiledlg.h"
 				>
 			</File>
 			<File
@@ -503,11 +479,11 @@
 				>
 			</File>
 			<File
-				RelativePath=".\ttdebug.h"
+				RelativePath="ttfileio.h"
 				>
 			</File>
 			<File
-				RelativePath="ttfileio.h"
+				RelativePath="..\common\ttftypes.h"
 				>
 			</File>
 			<File
@@ -587,35 +563,7 @@
 				>
 			</File>
 			<File
-				RelativePath="clipboarddlg.cpp"
-				>
-			</File>
-			<File
-				RelativePath="clipboarddlg.h"
-				>
-			</File>
-			<File
-				RelativePath=".\coding_pp.cpp"
-				>
-			</File>
-			<File
-				RelativePath=".\coding_pp.h"
-				>
-			</File>
-			<File
-				RelativePath=".\coding_pp.rc"
-				>
-			</File>
-			<File
-				RelativePath=".\coding_pp_res.h"
-				>
-			</File>
-			<File
-				RelativePath="debug_pp.cpp"
-				>
-			</File>
-			<File
-				RelativePath="debug_pp.h"
+				RelativePath="..\common\dlglib.c"
 				>
 			</File>
 			<File
@@ -631,35 +579,11 @@
 				>
 			</File>
 			<File
-				RelativePath=".\font_pp.cpp"
-				>
-			</File>
-			<File
-				RelativePath=".\font_pp.h"
-				>
-			</File>
-			<File
-				RelativePath=".\font_pp.rc"
-				>
-			</File>
-			<File
-				RelativePath=".\font_pp_res.h"
-				>
-			</File>
-			<File
 				RelativePath="ftdlg.cpp"
 				>
 			</File>
 			<File
 				RelativePath=".\ftdlg.h"
-				>
-			</File>
-			<File
-				RelativePath="ftdlg_lite.cpp"
-				>
-			</File>
-			<File
-				RelativePath="ftdlg_lite.h"
 				>
 			</File>
 			<File
@@ -679,99 +603,11 @@
 				>
 			</File>
 			<File
-				RelativePath="sendmem.cpp"
-				>
-			</File>
-			<File
-				RelativePath="sendmem.h"
-				>
-			</File>
-			<File
 				RelativePath="ttdialog.c"
 				>
 			</File>
 			<File
-				RelativePath="ttdialog.h"
-				>
-			</File>
-			<File
-				RelativePath="unicode.cpp"
-				>
-			</File>
-			<File
-				RelativePath="unicode.h"
-				>
-			</File>
-		</Filter>
-		<Filter
-			Name="ttpfile"
-			>
-			<File
-				RelativePath="..\ttpfile\bplus.c"
-				>
-			</File>
-			<File
-				RelativePath="..\ttpfile\bplus.h"
-				>
-			</File>
-			<File
-				RelativePath="..\ttpfile\file_res.h"
-				>
-			</File>
-			<File
-				RelativePath="..\ttpfile\filesys_win32.cpp"
-				>
-			</File>
-			<File
-				RelativePath="..\ttpfile\filesys_win32.h"
-				>
-			</File>
-			<File
-				RelativePath="..\ttpfile\ftlib.c"
-				>
-			</File>
-			<File
-				RelativePath="..\ttpfile\ftlib.h"
-				>
-			</File>
-			<File
-				RelativePath="..\ttpfile\kermit.c"
-				>
-			</File>
-			<File
-				RelativePath="..\ttpfile\kermit.h"
-				>
-			</File>
-			<File
-				RelativePath="..\ttpfile\quickvan.c"
-				>
-			</File>
-			<File
-				RelativePath="..\ttpfile\quickvan.h"
-				>
-			</File>
-			<File
-				RelativePath="..\ttpfile\xmodem.c"
-				>
-			</File>
-			<File
-				RelativePath="..\ttpfile\xmodem.h"
-				>
-			</File>
-			<File
-				RelativePath="..\ttpfile\ymodem.c"
-				>
-			</File>
-			<File
-				RelativePath="..\ttpfile\ymodem.h"
-				>
-			</File>
-			<File
-				RelativePath="..\ttpfile\zmodem.c"
-				>
-			</File>
-			<File
-				RelativePath="..\ttpfile\zmodem.h"
+				RelativePath=".\ttdialog.h"
 				>
 			</File>
 		</Filter>

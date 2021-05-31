@@ -46,6 +46,8 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include "teraterm_conf.h"
+
 #include <windows.h>
 #include <assert.h>
 #include <stdio.h>
@@ -56,13 +58,6 @@
 #endif
 #include <stdlib.h>
 #include <crtdbg.h>
-#include <initguid.h>
-#if defined(__MINGW32__) || defined(_INC_SDKDDKVER)
-#define HAS_PROPKEY_H 1
-#endif
-#if defined(HAS_PROPKEY_H)
-#include <propkey.h>
-#endif
 
 #include "winjump.h"
 #include "teraterm.h"
@@ -86,13 +81,15 @@ typedef struct _tagpropertykey {
 #define _REFPROPVARIANT_DEFINED
 typedef PROPVARIANT *REFPROPVARIANT;
 #endif
+/* MinGW doesn't define this yet: */
+#ifndef _PROPVARIANTINIT_DEFINED_
+#define _PROPVARIANTINIT_DEFINED_
+#define PropVariantInit(pvar) memset((pvar),0,sizeof(PROPVARIANT))
+#endif
 
 #ifndef __ICustomDestinationList_INTERFACE_DEFINED__
-
-static const IID IID_ICustomDestinationList = {
-    0x6332debf, 0x87b5, 0x4670, {0x90,0xc0,0x5e,0x57,0xb4,0x08,0xa4,0x9e}
-};
-
+#define __ICustomDestinationList_INTERFACE_DEFINED__
+// #if !(_MSC_VER >= 1600)  // VC2010(VC10.0) or later
 typedef struct ICustomDestinationListVtbl {
     HRESULT ( __stdcall *QueryInterface ) (
         /* [in] ICustomDestinationList*/ void *This,
@@ -152,11 +149,7 @@ typedef struct ICustomDestinationList
 #endif
 
 #ifndef __IObjectArray_INTERFACE_DEFINED__
-
-static const IID IID_IObjectArray = {
-    0x92ca9dcd, 0x5622, 0x4bba, {0xa8,0x05,0x5e,0x9f,0x54,0x1b,0xd8,0xc9}
-};
-
+#define __IObjectArray_INTERFACE_DEFINED__
 typedef struct IObjectArrayVtbl
 {
     HRESULT ( __stdcall *QueryInterface )(
@@ -338,11 +331,8 @@ typedef struct IObjectCollection
 #endif
 
 #ifndef __IPropertyStore_INTERFACE_DEFINED__
-
-static const IID IID_IPropertyStore = {
-    0x886d8eeb, 0x8cf2, 0x4446, {0x8d,0x02,0xcd,0xba,0x1d,0xbd,0xcf,0x99}
-};
-
+#define __IPropertyStore_INTERFACE_DEFINED__
+// #if !(_MSC_VER >= 1500)  // VC2008(VC9.0) or later
 typedef struct IPropertyStoreVtbl
 {
     HRESULT ( __stdcall *QueryInterface )(
@@ -385,7 +375,7 @@ typedef struct IPropertyStore
 } IPropertyStore;
 #endif
 
-#if !defined(__MINGW32__) && !defined(__ShellCoreObjects_LIBRARY_DEFINED__)
+#if !defined(__MINGW32__)
 static const CLSID CLSID_DestinationList = {
     0x77f10cf0, 0x3db5, 0x4966, {0xb5,0x20,0xb7,0xc5,0x4f,0xd3,0x5e,0xd6}
 };
@@ -402,13 +392,23 @@ static const IID IID_IShellLink = {
     0x000214ee, 0x0000, 0x0000, {0xc0,0x00,0x00,0x00,0x00,0x00,0x00,0x46}
 };
 #endif
-
-#if !defined(HAS_PROPKEY_H)
+#if (_WIN32_WINNT < 0x0601)		// _WIN32_WINNT_WIN7
+static const IID IID_ICustomDestinationList = {
+    0x6332debf, 0x87b5, 0x4670, {0x90,0xc0,0x5e,0x57,0xb4,0x08,0xa4,0x9e}
+};
+#endif
+#if !defined(__MINGW32__)
+static const IID IID_IObjectArray = {
+    0x92ca9dcd, 0x5622, 0x4bba, {0xa8,0x05,0x5e,0x9f,0x54,0x1b,0xd8,0xc9}
+};
+static const IID IID_IPropertyStore = {
+    0x886d8eeb, 0x8cf2, 0x4446, {0x8d,0x02,0xcd,0xba,0x1d,0xbd,0xcf,0x99}
+};
+#endif
 static const PROPERTYKEY PKEY_Title = {
     {0xf29f85e0, 0x4ff9, 0x1068, {0xab,0x91,0x08,0x00,0x2b,0x27,0xb3,0xd9}},
     0x00000002
 };
-#endif
 
 /* Type-checking macro to provide arguments for CoCreateInstance() etc.
  * The pointer arithmetic is a compile-time pointer type check that 'obj'
@@ -451,6 +451,7 @@ static IShellLink *make_shell_link(const char *appname,
 	//void *psettings_tmp;
 	IPropertyStore *pPS;
 	PROPVARIANT pv;
+	int len;
 	HRESULT result;
 
 	/* Retrieve path to executable. */
@@ -458,7 +459,6 @@ static IShellLink *make_shell_link(const char *appname,
 		GetModuleFileName(NULL, tt_path, sizeof(tt_path) - 1);
 
 	if (appname) {
-		size_t len;
 		tmp_ptr = strrchr(tt_path, '\\');
 		len = (tmp_ptr - tt_path) + strlen(appname) + 2;
 		app_path = malloc(len);
@@ -477,32 +477,24 @@ static IShellLink *make_shell_link(const char *appname,
 
 	/* Set path, parameters, icon and description. */
 	result = ret->lpVtbl->SetPath(ret, app_path);
-#if _DEBUG
 	if (result != S_OK)
 		OutputDebugPrintf("SetPath failed. (%ld)\n", result);
-#endif
 
 	param_string = _strdup(sessionname);
 	result = ret->lpVtbl->SetArguments(ret, param_string);
-#if _DEBUG
 	if (result != S_OK)
 		OutputDebugPrintf("SetArguments failed. (%ld)\n", result);
-#endif
 	free(param_string);
 
 	desc_string = _strdup("Connect to Tera Term session");
 	result = ret->lpVtbl->SetDescription(ret, desc_string);
-#if _DEBUG
 	if (result != S_OK)
 		OutputDebugPrintf("SetDescription failed. (%ld)\n", result);
-#endif
 	free(desc_string);
 
 	result = ret->lpVtbl->SetIconLocation(ret, app_path, 0);
-#if _DEBUG
 	if (result != S_OK)
 		OutputDebugPrintf("SetIconLocation failed. (%ld)\n", result);
-#endif
 
 	/* To set the link title, we require the property store of the link. */
 	if (SUCCEEDED(ret->lpVtbl->QueryInterface(ret, COMPTR(IPropertyStore, &pPS)))) {
@@ -510,21 +502,15 @@ static IShellLink *make_shell_link(const char *appname,
 		pv.vt = VT_LPSTR;
 		pv.pszVal = _strdup(sessionname);
 		result = pPS->lpVtbl->SetValue(pPS, &PKEY_Title, &pv);
-#if _DEBUG
 		if (result != S_OK)
 			OutputDebugPrintf("SetValue failed. (%ld)\n", result);
-#endif
 		free(pv.pszVal);
 		result = pPS->lpVtbl->Commit(pPS);
-#if _DEBUG
 		if (result != S_OK)
 			OutputDebugPrintf("Commit failed. (%ld)\n", result);
-#endif
 		result = pPS->lpVtbl->Release(pPS);
-#if _DEBUG
 		if (result != S_OK)
 			OutputDebugPrintf("Release shell link failed. (%ld)\n", result);
-#endif
 	}
 
 	free(app_path);
@@ -597,9 +583,7 @@ static void update_jumplist_from_registry(void)
 			break;
 		}
 
-#if _DEBUG
 		OutputDebugPrintf("%s\n", piterator);
-#endif
 		link = make_shell_link(NULL, piterator);
 		if (link) {
 			UINT j;
@@ -621,26 +605,20 @@ static void update_jumplist_from_registry(void)
 						found = TRUE;
 					}
 					result = rlink->lpVtbl->Release(rlink);
-#if _DEBUG
 					if (result != S_OK)
 						OutputDebugPrintf("Release rlink failed. (%ld)\n", result);
-#endif
 				}
 			}
 
 			if (!found) {
 				result = collection->lpVtbl->AddObject(collection, (IUnknown *)link);
-#if _DEBUG
 				if (result != S_OK)
 					OutputDebugPrintf("AddObject link failed. (%ld)\n", result);
-#endif
 			}
 
 			result = link->lpVtbl->Release(link);
-#if _DEBUG
 			if (result != S_OK)
 				OutputDebugPrintf("Release link failed. (%ld)\n", result);
-#endif
 			link = NULL;
 		}
 	}
@@ -654,10 +632,8 @@ static void update_jumplist_from_registry(void)
 		goto cleanup;
 
 	result = pCDL->lpVtbl->AppendCategory(pCDL, L"Recent Sessions", array);
-#if _DEBUG
 	if (result != S_OK)
 		OutputDebugPrintf("AppendCategory array failed. (%ld)\n", result);
-#endif
 
 	/*
 	 * Create an object collection to form the 'Tasks' category on the
@@ -677,26 +653,20 @@ static void update_jumplist_from_registry(void)
 		goto cleanup;
 
 	result = pCDL->lpVtbl->AddUserTasks(pCDL, array);
-#if _DEBUG
 	if (result != S_OK)
 		OutputDebugPrintf("AddUserTasks array failed. (0x%x)\n", result);
-#endif
 
 	/*
 	 * Now we can clean up the array and collection variables, so as
 	 * to be able to reuse them.
 	 */
 	result = array->lpVtbl->Release(array);
-#if _DEBUG
 	if (result != S_OK)
 		OutputDebugPrintf("Release array failed. (%ld)\n", result);
-#endif
 	array = NULL;
 	result = collection->lpVtbl->Release(collection);
-#if _DEBUG
 	if (result != S_OK)
 		OutputDebugPrintf("Release collection failed. (%ld)\n", result);
-#endif
 	collection = NULL;
 
 	/*
@@ -717,36 +687,28 @@ static void update_jumplist_from_registry(void)
 		goto cleanup;
 
 	result = pCDL->lpVtbl->AddUserTasks(pCDL, array);
-#if _DEBUG
 	if (result != S_OK)
 		OutputDebugPrintf("AddUserTasks array2 failed. (0x%x)\n", result);
-#endif
 
 	/*
 	 * Now we can clean up the array and collection variables, so as
 	 * to be able to reuse them.
 	 */
 	result = array->lpVtbl->Release(array);
-#if _DEBUG
 	if (result != S_OK)
 		OutputDebugPrintf("Release array2 failed. (%ld)\n", result);
-#endif
 	array = NULL;
 	result = collection->lpVtbl->Release(collection);
-#if _DEBUG
 	if (result != S_OK)
 		OutputDebugPrintf("Release collection2 failed. (%ld)\n", result);
-#endif
 	collection = NULL;
 
 	/*
 	 * Commit the jump list.
 	 */
 	result = pCDL->lpVtbl->CommitList(pCDL);
-#if _DEBUG
 	if (result != S_OK)
 		OutputDebugPrintf("CommitList failed. (%ld)\n", result);
-#endif
 	need_abort = FALSE;
 
 	/*

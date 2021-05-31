@@ -29,10 +29,12 @@
 
 /* TERATERM.EXE, main */
 
-#include <stdio.h>
+#include "teraterm_conf.h"
+
 #include <crtdbg.h>
 #include <windows.h>
 #include <htmlhelp.h>
+#include <stddef.h>		// for offsetof()
 #include "teraterm.h"
 #include "tttypes.h"
 #include "commlib.h"
@@ -41,6 +43,7 @@
 #include "vtterm.h"
 #include "vtwin.h"
 #include "clipboar.h"
+#include "ttftypes.h"
 #include "filesys.h"
 #include "telnet.h"
 #include "tektypes.h"
@@ -49,57 +52,55 @@
 #include "keyboard.h"
 #include "dllutil.h"
 #include "compat_win.h"
+#include "compat_w95.h"
 #include "dlglib.h"
 #include "teraterml.h"
-#include "sendmem.h"
-#include "layer_for_unicode.h"
-#include "ttdebug.h"
 
 #if defined(_DEBUG) && defined(_MSC_VER)
 #define new ::new(_NORMAL_BLOCK, __FILE__, __LINE__)
 #endif
 
 static BOOL AddFontFlag;
-static wchar_t TSpecialFont[MAX_PATH];
+static TCHAR TSpecialFont[MAX_PATH];
 static CVTWindow* pVTWin;
+static HWND(WINAPI *pHtmlHelp)(HWND hwndCaller, LPCSTR pszFile, UINT uCommand, DWORD_PTR dwData);
 static DWORD HtmlHelpCookie;
 
 static void LoadSpecialFont()
 {
-	if (IsExistFontA("Tera Special", SYMBOL_CHARSET, TRUE)) {
-		// すでに存在するのでロードしない
-		return;
-	}
+	if (!IsExistFontA("Tera Special", SYMBOL_CHARSET, TRUE)) {
+		int r;
 
-	if (_GetModuleFileNameW(NULL, TSpecialFont, _countof(TSpecialFont)) == 0) {
-		AddFontFlag = FALSE;
-		return;
-	}
-	*wcsrchr(TSpecialFont, L'\\') = 0;
-	wcscat_s(TSpecialFont, L"\\TSPECIAL1.TTF");
+		if (GetModuleFileName(NULL, TSpecialFont,_countof(TSpecialFont)) == 0) {
+			AddFontFlag = FALSE;
+			return;
+		}
+		*_tcsrchr(TSpecialFont, _T('\\')) = 0;
+		_tcscat_s(TSpecialFont, _T("\\TSPECIAL1.TTF"));
 
-	// teraterm.exeのみで有効なフォントとなる。
-	// removeしなくても終了するとOSからなくなる
-	int r = _AddFontResourceExW(TSpecialFont, FR_PRIVATE, NULL);
-	if (r == 0) {
-		// AddFontResourceEx() が使えなかった
-		// システム全体で使えるフォントとなる
-		// removeしないとOSが掴んだままとなる
-		r = _AddFontResourceW(TSpecialFont);
-	}
-	if (r != 0) {
-		AddFontFlag = TRUE;
+		if (pAddFontResourceEx != NULL) {
+			// teraterm.exeのみで有効なフォントとなる。
+			// removeしなくても終了するとOSからなくなる
+			r = pAddFontResourceEx(TSpecialFont, FR_PRIVATE, NULL);
+		} else {
+			// システム全体で使えるフォントとなる
+			// removeしないとOSが掴んだままとなる
+			r = AddFontResource(TSpecialFont);
+		}
+		if (r != 0) {
+			AddFontFlag = TRUE;
+		}
 	}
 }
 
 static void UnloadSpecialFont()
 {
-	if (!AddFontFlag) {
-		return;
-	}
-	int r = _RemoveFontResourceExW(TSpecialFont, FR_PRIVATE, NULL);
-	if (r == 0) {
-		_RemoveFontResourceW(TSpecialFont);
+	if (AddFontFlag) {
+		if (pRemoveFontResourceEx != NULL) {
+			pRemoveFontResourceEx(TSpecialFont, FR_PRIVATE, NULL);
+		} else {
+			RemoveFontResource(TSpecialFont);
+		}
 	}
 }
 
@@ -107,18 +108,14 @@ static void init()
 {
 	DLLInit();
 	WinCompatInit();
-	DebugSetException();
 	LoadSpecialFont();
-#if defined(DEBUG_OPEN_CONSOLE_AT_STARTUP)
-	DebugConsoleOpen();
-#endif
 }
 
 // Tera Term main engine
 static BOOL OnIdle(LONG lCount)
 {
 	static int Busy = 2;
-	int nx, ny;
+	int Change, nx, ny;
 	BOOL Size;
 
 	if (lCount==0) Busy = 2;
@@ -129,6 +126,12 @@ static BOOL OnIdle(LONG lCount)
 		CommSend(&cv);
 
 		/* Parser */
+		if ((cv.HLogBuf!=NULL) && (cv.LogBuf==NULL))
+			cv.LogBuf = (PCHAR)GlobalLock(cv.HLogBuf);
+
+		if ((cv.HBinBuf!=NULL) && (cv.BinBuf==NULL))
+			cv.BinBuf = (PCHAR)GlobalLock(cv.HBinBuf);
+
 		if ((TelStatus==TelIdle) && cv.TelMode)
 			TelStatus = TelIAC;
 
@@ -142,8 +145,7 @@ static BOOL OnIdle(LONG lCount)
 			}
 		}
 		else {
-			int Change;
-			if (ProtoGetProtoFlag()) Change = ProtoDlgParse();
+			if (cv.ProtoFlag) Change = ProtoDlgParse();
 			else {
 				switch (ActiveWin) {
 				case IdVT:
@@ -181,26 +183,39 @@ static BOOL OnIdle(LONG lCount)
 			}
 		}
 
-		FLogWriteFile();
+		if (cv.LogBuf!=NULL)
+		{
+			if (FileLog) {
+				LogToFile();
+			}
+			if (DDELog && AdvFlag) {
+				DDEAdv();
+			}
+			GlobalUnlock(cv.HLogBuf);
+			cv.LogBuf = NULL;
+		}
 
-		if (DDELog && AdvFlag) {
-			DDEAdv();
+		if (cv.BinBuf!=NULL)
+		{
+			if (BinLog) {
+				LogToFile();
+			}
+			GlobalUnlock(cv.HBinBuf);
+			cv.BinBuf = NULL;
 		}
 
 		/* Talker */
 		switch (TalkStatus) {
+		case IdTalkCB:
+			CBSend();
+			break; /* clip board */
 		case IdTalkFile:
 			FileSend();
 			break; /* file */
-		case IdTalkSendMem:
-			SendMemContinuously();
-			break;
-		default:
-			break;
 		}
 
 		/* Receiver */
-		if (DDELog && DDEGetCount() > 0) {
+		if (DDELog && cv.DCount >0) {
 			// ログバッファがまだDDEクライアントへ送られていない場合は、
 			// TCPパケットの受信を行わない。
 			// 連続して受信を行うと、ログバッファがラウンドロビンにより未送信のデータを
@@ -213,7 +228,7 @@ static BOOL OnIdle(LONG lCount)
 	}
 
 	if (cv.Ready &&
-	    (cv.RRQ || (cv.OutBuffCount>0) || (cv.InBuffCount>0) || (cv.FlushLen>0) || FLogGetCount() > 0 || (DDEGetCount()>0)) ) {
+	    (cv.RRQ || (cv.OutBuffCount>0) || (cv.InBuffCount>0) || (cv.FlushLen>0) || (cv.LCount>0) || (cv.BCount>0) || (cv.DCount>0)) ) {
 		Busy = 2;
 	}
 	else {
@@ -221,6 +236,11 @@ static BOOL OnIdle(LONG lCount)
 	}
 
 	return (Busy>0);
+}
+
+BOOL CallOnIdle(LONG lCount)
+{
+	return OnIdle(lCount);
 }
 
 static HWND main_window;
@@ -274,6 +294,20 @@ static BOOL IsIdleMessage(const MSG* pMsg)
 	return TRUE;
 }
 
+static void GetHtmlHelpAdr()
+{
+	HINSTANCE hDll;
+	TCHAR dllName[MAX_PATH];
+	GetSystemDirectory(dllName, _countof(dllName));
+	_tcscat_s(dllName, _countof(dllName), _T("\\hhctrl.ocx"));
+	hDll = LoadLibrary(dllName);
+	if (hDll == NULL) {
+		return;
+	}
+	void **func = (void **)&pHtmlHelp;
+	*func = (void *)GetProcAddress(hDll, "HtmlHelpA");
+}
+
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPreInst,
                    LPSTR lpszCmdLine, int nCmdShow)
 {
@@ -282,10 +316,26 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPreInst,
 	(void)nCmdShow;
 #ifdef _DEBUG
 	_CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
-#endif
-
-	_HtmlHelpW(NULL, NULL, HH_INITIALIZE, (DWORD_PTR)&HtmlHelpCookie);
+#ifdef _M_IX86
+	{
+		// TTTSet(struct tttset)に新しいメンバーを追加するときは後ろに追加する
+		//		TTTSetを参照するプラグインとの互換性を保つため
+		const size_t ts_offset_dialogfont_r8106 = 10176;
+		const size_t ts_size_r9033 = 10196;
+		size_t ts_size = sizeof(ts);
+		size_t ts_offset_dialogfont = offsetof(tttset, DialogFontCharSet);
+		if (ts_size != ts_size_r9033 || ts_offset_dialogfont != ts_offset_dialogfont_r8106) {
+			MessageBoxA(NULL, "Check struct tttset size", "Tera Term", MB_OK | MB_ICONERROR);
+			return 0;
+		}
+	}
+#endif // _M_IX86
+#endif // _DEBUG
 	init();
+	GetHtmlHelpAdr();
+	if (pHtmlHelp != NULL) {
+		pHtmlHelp(NULL, NULL, HH_INITIALIZE, (DWORD_PTR)&HtmlHelpCookie);
+	}
 	hInst = hInstance;
 	CVTWindow *m_pMainWnd = new CVTWindow(hInstance);
 	pVTWin = m_pMainWnd;
@@ -359,8 +409,10 @@ exit_message_loop:
 	delete m_pMainWnd;
 	m_pMainWnd = NULL;
 
-	_HtmlHelpW(NULL, NULL, HH_CLOSE_ALL, 0);
-	_HtmlHelpW(NULL, NULL, HH_UNINITIALIZE, HtmlHelpCookie);
+	if (pHtmlHelp != NULL) {
+		pHtmlHelp(NULL, NULL, HH_CLOSE_ALL, 0);
+		pHtmlHelp(NULL, NULL, HH_UNINITIALIZE, HtmlHelpCookie);
+	}
 
 	UnloadSpecialFont();
 	DLLExit();

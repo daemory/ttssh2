@@ -29,6 +29,7 @@
 /* IPv6 modification is Copyright(C) 2000 Jun-ya Kato <kato@win6.jp> */
 
 /* TTDLG.DLL, dialog boxes */
+#include "teraterm_conf.h"
 #include "teraterm.h"
 #include <stdio.h>
 #include <string.h>
@@ -37,8 +38,7 @@
 #include <direct.h>
 #include <commdlg.h>
 #include <dlgs.h>
-#define _CRTDBG_MAP_ALLOC
-#include <stdlib.h>
+#include <tchar.h>
 #include <crtdbg.h>
 #include "tttypes.h"
 #include "ttlib.h"
@@ -47,12 +47,10 @@
 #include "dlg_res.h"
 #include "svnversion.h"
 #include "ttdlg.h"
-#include "../teraterm/unicode_test.h"
 #include "tipwin.h"
 #include "comportinfo.h"
 #include "codeconv.h"
 #include "helpid.h"
-#include "layer_for_unicode.h"
 
 // Oniguruma: Regular expression library
 #define ONIG_EXTERN extern
@@ -65,6 +63,12 @@
 #include <winsock2.h>
 #undef EFFECT_ENABLED	// エフェクトの有効可否
 #undef TEXTURE_ENABLED	// テクスチャの有効可否
+
+#ifdef _DEBUG
+#define calloc(c, s)  _calloc_dbg((c), (s), _NORMAL_BLOCK, __FILE__, __LINE__)
+#define free(p)       _free_dbg((p), _NORMAL_BLOCK)
+#define _strdup(s)	  _strdup_dbg((s), _NORMAL_BLOCK, __FILE__, __LINE__)
+#endif
 
 #undef DialogBoxParam
 #define DialogBoxParam(p1,p2,p3,p4,p5) \
@@ -86,79 +90,40 @@ extern TComVar cv;
 static char UILanguageFile[MAX_PATH];
 
 static const char *ProtocolFamilyList[] = { "AUTO", "IPv6", "IPv4", NULL };
-static const char *NLListRcv[] = {"CR","CR+LF", "LF", "AUTO", NULL};
-static const char *NLList[] = {"CR","CR+LF", "LF", NULL};
-static const char *TermList[] =
+static PCHAR NLListRcv[] = {"CR","CR+LF", "LF", "AUTO", NULL};
+static PCHAR NLList[] = {"CR","CR+LF", "LF", NULL};
+static PCHAR TermList[] =
 	{"VT100", "VT101", "VT102", "VT282", "VT320", "VT382",
 	 "VT420", "VT520", "VT525", NULL};
 static WORD Term_TermJ[] =
 	{IdVT100, IdVT101, IdVT102, IdVT282, IdVT320, IdVT382,
 	 IdVT420, IdVT520, IdVT525};
 static WORD TermJ_Term[] = {1, 1, 2, 3, 3, 4, 4, 5, 6, 7, 8, 9};
-static const char *TermListJ[] =
+static PCHAR TermListJ[] =
 	{"VT100", "VT100J", "VT101", "VT102", "VT102J", "VT220J", "VT282",
 	 "VT320", "VT382", "VT420", "VT520", "VT525", NULL};
-static const char *KanjiList[] = {"SJIS","EUC","JIS", "UTF-8", "UTF-8m", NULL};
-static const char *KanjiListSend[] = {"SJIS","EUC","JIS", "UTF-8", NULL};
-static const char *KanjiInList[] = {"^[$@","^[$B",NULL};
-static const char *KanjiOutList[] = {"^[(B","^[(J",NULL};
-static const char *KanjiOutList2[] = {"^[(B","^[(J","^[(H",NULL};
-static const char *RussList[] = {"Windows(CP 1251)","KOI8-R","CP 866","ISO 8859-5",NULL};
-static const char *RussList2[] = {"Windows","KOI8-R",NULL};
-static const char *MetaList[] = {"off", "on", "left", "right", NULL};
-static const char *MetaList2[] = {"off", "on", NULL};
+static PCHAR KanjiList[] = {"SJIS","EUC","JIS", "UTF-8", "UTF-8m", NULL};
+static PCHAR KanjiListSend[] = {"SJIS","EUC","JIS", "UTF-8", NULL};
+static PCHAR KanjiInList[] = {"^[$@","^[$B",NULL};
+static PCHAR KanjiOutList[] = {"^[(B","^[(J",NULL};
+static PCHAR KanjiOutList2[] = {"^[(B","^[(J","^[(H",NULL};
+static PCHAR RussList[] = {"Windows","KOI8-R","CP 866","ISO 8859-5",NULL};
+static PCHAR RussList2[] = {"Windows","KOI8-R",NULL};
+static PCHAR MetaList[] = {"off", "on", "left", "right", NULL};
+static PCHAR MetaList2[] = {"off", "on", NULL};
 
 // HKS
-static const char *KoreanList[] = {"KS5601", "UTF-8", "UTF-8m", NULL};
-static const char *KoreanListSend[] = {"KS5601", "UTF-8", NULL};
+static PCHAR KoreanList[] = {"KS5601", "UTF-8", "UTF-8m", NULL};
+static PCHAR KoreanListSend[] = {"KS5601", "UTF-8", NULL};
 
 // UTF-8
-static const char *Utf8List[] = {"UTF-8", "UTF-8m", NULL};
-static const char *Utf8ListSend[] = {"UTF-8", NULL};
+static PCHAR Utf8List[] = {"UTF-8", "UTF-8m", NULL};
+static PCHAR Utf8ListSend[] = {"UTF-8", NULL};
 
-static const char *BaudList[] =
+static PCHAR BaudList[] =
 	{"110","300","600","1200","2400","4800","9600",
 	 "14400","19200","38400","57600","115200",
 	 "230400", "460800", "921600", NULL};
-
-// convert table for KanjiCodeID and ListID
-// cf. KanjiList,KanjiListSend
-//     KoreanList,KoreanListSend
-//     Utf8List,Utf8ListSend
-//     IdSJIS, IdEUC, IdJIS, IdUTF8, IdUTF8m
-//     IdEnglish, IdJapanese, IdRussian, IdKorean, IdUtf8
-/* KanjiCode2List(Language,KanjiCodeID) returns ListID */
-static int KanjiCode2List(int lang, int kcode)
-{
-	int Table[5][5] = {
-		{1, 2, 3, 4, 5}, /* English (dummy) */
-		{1, 2, 3, 4, 5}, /* Japanese(dummy) */
-		{1, 2, 3, 4, 5}, /* Russian (dummy) */
-		{1, 1, 1, 2, 3}, /* Korean */
-		{1, 1, 1, 1, 2}, /* Utf8 */
-	};
-	lang--;
-	kcode--;
-	return Table[lang][kcode];
-}
-
-/* List2KanjiCode(Language,ListID) returns KanjiCodeID */
-static int List2KanjiCode(int lang, int list)
-{
-	int Table[5][5] = {
-		{1, 2, 3, 4, 5}, /* English (dummy) */
-		{1, 2, 3, 4, 5}, /* Japanese(dummy) */
-		{1, 2, 3, 4, 5}, /* Russian (dummy) */
-		{1, 4, 5, 1, 1}, /* Korean */
-		{4, 5, 4, 4, 4}, /* Utf8 */
-	};
-	lang--;
-	list--;
-	if (list < 0) {
-		list = 0;
-	}
-	return Table[lang][list];
-}
 
 /*
  * COMポートに関する詳細情報
@@ -295,10 +260,6 @@ static INT_PTR CALLBACK TermDlg(HWND Dialog, UINT Message, WPARAM wParam, LPARAM
 				SetDropDownList(Dialog,IDC_TERMRUSSHOST,RussList,ts->RussHost);
 				SetDropDownList(Dialog,IDC_TERMRUSSCLIENT,RussList,ts->RussClient);
 				SetDropDownList(Dialog,IDC_TERMRUSSFONT,RussList,ts->RussFont);
-#if UNICODE_INTERNAL_BUFF
-				EnableWindow(GetDlgItem(Dialog, IDC_TERMRUSSCLIENT),FALSE);
-				EnableWindow(GetDlgItem(Dialog, IDC_TERMRUSSFONT),FALSE);
-#endif
 			}
 			else if (ts->Language==IdKorean) { // HKS
 				SetDropDownList(Dialog, IDC_TERMKANJI, KoreanList, KanjiCode2List(ts->Language,ts->KanjiCode));
@@ -612,7 +573,7 @@ static INT_PTR CALLBACK WinDlg(HWND Dialog, UINT Message, WPARAM wParam, LPARAM 
 	int IAttr, IOffset;
 	WORD i, pos, ScrollCode, NewPos;
 	HDC DC;
-	wchar_t uimsg[MAX_UIMSG];
+	TCHAR uimsg[MAX_UIMSG];
 
 	switch (Message) {
 		case WM_INITDIALOG:
@@ -630,8 +591,8 @@ static INT_PTR CALLBACK WinDlg(HWND Dialog, UINT Message, WPARAM wParam, LPARAM 
 				DisableDlgItem(Dialog,IDC_WINHIDEMENU,IDC_WINHIDEMENU);
 
 			if (ts->VTFlag>0) {
-				get_lang_msgW("DLG_WIN_PCBOLD16", uimsg, _countof(uimsg), L"&16 Colors (PC style)", UILanguageFile);
-				_SetDlgItemTextW(Dialog, IDC_WINCOLOREMU,uimsg);
+				get_lang_msg("DLG_WIN_PCBOLD16", uimsg, sizeof(uimsg), "&16 Colors (PC style)", UILanguageFile);
+				SetDlgItemText(Dialog, IDC_WINCOLOREMU,uimsg);
 				SetRB(Dialog, (ts->ColorFlag&CF_PCBOLD16)!=0, IDC_WINCOLOREMU, IDC_WINCOLOREMU);
 				SetRB(Dialog, (ts->ColorFlag&CF_AIXTERM16)!=0, IDC_WINAIXTERM16, IDC_WINAIXTERM16);
 				SetRB(Dialog, (ts->ColorFlag&CF_XTERM256)!=0,IDC_WINXTERM256,IDC_WINXTERM256);
@@ -707,16 +668,16 @@ static INT_PTR CALLBACK WinDlg(HWND Dialog, UINT Message, WPARAM wParam, LPARAM 
 					}
 				}
 				ShowDlgItem(Dialog,IDC_WINATTRTEXT,IDC_WINATTR);
-				get_lang_msgW("DLG_WIN_NORMAL", uimsg, _countof(uimsg), L"Normal", UILanguageFile);
-				_SendDlgItemMessageW(Dialog, IDC_WINATTR, CB_ADDSTRING, 0, (LPARAM)uimsg);
-				get_lang_msgW("DLG_WIN_BOLD", uimsg, _countof(uimsg), L"Bold", UILanguageFile);
-				_SendDlgItemMessageW(Dialog, IDC_WINATTR, CB_ADDSTRING, 0, (LPARAM)uimsg);
-				get_lang_msgW("DLG_WIN_BLINK", uimsg, _countof(uimsg), L"Blink", UILanguageFile);
-				_SendDlgItemMessageW(Dialog, IDC_WINATTR, CB_ADDSTRING, 0, (LPARAM)uimsg);
-				get_lang_msgW("DLG_WIN_REVERSEATTR", uimsg, _countof(uimsg), L"Reverse", UILanguageFile);
-				_SendDlgItemMessageW(Dialog, IDC_WINATTR, CB_ADDSTRING, 0, (LPARAM)uimsg);
+				get_lang_msg("DLG_WIN_NORMAL", uimsg, sizeof(uimsg), "Normal", UILanguageFile);
+				SendDlgItemMessage(Dialog, IDC_WINATTR, CB_ADDSTRING, 0, (LPARAM)uimsg);
+				get_lang_msg("DLG_WIN_BOLD", uimsg, sizeof(uimsg), "Bold", UILanguageFile);
+				SendDlgItemMessage(Dialog, IDC_WINATTR, CB_ADDSTRING, 0, (LPARAM)uimsg);
+				get_lang_msg("DLG_WIN_BLINK", uimsg, sizeof(uimsg), "Blink", UILanguageFile);
+				SendDlgItemMessage(Dialog, IDC_WINATTR, CB_ADDSTRING, 0, (LPARAM)uimsg);
+				get_lang_msg("DLG_WIN_REVERSEATTR", uimsg, sizeof(uimsg), "Reverse", UILanguageFile);
+				SendDlgItemMessage(Dialog, IDC_WINATTR, CB_ADDSTRING, 0, (LPARAM)uimsg);
 				/* begin - ishizaki */
-				SendDlgItemMessageA(Dialog, IDC_WINATTR, CB_ADDSTRING, 0, (LPARAM)"URL");
+				SendDlgItemMessage(Dialog, IDC_WINATTR, CB_ADDSTRING, 0, (LPARAM)"URL");
 				/* end - ishizaki */
 				SendDlgItemMessage(Dialog, IDC_WINATTR, CB_SETCURSEL, 0,0);
 #ifdef USE_NORMAL_BGCOLOR
@@ -1183,10 +1144,10 @@ static INT_PTR CALLBACK KeybDlg(HWND Dialog, UINT Message, WPARAM wParam, LPARAM
 	return FALSE;
 }
 
-static const char *DataList[] = {"7 bit","8 bit",NULL};
-static const char *ParityList[] = {"none", "odd", "even", "mark", "space", NULL};
-static const char *StopList[] = {"1 bit", "2 bit", NULL};
-static const char *FlowList[] = {"Xon/Xoff", "RTS/CTS", "DSR/DTR", "none", NULL};
+static PCHAR DataList[] = {"7 bit","8 bit",NULL};
+static PCHAR ParityList[] = {"none", "odd", "even", "mark", "space", NULL};
+static PCHAR StopList[] = {"1 bit", "2 bit", NULL};
+static PCHAR FlowList[] = {"Xon/Xoff", "RTS/CTS", "DSR/DTR", "none", NULL};
 static int g_deltaSumSerialDlg = 0;        // マウスホイールのDelta累積用
 static WNDPROC g_defSerialDlgEditWndProc;  // Edit Controlのサブクラス化用
 static WNDPROC g_defSerialDlgSpeedComboboxWndProc;  // Combo-box Controlのサブクラス化用
@@ -1211,25 +1172,25 @@ static void serial_dlg_change_OK_button(HWND dlg, int portno)
 		{ IDOK, "DLG_SERIAL_OK_RESET" },
 	};
 	int ret = 0;
-	const char *ok_text;
+	TCHAR uimsg[MAX_UIMSG];
 
 	if ( cv.Ready && (cv.PortType != IdSerial) ) {
 		ret = SetDlgTexts(dlg, TextInfoNewConnection, _countof(TextInfoNewConnection), UILanguageFile);
-		ok_text = "Connect with &New window";
+		strncpy_s(uimsg, sizeof(uimsg), "Connect with &New window", _TRUNCATE);
 
 	} else {
 		if (cv.Open) {
 			if (portno != cv.ComPort) {
 				ret = SetDlgTexts(dlg, TextInfoCloseNewOpen, _countof(TextInfoCloseNewOpen), UILanguageFile);
-				ok_text = "Close and &New open";
+				strncpy_s(uimsg, sizeof(uimsg), "Close and &New open", _TRUNCATE);
 			} else {
 				ret = SetDlgTexts(dlg, TextInfoResetSetting, _countof(TextInfoResetSetting), UILanguageFile);
-				ok_text = "&New setting";
+				strncpy_s(uimsg, sizeof(uimsg), "&New setting", _TRUNCATE);
 			}
 
 		} else {
 			ret = SetDlgTexts(dlg, TextInfoNewOpen, _countof(TextInfoNewOpen), UILanguageFile);
-			ok_text = "&New open";
+			strncpy_s(uimsg, sizeof(uimsg), "&New open", _TRUNCATE);
 		}
 	}
 
@@ -1237,7 +1198,7 @@ static void serial_dlg_change_OK_button(HWND dlg, int portno)
 	 * デフォルトテキストをセットする。
 	 */
 	if (ret <= 0) {
-		SetDlgItemTextA(dlg, IDOK, ok_text);
+		SetDlgItemText(dlg, IDOK, uimsg);
 	}
 }
 
@@ -1248,7 +1209,8 @@ static void serial_dlg_change_OK_button(HWND dlg, int portno)
 static void serial_dlg_set_comport_info(HWND dlg, int portno, char *desc)
 {
 	int i;
-	const ComPortInfo_t *p;
+	ComPortInfo_t *p;
+	char *strA;
 
 	for (i = 0 ; i < ComPortInfoCount ; i++) {
 		p = &ComPortInfoPtr[i];
@@ -1258,13 +1220,15 @@ static void serial_dlg_set_comport_info(HWND dlg, int portno, char *desc)
 	if (i >= ComPortInfoCount)  // 該当するCOMポートが見つからなかった
 		return;
 
-	SetDlgItemTextW(dlg, IDC_SERIALTEXT, p->property);
+	strA = ToCharW(p->property);
+	SetDlgItemTextA(dlg, IDC_SERIALTEXT, strA);
+	free(strA);
 }
 
 /*
  * シリアルポート設定ダイアログのテキストボックスのプロシージャ
  */
-static LRESULT CALLBACK SerialDlgEditWindowProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp)
+static LRESULT CALLBACK SerialDlgEditWindowProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) 
 {
 	WORD keys;
 	short delta;
@@ -1306,20 +1270,21 @@ static LRESULT CALLBACK SerialDlgEditWindowProc(HWND hWnd, UINT msg, WPARAM wp, 
 /*
  * シリアルポート設定ダイアログのSPEED(BAUD)のプロシージャ
  */
-static LRESULT CALLBACK SerialDlgSpeedComboboxWindowProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp)
+static LRESULT CALLBACK SerialDlgSpeedComboboxWindowProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) 
 {
 	const int tooltip_timeout = 1000;  // msec
 	POINT pt;
 	int w, h;
 	int cx, cy;
 	RECT wr;
-	wchar_t uimsg[MAX_UIMSG];
+	TCHAR str[128], uimsg[MAX_UIMSG];
 	PTTSet ts;
 
 	switch (msg) {
 		case WM_MOUSEMOVE:
 			ts = (PTTSet)GetWindowLongPtr(GetParent(hWnd) ,DWLP_USER);
-			get_lang_msgW("DLG_SERIAL_SPEED_TOOLTIP", uimsg, _countof(uimsg), L"You can directly specify a number", ts->UILanguageFile);
+			get_lang_msg("DLG_SERIAL_SPEED_TOOLTIP", uimsg, sizeof(uimsg), "You can directly specify a number", ts->UILanguageFile);
+			_stprintf_s(str, _countof(str), _T(uimsg));
 
 			// Combo-boxの左上座標を求める
 			GetWindowRect(hWnd, &wr);
@@ -1327,7 +1292,7 @@ static LRESULT CALLBACK SerialDlgSpeedComboboxWindowProc(HWND hWnd, UINT msg, WP
 			pt.y = wr.top;
 
 			// 文字列の縦横サイズを取得する
-			TipWinGetTextWidthHeightW(hWnd, uimsg, &w, &h);
+			TipWinGetTextWidthHeight(hWnd, str, &w, &h);
 
 			cx = pt.x;
 			cy = pt.y - (h + TIP_WIN_FRAME_WIDTH * 6);
@@ -1340,7 +1305,7 @@ static LRESULT CALLBACK SerialDlgSpeedComboboxWindowProc(HWND hWnd, UINT msg, WP
 			if (!TipWinIsVisible(g_SerialDlgSpeedTip))
 				TipWinSetVisible(g_SerialDlgSpeedTip, TRUE);
 
-			TipWinSetTextW(g_SerialDlgSpeedTip, uimsg);
+			TipWinSetText(g_SerialDlgSpeedTip, str);
 			TipWinSetPos(g_SerialDlgSpeedTip, cx, cy);
 			TipWinSetHideTimer(g_SerialDlgSpeedTip, tooltip_timeout);
 
@@ -1442,7 +1407,7 @@ static INT_PTR CALLBACK SerialDlg(HWND Dialog, UINT Message, WPARAM wParam, LPAR
 			SetDropDownList(Dialog, IDC_SERIALBAUD, BaudList, 0);
 			i = sel = 0;
 			while (BaudList[i] != NULL) {
-				if ((WORD)atoi(BaudList[i]) == ts->Baud) {
+				if (atoi(BaudList[i]) == ts->Baud) {
 					SendDlgItemMessage(Dialog, IDC_SERIALBAUD, CB_SETCURSEL, i, 0);
 					sel = 1;
 					break;
@@ -1457,7 +1422,7 @@ static INT_PTR CALLBACK SerialDlg(HWND Dialog, UINT Message, WPARAM wParam, LPAR
 			SetDropDownList(Dialog, IDC_SERIALPARITY, ParityList, ts->Parity);
 			SetDropDownList(Dialog, IDC_SERIALSTOP, StopList, ts->StopBit);
 
-			/*
+			/* 
 			 * value               display
 			 * 1 IdFlowX           1 Xon/Xoff
 			 * 2 IdFlowHard        2 RTS/CTS
@@ -1484,14 +1449,14 @@ static INT_PTR CALLBACK SerialDlg(HWND Dialog, UINT Message, WPARAM wParam, LPAR
 			// Edit controlをサブクラス化する。
 			g_deltaSumSerialDlg = 0;
 			g_defSerialDlgEditWndProc = (WNDPROC)SetWindowLongPtr(
-				GetDlgItem(Dialog, IDC_SERIALTEXT),
-				GWLP_WNDPROC,
+				GetDlgItem(Dialog, IDC_SERIALTEXT), 
+				GWLP_WNDPROC, 
 				(LONG_PTR)SerialDlgEditWindowProc);
 
 			// Combo-box controlをサブクラス化する。
 			g_defSerialDlgSpeedComboboxWndProc = (WNDPROC)SetWindowLongPtr(
-				GetDlgItem(Dialog, IDC_SERIALBAUD),
-				GWLP_WNDPROC,
+				GetDlgItem(Dialog, IDC_SERIALBAUD), 
+				GWLP_WNDPROC, 
 				(LONG_PTR)SerialDlgSpeedComboboxWindowProc);
 
 			// 現在の接続状態と新しいポート番号の組み合わせで、接続処理が変わるため、
@@ -1599,7 +1564,7 @@ static INT_PTR CALLBACK SerialDlg(HWND Dialog, UINT Message, WPARAM wParam, LPAR
 						break;
 
 					}
-
+				
 					return TRUE;
 			}
 	}
@@ -1639,7 +1604,7 @@ static INT_PTR CALLBACK TCPIPDlg(HWND Dialog, UINT Message, WPARAM wParam, LPARA
 			SetWindowLongPtr(Dialog, DWLP_USER, lParam);
 
 			SetDlgTexts(Dialog, TextInfos, _countof(TextInfos), UILanguageFile);
-
+				
 			SendDlgItemMessage(Dialog, IDC_TCPIPHOST, EM_LIMITTEXT,
 			                   HostNameMaxLength-1, 0);
 
@@ -1872,7 +1837,7 @@ static INT_PTR CALLBACK HostDlg(HWND Dialog, UINT Message, WPARAM wParam, LPARAM
 			SetWindowLongPtr(Dialog, DWLP_USER, lParam);
 
 			SetDlgTexts(Dialog, TextInfos, _countof(TextInfos), UILanguageFile);
-
+		
 			// ファイルおよび名前付きパイプの場合、TCP/IP扱いとする。
 			if ( GetHNRec->PortType==IdFile ||
 				 GetHNRec->PortType==IdNamedPipe
@@ -1897,7 +1862,7 @@ static INT_PTR CALLBACK HostDlg(HWND Dialog, UINT Message, WPARAM wParam, LPARAM
 
 			SendDlgItemMessage(Dialog, IDC_HOSTNAME, CB_SETCURSEL,0,0);
 
-			SetEditboxEmacsKeybind(Dialog, IDC_HOSTNAME);
+			SetEditboxSubclass(Dialog, IDC_HOSTNAME, TRUE);
 
 			SetRB(Dialog,GetHNRec->Telnet,IDC_HOSTTELNET,IDC_HOSTTELNET);
 			SendDlgItemMessage(Dialog, IDC_HOSTTCPPORT, EM_LIMITTEXT,5,0);
@@ -2101,7 +2066,7 @@ static INT_PTR CALLBACK DirDlg(HWND Dialog, UINT Message, WPARAM wParam, LPARAM 
 		case WM_INITDIALOG:
 
 			SetDlgTexts(Dialog, TextInfos, _countof(TextInfos), UILanguageFile);
-
+				
 			CurDir = (PCHAR)(lParam);
 			SetWindowLongPtr(Dialog, DWLP_USER, lParam);
 
@@ -2442,7 +2407,7 @@ static void GetCompilerInfo(char *buf, size_t buf_size)
 	char tmpbuf[128];
 	int msc_ver, vs_ver, msc_low_ver;
 
-	strcpy_s(buf, buf_size, "Microsoft Visual C++");
+	strcpy(buf, "Microsoft Visual C++");
 #ifdef _MSC_FULL_VER
 	// _MSC_VER  VS Ver.  VS internal Ver.  MSVC++ Ver.
 	// 1400      2005     8.0               8.0
@@ -2838,25 +2803,21 @@ static INT_PTR CALLBACK AboutDlg(HWND Dialog, UINT Message, WPARAM wParam, LPARA
 	return FALSE;
 }
 
-static const char *LangList[] = {"English","Japanese","Russian","Korean","UTF-8",NULL};
-static const char **LangUIList = NULL;
+static PCHAR LangList[] = {"English","Japanese","Russian","Korean","UTF-8",NULL};
+static char **LangUIList = NULL;
+#define LANG_PATH "lang"
 #define LANG_EXT ".lng"
-
-static const char *get_lang_folder()
-{
-	return (IsWindowsNTKernel()) ? "lang_utf16le" : "lang";
-}
 
 // メモリフリー
 static void free_lang_ui_list()
 {
 	if (LangUIList) {
-		const char **p = LangUIList;
+		char **p = LangUIList;
 		while (*p) {
-			free((void *)*p);
+			free(*p);
 			p++;
 		}
-		free((void *)LangUIList);
+		free(LangUIList);
 		LangUIList = NULL;
 	}
 }
@@ -2871,7 +2832,7 @@ static int make_sel_lang_ui(char *HomeDir)
 
 	free_lang_ui_list();
 
-	_snprintf_s(fullpath, sizeof(fullpath), _TRUNCATE, "%s\\%s\\*%s", HomeDir, get_lang_folder(), LANG_EXT);
+	_snprintf_s(fullpath, sizeof(fullpath), _TRUNCATE, "%s\\%s\\*%s", HomeDir, LANG_PATH, LANG_EXT);
 
 	file_num = 0;
 	hFind = FindFirstFile(fullpath,&fd);
@@ -2902,10 +2863,10 @@ static int make_sel_lang_ui(char *HomeDir)
 	return i;
 }
 
-static int get_sel_lang_ui(const char **list, char *selstr)
+static int get_sel_lang_ui(char **list, char *selstr)
 {
-	size_t n = 0;
-	const char **p = list;
+	int n = 0;
+	char **p = list;
 
 	if (selstr == NULL || selstr[0] == '\0') {
 		n = 0;  // English
@@ -2919,7 +2880,7 @@ static int get_sel_lang_ui(const char **list, char *selstr)
 		}
 	}
 
-	return (int)(n + 1);  // 1origin
+	return (n + 1);  // 1origin
 }
 
 static INT_PTR CALLBACK GenDlg(HWND Dialog, UINT Message, WPARAM wParam, LPARAM lParam)
@@ -2943,7 +2904,7 @@ static INT_PTR CALLBACK GenDlg(HWND Dialog, UINT Message, WPARAM wParam, LPARAM 
 			SetWindowLongPtr(Dialog, DWLP_USER, lParam);
 
 			SetDlgTexts(Dialog, TextInfos, _countof(TextInfos), UILanguageFile);
-
+		
 			SendDlgItemMessageA(Dialog, IDC_GENPORT, CB_ADDSTRING,
 			                   0, (LPARAM)"TCP/IP");
 			for (w=1;w<=ts->MaxComPort;w++) {
@@ -3016,7 +2977,7 @@ static INT_PTR CALLBACK GenDlg(HWND Dialog, UINT Message, WPARAM wParam, LPARAM 
 						w = (WORD)GetCurSel(Dialog, IDC_GENLANG_UI);
 						if (1 <= w && w <= uilist_count && w != langui_sel) {
 							_snprintf_s(ts->UILanguageFile_ini, sizeof(ts->UILanguageFile_ini), _TRUNCATE,
-								"%s\\%s", get_lang_folder(), LangUIList[w - 1]);
+								"%s\\%s", LANG_PATH, LangUIList[w - 1]);
 
 							GetUILanguageFileFull(ts->HomeDir, ts->UILanguageFile_ini,
 												  ts->UILanguageFile, sizeof(ts->UILanguageFile));
@@ -3071,7 +3032,7 @@ static INT_PTR CALLBACK WinListDlg(HWND Dialog, UINT Message, WPARAM wParam, LPA
 			SetWindowLongPtr(Dialog, DWLP_USER, lParam);
 
 			SetDlgTexts(Dialog, TextInfos, _countof(TextInfos), UILanguageFile);
-
+		
 			SetWinList(GetParent(Dialog),Dialog,IDC_WINLISTLIST);
 
 			CenterWindow(Dialog, GetParent(Dialog));

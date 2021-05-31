@@ -41,10 +41,15 @@
 #endif
 #include "codemap.h"
 #include "codeconv.h"
-#include "ttcstd.h"
 
 // cp932変換時、Windows API より Tera Term の変換テーブルを優先する
 //#define PRIORITY_CP932_TABLE
+
+#if defined(_MSC_VER) && (_MSC_VER < 1600)
+typedef unsigned char	uint8_t;
+typedef unsigned short  uint16_t;
+typedef unsigned int	uint32_t;
+#endif
 
 /*
  *	見つからない場合は 0 を返す
@@ -75,12 +80,12 @@ static unsigned short _ConvertUnicode(unsigned short code, const codemap_t *tabl
 	return (result);
 }
 
-int IsHighSurrogate(wchar_t u16)
+static int IsHighSurrogate(wchar_t u16)
 {
 	return 0xd800 <= u16 && u16 < 0xdc00;
 }
 
-int IsLowSurrogate(wchar_t u16)
+static int IsLowSurrogate(wchar_t u16)
 {
 	return 0xdc00 <= u16 && u16 < 0xe000;
 }
@@ -589,7 +594,7 @@ size_t UTF32ToCP932(uint32_t u32, char *mb_ptr, size_t mb_len)
  * @param[in]		u32			変換元UTF-32
  * @param[in]		code_page	変換先codepage
  * @param[in,out]	mb_ptr		変換先文字列出力先(NULLのとき出力しない)
- * @param[in]		mb_len		変換先出力先文字数(文字数,mb_len bytes)
+ * @param[in]		mb_len		CP932出力先文字数(文字数,sizeof(wchar_t)*wstr_len bytes)
  * @retval			出力したmultibyte文字数(byte数)
  *					0=エラー(変換できなかった)
  */
@@ -727,71 +732,6 @@ void WideCharToMBCP(const wchar_t *wstr_ptr, size_t *wstr_len, char *mb_ptr, siz
 				 utf32_to_mb);
 }
 
-/**
- *	wchar_t文字列をUTF32文字列へ変換
- *
- *	@param[in]		*wstr_ptr	wchar_t文字列
- *	@param[in,out]	*wstr_len	wchar_t文字列長
- *								NULLまたは*wstr_len==0のとき自動(L'\0'でターミネートすること)
- *								NULL以外のとき入力した文字数を返す
- *	@param[in]		*u32_ptr	変換した文字列を収納するポインタ
- *								(NULLのとき変換せずに文字数をカウントする)
- *	@param[in,out]	*u32_len	変換した文字列を収納できるサイズ,byte数,
- *								変換したマルチバイト文字列の長さを返す
- *								L'\0'を変換したら'\0'も含む
- *								u32_ptrがNULLのときでも長さは返す
- */
-void WideCharToUTF32(const wchar_t *wstr_ptr, size_t *wstr_len_,
-					 char32_t *u32_ptr, size_t *u32_len_)
-{
-	size_t wstr_len;
-	size_t u32_len;
-	size_t u32_out = 0;
-	size_t wstr_in = 0;
-
-	assert(wstr_ptr != NULL);
-	if (u32_ptr == NULL) {
-		// 変換文字列を書き出さない
-		u32_len = 4;		// 1文字4byteには収まるはず
-	} else {
-		u32_len = *u32_len_;
-	}
-	if (wstr_len_ == NULL || *wstr_len_ == 0) {
-		wstr_len = (int)wcslen(wstr_ptr) + 1;
-	} else {
-		wstr_len = *wstr_len_;
-	}
-
-	while(u32_len > 0 && wstr_len > 0) {
-		char32_t u32;
-		unsigned int u32_;
-		size_t wb_in = UTF16ToUTF32(wstr_ptr, wstr_len, &u32_);
-		u32 = u32_;
-		if (wb_in == 0) {
-			// 変換できない場合、1文字消費して'?'出力
-			wstr_len -= 1;
-			wstr_in += 1;
-			wstr_ptr++;
-			u32 = '?';
-		}
-		else {
-			wstr_len -= wb_in;
-			wstr_in += wb_in;
-			wstr_ptr += wb_in;
-		}
-		if (u32_ptr != NULL) {
-			*u32_ptr++ = u32;
-			u32_len--;
-		}
-		u32_out++;
-	}
-
-	if (wstr_len_ != NULL) {
-		*wstr_len_ = wstr_in;
-	}
-	*u32_len_ = u32_out;
-}
-
 // MultiByteToWideCharのUTF8特化版
 int UTF8ToWideChar(const char *u8_ptr, int u8_len_, wchar_t *wstr_ptr, int wstr_len_)
 {
@@ -925,47 +865,6 @@ char *_WideCharToMultiByte(const wchar_t *wstr_ptr, size_t wstr_len, int code_pa
 }
 
 /**
- *	wchar_t文字列をUTF-32文字列へ変換
- *	変換できない文字は '?' で出力する
- *
- *	@param[in]	*wstr_ptr	wchar_t文字列
- *	@param[in]	wstr_len	wchar_t文字列長(0のとき自動、自動のときはL'\0'でターミネートすること)
- *	@param[out]	*u32_len_	変換した文字列長,byte数,'\0'を変換したら'\0'も含む
- *							(NULLのとき文字列長を返さない)
- *	@retval		UTF-32文字列へのポインタ(NULLの時変換エラー)
- *				使用後 free() すること
- */
-char32_t *_WideCharToUTF32(const wchar_t *wstr_ptr, size_t wstr_len, size_t *u32_len_)
-{
-	if (u32_len_ != NULL) {
-		*u32_len_ = 0;
-	}
-	if (wstr_len == 0) {
-		wstr_len = wcslen(wstr_ptr) + 1;
-	}
-    size_t u32_len;
-	size_t wl = wstr_len;
-	WideCharToUTF32(wstr_ptr, &wl, NULL, &u32_len);
-	if (u32_len == 0) {
-		return NULL;
-	}
-	char32_t *u32_ptr = (char32_t *)malloc(u32_len * 4);
-	if (u32_ptr == NULL) {
-		return NULL;
-	}
-	WideCharToUTF32(wstr_ptr, &wl, u32_ptr, &u32_len);
-	if (u32_len == 0) {
-		free(u32_ptr);
-		return NULL;
-	}
-	if (u32_len_ != NULL) {
-		// 変換した文字列数(byte数)を返す
-		*u32_len_ = u32_len;
-	}
-    return u32_ptr;
-}
-
-/**
  *	マルチバイト文字列をwchar_t文字列へ変換
  *	@param[in]	*str_ptr	mb(char)文字列
  *	@param[in]	str_len		mb(char)文字列長(0のとき自動、自動のときは'\0'でターミネートすること)
@@ -1088,12 +987,6 @@ char *ToU8A(const char *strA)
 	char *strU8 = _WideCharToMultiByte(strW, 0, CP_UTF8, NULL);
 	free(strW);
 	return strU8;
-}
-
-char32_t *ToU32W(const wchar_t *strW)
-{
-	char32_t *strU32 = _WideCharToUTF32(strW, 0, NULL);
-	return strU32;
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -1230,130 +1123,143 @@ void u8::move(u8 &obj)
 
 //////////////////////////////////////////////////////////////////////////////
 
-wc::wc()
+tc::tc()
 {
 	tstr_ = NULL;
 }
 
-wc::wc(const char *strA)
+tc::tc(const char *strA)
 {
 	tstr_ = NULL;
 	assign(strA, CP_ACP);
 }
 
-wc::wc(const char *strA, int code_page)
+tc::tc(const char *strA, int code_page)
 {
 	tstr_ = NULL;
 	assign(strA, code_page);
 }
 
-wc::wc(const wchar_t *strW)
+tc::tc(const wchar_t *strW)
 {
 	tstr_ = NULL;
 	assign(strW);
 }
 
-wc::wc(const wc &obj)
+tc::tc(const tc &obj)
 {
 	tstr_ = NULL;
 	copy(obj);
 }
 
 #if defined(MOVE_CONSTRUCTOR_ENABLE)
-wc::wc(wc &&obj) noexcept
+tc::tc(tc &&obj) noexcept
 {
 	tstr_ = NULL;
 	move(obj);
 }
 #endif
 
-
-wc::~wc()
+tc::~tc()
 {
 	if (tstr_ != NULL) {
 		free(tstr_);
 	}
 }
 
-wc& wc::operator=(const char *strA)
+tc& tc::operator=(const char *strA)
 {
 	assign(strA, CP_ACP);
 	return *this;
 }
 
-wc& wc::operator=(const wchar_t *strW)
+tc& tc::operator=(const wchar_t *strW)
 {
 	assign(strW);
 	return *this;
 }
 
-wc &wc::operator=(const wc &obj)
+tc &tc::operator=(const tc &obj)
 {
 	copy(obj);
 	return *this;
 }
 
 #if defined(MOVE_CONSTRUCTOR_ENABLE)
-wc& wc::operator=(wc &&obj) noexcept
+tc& tc::operator=(tc &&obj) noexcept
 {
 	move(obj);
 	return *this;
 }
 #endif
 
-wc wc::fromUtf8(const char *strU8)
+tc tc::fromUtf8(const char *strU8)
 {
 	wchar_t *strW = _MultiByteToWideChar(strU8, 0, CP_UTF8, NULL);
-	wc _wc = strW;
+	tc _tc = strW;
 	free(strW);
-	return _wc;
+	return _tc;
 }
 
 // voidなしが一般的と思われるが、
 // VS2005でリンクエラーが出てしまうため void 追加
-wc::operator const wchar_t *(void) const
+tc::operator const TCHAR *(void) const
 {
 	return cstr();
 }
 
-const wchar_t *wc::cstr() const
+const TCHAR *tc::cstr() const
 {
 	if (tstr_ == NULL) {
-		return L"";
+		return _T("");
 	}
 	return tstr_;
 }
 
-void wc::assign(const char *strA, int code_page)
+void tc::assign(const char *strA, int code_page)
 {
 	if (tstr_ != NULL) {
 		free(tstr_);
 	}
+#if !defined(UNICODE)
+	(void)code_page;
+	tstr_ = _strdup(strA);
+#else
 	wchar_t *strW = _MultiByteToWideChar(strA, 0, code_page, NULL);
 	if (strW != NULL) {
 		tstr_ = strW;
 	} else {
 		tstr_ = NULL;
 	}
+#endif
 }
 
-void wc::assign(const wchar_t *strW)
+void tc::assign(const wchar_t *strW)
 {
 	if (tstr_ != NULL) {
 		free(tstr_);
 	}
+#if defined(UNICODE)
 	tstr_ = _wcsdup(strW);
+#else
+	char *strA = _WideCharToMultiByte(strW, 0, CP_ACP, NULL);
+	if (strA != NULL) {
+		tstr_ = strA;
+	} else {
+		tstr_ = NULL;
+	}
+#endif
 }
 
-void wc::copy(const wc &obj)
+void tc::copy(const tc &obj)
 {
 	if (tstr_ != NULL) {
 		free(tstr_);
 	}
-	tstr_ = _wcsdup(obj.tstr_);
+	tstr_ = _tcsdup(obj.tstr_);
 }
 
-void wc::move(wc &obj)
+void tc::move(tc &obj)
 {
 	if (this != &obj) {
 		if (tstr_ != NULL) {
