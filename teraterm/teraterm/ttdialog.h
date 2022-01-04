@@ -45,7 +45,7 @@ typedef BOOL (PASCAL *PSetupTCPIP)
 typedef BOOL (PASCAL *PGetHostName)
   (HWND WndParent, PGetHNRec GetHNRec);
 typedef BOOL (PASCAL *PChangeDirectory)
-  (HWND WndParent, PTTSet ts);
+  (HWND WndParent, PCHAR CurDir);
 typedef BOOL (PASCAL *PAboutDialog)
   (HWND WndParent);
 typedef BOOL (PASCAL *PChooseFontDlg)

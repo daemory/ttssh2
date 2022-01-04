@@ -295,9 +295,9 @@ CVTWindow::CVTWindow(HINSTANCE hInstance)
 
 	// DPI Aware (çÇDPIëŒâû)
 	if (pIsValidDpiAwarenessContext != NULL && pSetThreadDpiAwarenessContext != NULL) {
-		wchar_t Temp[4];
-		GetPrivateProfileStringW(L"Tera Term", L"DPIAware", L"on", Temp, _countof(Temp), ts.SetupFNameW);
-		if (_wcsicmp(Temp, L"on") == 0) {
+		char Temp[4];
+		GetPrivateProfileString("Tera Term", "DPIAware", NULL, Temp, sizeof(Temp), ts.SetupFName);
+		if (_stricmp(Temp, "on") == 0) {
 			if (pIsValidDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2) == TRUE) {
 				pSetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
 			}
@@ -4062,7 +4062,7 @@ void CVTWindow::OnFileChangeDir()
 	}
 	SetDialogFont(ts.DialogFontName, ts.DialogFontPoint, ts.DialogFontCharSet,
 				  ts.UILanguageFile, "Tera Term", "DLG_SYSTEM_FONT");
-	(*ChangeDirectory)(HVTWin, &ts);
+	(*ChangeDirectory)(HVTWin,ts.FileDir);
 }
 
 void CVTWindow::OnFilePrint()
@@ -4431,7 +4431,7 @@ void CVTWindow::OnSetupSerialPort()
 				strncat_s(Command, sizeof(Command), Str, _TRUNCATE);
 			}
 
-			TTWinExecA(Command);
+			WinExec(Command,SW_SHOW);
 			return;
 		}
 

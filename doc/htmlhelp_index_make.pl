@@ -1,44 +1,23 @@
-ï»¿#! /usr/bin/perl
+#! /usr/bin/perl
 
 #
-# HTMLãƒ˜ãƒ«ãƒ—ã®ã‚¤ãƒ³ãƒ‡ãƒƒã‚¯ã‚¹ãƒ•ã‚¡ã‚¤ãƒ«ã‚’ç”Ÿæˆã™ã‚‹
+# HTMLƒwƒ‹ƒv‚ÌƒCƒ“ƒfƒbƒNƒXƒtƒ@ƒCƒ‹‚ğ¶¬‚·‚é
 #
 # Usage(ActivePerl):
 #  perl htmlhelp_index_make.pl ja html > ja\Index.hhk
 #
 
-require 5.24.0;
-use strict;
-use warnings;
-use utf8;
 use Cwd;
-use Getopt::Long
-
-binmode STDOUT, ":utf8";
-
-my $out = "-";
-my $result = GetOptions(
-	'out|o=s' => \$out);
-
-my $OUT;
-if ($out eq "-") {
-	binmode STDIN, ":crlf:encoding(shiftjis)";
-	$OUT = *STDOUT;
-} else {
-	open ($OUT, '>:crlf:encoding(shiftjis)', $out);
-}
-
-my @dirstack = ();
+@dirstack = (); 
 
 do_main($ARGV[0], $ARGV[1]);
 
-close $OUT;
 exit(0);
 
 sub do_main {
 	my($path, $body) = @_;
 
-	print $OUT <<'EOD';
+	print << 'EOD';
 <!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
 <HTML><HEAD>
 <meta name="GENERATOR" content="TeraTerm Project">
@@ -47,12 +26,12 @@ sub do_main {
 <UL>
 EOD
 
-	push @dirstack, getcwd;
-	chdir $path;
+	push @dirstack, getcwd; 
+	chdir $path; 
 	get_file_paths($body);
-	chdir pop @dirstack;
+	chdir pop @dirstack; 
 
-	print $OUT <<'EOD';
+	print << 'EOD';
 </UL>
 </BODY></HTML>
 EOD
@@ -65,24 +44,25 @@ sub get_file_paths {
 	my @paths=();
 	my @temp = ();
 
-	#-- ã‚«ãƒ¬ãƒ³ãƒˆã®ä¸€è¦§ã‚’å–å¾— --#
+	#-- ƒJƒŒƒ“ƒg‚Ìˆê——‚ğæ“¾ --#
 	opendir(DIR, $top_dir);
 	@temp = readdir(DIR);
 	closedir(DIR);
 	foreach my $path (sort @temp) {
-		next if( $path =~ /^\.{1,2}$/ );                # '.' ã¨ '..' ã¯ã‚¹ã‚­ãƒƒãƒ—
-		next if( $path =~ /^\.svn$/ );                # '.svn' ã¯ã‚¹ã‚­ãƒƒãƒ—
-
+		next if( $path =~ /^\.{1,2}$/ );                # '.' ‚Æ '..' ‚ÍƒXƒLƒbƒv
+		next if( $path =~ /^\.svn$/ );                # '.svn' ‚ÍƒXƒLƒbƒv
+		
 		my $full_path = "$top_dir" . '/' . "$path";
-
-#		print "$full_path\r\n";                     # è¡¨ç¤ºã ã‘ãªã‚‰å…¨ã¦ã‚’è¡¨ç¤ºã—ã¦ãã‚Œã‚‹-------
-		push(@paths, $full_path);                       # ãƒ‡ãƒ¼ã‚¿ã¨ã—ã¦å–ã‚Šè¾¼ã‚“ã§ã‚‚å‰ã®å–ã‚Šè¾¼ã¿ãŒåˆæœŸåŒ–ã•ã‚Œã‚‹
-		if( -d "$top_dir/$path" ){                      #-- ãƒ‡ã‚£ãƒ¬ã‚¯ãƒˆãƒªã®å ´åˆã¯è‡ªåˆ†è‡ªèº«ã‚’å‘¼ã³å‡ºã™
+		next if (-B $full_path);     # ƒoƒCƒiƒŠƒtƒ@ƒCƒ‹‚ÍƒXƒLƒbƒv
+		
+#		print "$full_path\r\n";                     # •\¦‚¾‚¯‚È‚ç‘S‚Ä‚ğ•\¦‚µ‚Ä‚­‚ê‚é-------
+		push(@paths, $full_path);                       # ƒf[ƒ^‚Æ‚µ‚Äæ‚è‚ñ‚Å‚à‘O‚Ìæ‚è‚İ‚ª‰Šú‰»‚³‚ê‚é
+		if( -d "$top_dir/$path" ){                      #-- ƒfƒBƒŒƒNƒgƒŠ‚Ìê‡‚Í©•ª©g‚ğŒÄ‚Ño‚·
 			&get_file_paths("$full_path");
-
+			
 		} else {
 			check_html_file($full_path);
-
+		
 		}
 	}
 	return \@paths;
@@ -92,12 +72,12 @@ sub check_html_file {
 	my($filename) = shift;
 	local(*FP);
 	my($line, $no, $val);
-
+	
 	if ($filename !~ /.html$/) {
 		return;
 	}
-
-	open(FP, "<:crlf:encoding(sjis)", "$filename") || return;
+	
+	open(FP, "<$filename") || return;
 	$no = 1;
 	while ($line = <FP>) {
 #		$line = chomp($line);
@@ -106,7 +86,7 @@ sub check_html_file {
 #			print "$filename:$no: $1\n";
 #			print "$line\n";
 			$val = $1;
-			$val =~ s/"/&#34;/g;  # äºŒé‡å¼•ç”¨ç¬¦ã‚’ã‚¨ã‚¹ã‚±ãƒ¼ãƒ—ã™ã‚‹
+			$val =~ s/"/&#34;/g;  # “ñdˆø—p•„‚ğƒGƒXƒP[ƒv‚·‚é
 			write_add_index($filename, $val);
 			last;
 		}
@@ -118,8 +98,8 @@ sub check_html_file {
 
 sub write_add_index {
 	my($filename, $title) = @_;
-
-	print $OUT <<"EOD";
+	
+	print << "EOD";
 <LI><OBJECT type="text/sitemap">
 <param name="Name" value="$title">
 <param name="Local" value="$filename">
@@ -127,3 +107,4 @@ sub write_add_index {
 EOD
 
 }
+

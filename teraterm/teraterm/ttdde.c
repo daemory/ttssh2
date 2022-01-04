@@ -387,6 +387,7 @@ static HDDEDATA AcceptExecute(HSZ TopicHSz, HDDEDATA Data)
 {
 	char Command[MaxStrLen + 1];
 	int i;
+	wchar_t *ParamFileNameW;
 	BOOL r;
 
 	memset(Command, 0, sizeof(Command));
@@ -434,8 +435,8 @@ static HDDEDATA AcceptExecute(HSZ TopicHSz, HDDEDATA Data)
 		else
 			return DDE_FNOTPROCESSED;
 		break;
-	case CmdBPlusSend: {
-		wchar_t *ParamFileNameW = ToWcharU8(ParamFileName);
+	case CmdBPlusSend:
+		ParamFileNameW = ToWcharU8(ParamFileName);
 		r = BPStartSend(ParamFileNameW);
 		free(ParamFileNameW);
 		if (r) {
@@ -444,7 +445,6 @@ static HDDEDATA AcceptExecute(HSZ TopicHSz, HDDEDATA Data)
 		else
 			return DDE_FNOTPROCESSED;
 		break;
-	}
 	case CmdChangeDir:
 		strncpy_s(ts.FileDir, sizeof(ts.FileDir),ParamFileName, _TRUNCATE);
 		break;
@@ -530,8 +530,8 @@ static HDDEDATA AcceptExecute(HSZ TopicHSz, HDDEDATA Data)
 		else
 			return DDE_FNOTPROCESSED;
 		break;
-	case CmdKmtGet: {
-		wchar_t *ParamFileNameW = ToWcharU8(ParamFileName);
+	case CmdKmtGet:
+		ParamFileNameW = ToWcharU8(ParamFileName);
 		r = KermitGet(ParamFileNameW);
 		free(ParamFileNameW);
 		if (r) {
@@ -540,9 +540,8 @@ static HDDEDATA AcceptExecute(HSZ TopicHSz, HDDEDATA Data)
 		else
 			return DDE_FNOTPROCESSED;
 		break;
-	}
-	case CmdKmtSend: {
-		wchar_t *ParamFileNameW = ToWcharU8(ParamFileName);
+	case CmdKmtSend:
+		ParamFileNameW = ToWcharU8(ParamFileName);
 		r = KermitStartSend(ParamFileNameW);
 		free(ParamFileNameW);
 		if (r) {
@@ -551,7 +550,6 @@ static HDDEDATA AcceptExecute(HSZ TopicHSz, HDDEDATA Data)
 		else
 			return DDE_FNOTPROCESSED;
 		break;
-	}
 	case CmdLoadKeyMap:
 		strncpy_s(ts.KeyCnfFN, sizeof(ts.KeyCnfFN),ParamFileName, _TRUNCATE);
 		PostMessage(HVTWin,WM_USER_ACCELCOMMAND,IdCmdLoadKeyMap,0);
@@ -614,8 +612,8 @@ static HDDEDATA AcceptExecute(HSZ TopicHSz, HDDEDATA Data)
 		else
 			return DDE_FNOTPROCESSED;
 		break;
-	case CmdQVSend: {
-		wchar_t *ParamFileNameW = ToWcharU8(ParamFileName);
+	case CmdQVSend:
+		ParamFileNameW = ToWcharU8(ParamFileName);
 		r = QVStartSend(ParamFileNameW);
 		free(ParamFileNameW);
 		if (r) {
@@ -624,7 +622,6 @@ static HDDEDATA AcceptExecute(HSZ TopicHSz, HDDEDATA Data)
 		else
 			return DDE_FNOTPROCESSED;
 		break;
-	}
 	case CmdRestoreSetup:
 		strncpy_s(ts.SetupFName, sizeof(ts.SetupFName),ParamFileName, _TRUNCATE);
 		PostMessage(HVTWin,WM_USER_ACCELCOMMAND,IdCmdRestoreSetup,0);
@@ -694,8 +691,8 @@ static HDDEDATA AcceptExecute(HSZ TopicHSz, HDDEDATA Data)
 			break;
 		}
 		break;
-	case CmdXmodemRecv: {
-		wchar_t *ParamFileNameW = ToWcharU8(ParamFileName);
+	case CmdXmodemRecv:
+		ParamFileNameW = ToWcharU8(ParamFileName);
 		r = XMODEMStartSend(ParamFileNameW, ParamXmodemOpt);
 		free(ParamFileNameW);
 		if (r) {
@@ -704,9 +701,8 @@ static HDDEDATA AcceptExecute(HSZ TopicHSz, HDDEDATA Data)
 		else
 			return DDE_FNOTPROCESSED;
 		break;
-	}
-	case CmdXmodemSend: {
-		wchar_t *ParamFileNameW = ToWcharU8(ParamFileName);
+	case CmdXmodemSend:
+		ParamFileNameW = ToWcharU8(ParamFileName);
 		r = XMODEMStartReceive(ParamFileNameW, ParamBinaryFlag, ParamXmodemOpt);
 		free(ParamFileNameW);
 		if (r) {
@@ -715,7 +711,6 @@ static HDDEDATA AcceptExecute(HSZ TopicHSz, HDDEDATA Data)
 		else
 			return DDE_FNOTPROCESSED;
 		break;
-	}
 	case CmdZmodemRecv:
 		if (ZMODEMStartReceive(TRUE, FALSE)) {
 			DdeCmnd = TRUE;
@@ -723,8 +718,8 @@ static HDDEDATA AcceptExecute(HSZ TopicHSz, HDDEDATA Data)
 		else
 			return DDE_FNOTPROCESSED;
 		break;
-	case CmdZmodemSend: {
-		wchar_t *ParamFileNameW = ToWcharU8(ParamFileName);
+	case CmdZmodemSend:
+		ParamFileNameW = ToWcharU8(ParamFileName);
 		r = ZMODEMStartSend(ParamFileNameW, ParamBinaryFlag, FALSE);
 		free(ParamFileNameW);
 		if (r) {
@@ -733,7 +728,7 @@ static HDDEDATA AcceptExecute(HSZ TopicHSz, HDDEDATA Data)
 		else
 			return DDE_FNOTPROCESSED;
 		break;
-	}
+
 	case CmdYmodemRecv:
 		if (YMODEMStartReceive(TRUE))
 		{
@@ -742,8 +737,8 @@ static HDDEDATA AcceptExecute(HSZ TopicHSz, HDDEDATA Data)
 		else
 			return DDE_FNOTPROCESSED;
 		break;
-	case CmdYmodemSend: {
-		wchar_t *ParamFileNameW = ToWcharU8(ParamFileName);
+	case CmdYmodemSend:
+		ParamFileNameW = ToWcharU8(ParamFileName);
 		r = YMODEMStartSend(ParamFileNameW);
 		if (r) {
 			DdeCmnd = TRUE;
@@ -751,7 +746,7 @@ static HDDEDATA AcceptExecute(HSZ TopicHSz, HDDEDATA Data)
 		else
 			return DDE_FNOTPROCESSED;
 		break;
-	}
+
 		// add 'callmenu' (2007.11.18 maya)
 	case CmdCallMenu:
 		i = atoi(ParamFileName);
@@ -1220,6 +1215,11 @@ void RunMacro(PCHAR FName, BOOL Startup)
 	if (Startup)
 		strncat_s(Cmnd,sizeof(Cmnd)," /S",_TRUNCATE); // "startup" flag
 
+#if 0
+	if (WinExec(Cmnd,SW_MINIMIZE) < 32)
+		EndDDE();
+#else
+
 	// ログ採取中も下げないことにする。(2005.8.14 yutaka)
 #if 0
 	// Tera Term本体でログ採取中にマクロを実行すると、マクロの動作が停止することが
@@ -1249,8 +1249,5 @@ void RunMacro(PCHAR FName, BOOL Startup)
 		&si, &pi) == 0) {
 			EndDDE();
 	}
-	else {
-		CloseHandle(pi.hThread);
-		CloseHandle(pi.hProcess);
-	}
+#endif
 }

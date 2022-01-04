@@ -172,7 +172,7 @@ static INT_PTR CALLBACK TermDlg(HWND Dialog, UINT Message, WPARAM wParam, LPARAM
 			ts = (PTTSet)lParam;
 			SetWindowLongPtr(Dialog, DWLP_USER, lParam);
 
-			SetDlgTextsW(Dialog, TextInfosCom, _countof(TextInfosCom), ts->UILanguageFileW);
+			SetDlgTexts(Dialog, TextInfosCom, _countof(TextInfosCom), UILanguageFile);
 			if (ts->Language==IdJapanese) {
 				static const DlgTextInfo TextInfosJp[] = {
 					{ IDC_TERMKANJILABEL, "DLG_TERM_KANJI" },
@@ -182,7 +182,7 @@ static INT_PTR CALLBACK TermDlg(HWND Dialog, UINT Message, WPARAM wParam, LPARAM
 					{ IDC_TERMKINTEXT, "DLG_TERM_KIN" },
 					{ IDC_TERMKOUTTEXT, "DLG_TERM_KOUT" },
 				};
-				SetDlgTextsW(Dialog, TextInfosJp, _countof(TextInfosJp), ts->UILanguageFileW);
+				SetDlgTexts(Dialog, TextInfosJp, _countof(TextInfosJp), UILanguageFile);
 			}
 			else if ( ts->Language==IdRussian ) {
 				// TODO
@@ -193,14 +193,14 @@ static INT_PTR CALLBACK TermDlg(HWND Dialog, UINT Message, WPARAM wParam, LPARAM
 					{ IDC_TERMKANJILABEL, "DLG_TERM_RUSSCLIENT" },
 					{ IDC_TERMKANJISENDLABEL, "DLG_TERM_RUSSHOST" },
 				};
-				SetDlgTextsW(Dialog, TextInfosRu, _countof(TextInfosRu), ts->UILanguageFileW);
+				SetDlgTexts(Dialog, TextInfosRu, _countof(TextInfosRu), UILanguageFile);
 			}
 			else if (ts->Language==IdUtf8 || ts->Language==IdKorean || ts->Language == IdChinese) {
 				static const DlgTextInfo TextInfosKo[] = {
 					{ IDC_TERMKANJILABEL, "DLG_TERMK_KANJI" },
 					{ IDC_TERMKANJISENDLABEL, "DLG_TERMK_KANJISEND" },
 				};
-				SetDlgTextsW(Dialog, TextInfosKo, _countof(TextInfosKo), ts->UILanguageFileW);
+				SetDlgTexts(Dialog, TextInfosKo, _countof(TextInfosKo), UILanguageFile);
 			}
 
 			SetDlgItemInt(Dialog,IDC_TERMWIDTH,ts->TerminalWidth,FALSE);
@@ -548,7 +548,7 @@ static INT_PTR CALLBACK WinDlg(HWND Dialog, UINT Message, WPARAM wParam, LPARAM 
 			ts = (PTTSet)lParam;
 			SetWindowLongPtr(Dialog, DWLP_USER, lParam);
 
-			SetDlgTextsW(Dialog, TextInfos, _countof(TextInfos), ts->UILanguageFileW);
+			SetDlgTexts(Dialog, TextInfos, _countof(TextInfos), UILanguageFile);
 			SetDlgItemTextA(Dialog, IDC_WINTITLE, ts->Title);
 			SendDlgItemMessage(Dialog, IDC_WINTITLE, EM_LIMITTEXT,
 			                   sizeof(ts->Title)-1, 0);
@@ -560,7 +560,7 @@ static INT_PTR CALLBACK WinDlg(HWND Dialog, UINT Message, WPARAM wParam, LPARAM 
 
 			if (ts->VTFlag>0) {
 				wchar_t *uimsg;
-				GetI18nStrWW("Tera Term", "DLG_WIN_PCBOLD16", L"&16 Colors (PC style)", ts->UILanguageFileW, &uimsg);
+				GetI18nStrWA("Tera Term", "DLG_WIN_PCBOLD16", L"&16 Colors (PC style)", UILanguageFile, &uimsg);
 				SetDlgItemTextW(Dialog, IDC_WINCOLOREMU, uimsg);
 				free(uimsg);
 
@@ -647,7 +647,9 @@ static INT_PTR CALLBACK WinDlg(HWND Dialog, UINT Message, WPARAM wParam, LPARAM 
 						{ "DLG_WIN_REVERSEATTR", L"Reverse" },
 						{ NULL, L"URL" },
 					};
-					SetI18nListW("Tera Term", Dialog, IDC_WINATTR, infos, _countof(infos), ts->UILanguageFileW, 1);
+					wchar_t *UILanguageFileW = ToWcharA(UILanguageFile);
+					SetI18nListW("Tera Term", Dialog, IDC_WINATTR, infos, _countof(infos), UILanguageFileW, 1);
+					free(UILanguageFileW);
 				}
 #ifdef USE_NORMAL_BGCOLOR
 				ShowDlgItem(Dialog,IDC_WINUSENORMALBG,IDC_WINUSENORMALBG);
@@ -1045,7 +1047,7 @@ static INT_PTR CALLBACK KeybDlg(HWND Dialog, UINT Message, WPARAM wParam, LPARAM
 			ts = (PTTSet)lParam;
 			SetWindowLongPtr(Dialog, DWLP_USER, lParam);
 
-			SetDlgTextsW(Dialog, TextInfos, _countof(TextInfos), ts->UILanguageFileW);
+			SetDlgTexts(Dialog, TextInfos, _countof(TextInfos), UILanguageFile);
 
 			SetRB(Dialog,ts->BSKey-1,IDC_KEYBBS,IDC_KEYBBS);
 			SetRB(Dialog,ts->DelKey,IDC_KEYBDEL,IDC_KEYBDEL);
@@ -1126,7 +1128,7 @@ static TipWin *g_SerialDlgSpeedTip;
  * シリアルポート設定ダイアログのOKボタンを接続先に応じて名称を切り替える。
  * 条件判定は OnSetupSerialPort() と合わせる必要がある。
  */
-static void serial_dlg_change_OK_button(HWND dlg, int portno, const wchar_t *UILanguageFileW)
+static void serial_dlg_change_OK_button(HWND dlg, int portno)
 {
 	static const DlgTextInfo TextInfoNewConnection[] = {
 		{ IDOK, "DLG_SERIAL_OK_CONNECTION" },
@@ -1144,21 +1146,21 @@ static void serial_dlg_change_OK_button(HWND dlg, int portno, const wchar_t *UIL
 	const char *ok_text;
 
 	if ( cv.Ready && (cv.PortType != IdSerial) ) {
-		ret = SetDlgTextsW(dlg, TextInfoNewConnection, _countof(TextInfoNewConnection), UILanguageFileW);
+		ret = SetDlgTexts(dlg, TextInfoNewConnection, _countof(TextInfoNewConnection), UILanguageFile);
 		ok_text = "Connect with &New window";
 
 	} else {
 		if (cv.Open) {
 			if (portno != cv.ComPort) {
-				ret = SetDlgTextsW(dlg, TextInfoCloseNewOpen, _countof(TextInfoCloseNewOpen), UILanguageFileW);
+				ret = SetDlgTexts(dlg, TextInfoCloseNewOpen, _countof(TextInfoCloseNewOpen), UILanguageFile);
 				ok_text = "Close and &New open";
 			} else {
-				ret = SetDlgTextsW(dlg, TextInfoResetSetting, _countof(TextInfoResetSetting), UILanguageFileW);
+				ret = SetDlgTexts(dlg, TextInfoResetSetting, _countof(TextInfoResetSetting), UILanguageFile);
 				ok_text = "&New setting";
 			}
 
 		} else {
-			ret = SetDlgTextsW(dlg, TextInfoNewOpen, _countof(TextInfoNewOpen), UILanguageFileW);
+			ret = SetDlgTexts(dlg, TextInfoNewOpen, _countof(TextInfoNewOpen), UILanguageFile);
 			ok_text = "&New open";
 		}
 	}
@@ -1315,7 +1317,7 @@ static INT_PTR CALLBACK SerialDlg(HWND Dialog, UINT Message, WPARAM wParam, LPAR
 			ts = (PTTSet)lParam;
 			SetWindowLongPtr(Dialog, DWLP_USER, lParam);
 
-			SetDlgTexts(Dialog, TextInfos, _countof(TextInfos), ts->UILanguageFile);
+			SetDlgTexts(Dialog, TextInfos, _countof(TextInfos), UILanguageFile);
 
 			EnableDlgItem(Dialog, IDC_SERIALPORT, IDC_SERIALPORT);
 			EnableDlgItem(Dialog, IDC_SERIALPORT_LABEL, IDC_SERIALPORT_LABEL);
@@ -1324,7 +1326,7 @@ static INT_PTR CALLBACK SerialDlg(HWND Dialog, UINT Message, WPARAM wParam, LPAR
 			// COMポートの詳細情報を取得する。
 			// COMの接続状況は都度変わるため、ダイアログを表示する度に取得する。
 			// 不要になったら、ComPortInfoFree()でメモリを解放すること。
-			ComPortInfoPtr = ComPortInfoGet(&ComPortInfoCount, ts->UILanguageFile);
+			ComPortInfoPtr = ComPortInfoGet(&ComPortInfoCount, UILanguageFile);
 
 			w = 0;
 
@@ -1426,7 +1428,7 @@ static INT_PTR CALLBACK SerialDlg(HWND Dialog, UINT Message, WPARAM wParam, LPAR
 
 			// 現在の接続状態と新しいポート番号の組み合わせで、接続処理が変わるため、
 			// それに応じてOKボタンのラベル名を切り替える。
-			serial_dlg_change_OK_button(Dialog, ComPortTable[w], ts->UILanguageFileW);
+			serial_dlg_change_OK_button(Dialog, ComPortTable[w]);
 
 			return TRUE;
 
@@ -1524,7 +1526,7 @@ static INT_PTR CALLBACK SerialDlg(HWND Dialog, UINT Message, WPARAM wParam, LPAR
 
 						// 現在の接続状態と新しいポート番号の組み合わせで、接続処理が変わるため、
 						// それに応じてOKボタンのラベル名を切り替える。
-						serial_dlg_change_OK_button(Dialog, portno, ts->UILanguageFileW);
+						serial_dlg_change_OK_button(Dialog, portno);
 
 						break;
 
@@ -2005,23 +2007,28 @@ static INT_PTR CALLBACK DirDlg(HWND Dialog, UINT Message, WPARAM wParam, LPARAM 
 		{ IDCANCEL, "BTN_CANCEL" },
 		{ IDC_DIRHELP, "BTN_HELP" },
 	};
+	PCHAR CurDir;
+	char HomeDir[MAXPATHLEN];
+	char TmpDir[MAXPATHLEN];
+	RECT R;
+	HDC TmpDC;
+	SIZE s;
+	HWND HDir, HSel, HOk, HCancel, HHelp;
+	POINT D, B, S;
+	int WX, WY, WW, WH, CW, DW, DH, BW, BH, SW, SH;
+	char uimsg[MAX_UIMSG], uimsg2[MAX_UIMSG];
 
 	switch (Message) {
-		case WM_INITDIALOG: {
-			PTTSet ts;
-			wchar_t *CurDir;
-			RECT R;
-			HDC TmpDC;
-			SIZE s;
-			HWND HDir, HSel, HOk, HCancel, HHelp;
-			POINT D, B, S;
-			int WX, WY, WW, WH, CW, DW, DH, BW, BH, SW, SH;
+		case WM_INITDIALOG:
 
-			ts = (PTTSet)lParam;
-			CurDir = ts->FileDirW;
+			SetDlgTexts(Dialog, TextInfos, _countof(TextInfos), UILanguageFile);
+
+			CurDir = (PCHAR)(lParam);
 			SetWindowLongPtr(Dialog, DWLP_USER, lParam);
-			SetDlgTextsW(Dialog, TextInfos, _countof(TextInfos), ts->UILanguageFileW);
-			SetDlgItemTextW(Dialog, IDC_DIRCURRENT, CurDir);
+
+			SetDlgItemText(Dialog, IDC_DIRCURRENT, CurDir);
+			SendDlgItemMessage(Dialog, IDC_DIRNEW, EM_LIMITTEXT,
+			                   MAXPATHLEN-1, 0);
 
 // adjust dialog size
 			// get size of current dir text
@@ -2032,7 +2039,7 @@ static INT_PTR CALLBACK DirDlg(HWND Dialog, UINT Message, WPARAM wParam, LPARAM 
 			ScreenToClient(Dialog,&D);
 			DH = R.bottom-R.top;
 			TmpDC = GetDC(Dialog);
-			GetTextExtentPoint32W(TmpDC,CurDir,(int)wcslen(CurDir),&s);
+			GetTextExtentPoint32(TmpDC,CurDir,strlen(CurDir),&s);
 			ReleaseDC(Dialog,TmpDC);
 			DW = s.cx + s.cx/10;
 
@@ -2094,71 +2101,52 @@ static INT_PTR CALLBACK DirDlg(HWND Dialog, UINT Message, WPARAM wParam, LPARAM 
 			CenterWindow(Dialog, GetParent(Dialog));
 
 			return TRUE;
-		}
 
 		case WM_COMMAND:
 			switch (LOWORD(wParam)) {
-				case IDOK: {
-					PTTSet ts = (PTTSet)GetWindowLongPtr(Dialog,DWLP_USER);
-					BOOL OK = FALSE;
-					wchar_t *current_dir;
-					wchar_t *new_dir;
-					hGetCurrentDirectoryW(&current_dir);
-					hGetDlgItemTextW(Dialog, IDC_DIRNEW, &new_dir);
-					if (wcslen(new_dir) > 0) {
-						wchar_t *FileDirExpanded;
-						hExpandEnvironmentStringsW(new_dir, &FileDirExpanded);
-						if (DoesFolderExistW(FileDirExpanded)) {
-							free(ts->FileDirW);
-							ts->FileDirW = new_dir;
-							WideCharToACP_t(ts->FileDirW, ts->FileDir, sizeof(ts->FileDir));
-							OK = TRUE;
+				case IDOK:
+					CurDir = (PCHAR)GetWindowLongPtr(Dialog,DWLP_USER);
+					if ( CurDir!=NULL ) {
+						char FileDirExpanded[MAX_PATH];
+						_getcwd(HomeDir,sizeof(HomeDir));
+						ExpandEnvironmentStrings(CurDir, FileDirExpanded, sizeof(FileDirExpanded));
+						_chdir(FileDirExpanded);
+						GetDlgItemText(Dialog, IDC_DIRNEW, TmpDir, sizeof(TmpDir));
+						if ( strlen(TmpDir)>0 ) {
+							ExpandEnvironmentStrings(TmpDir, FileDirExpanded, sizeof(FileDirExpanded));
+							if (_chdir(FileDirExpanded) != 0) {
+								get_lang_msg("MSG_TT_ERROR", uimsg2, sizeof(uimsg2), "Tera Term: Error", UILanguageFile);
+								get_lang_msg("MSG_FIND_DIR_ERROR", uimsg, sizeof(uimsg), "Cannot find directory", UILanguageFile);
+								MessageBox(Dialog,uimsg,uimsg2,MB_ICONEXCLAMATION);
+								_chdir(HomeDir);
+								return TRUE;
+							}
+							strncpy_s(CurDir, MAXPATHLEN, TmpDir, _TRUNCATE);
 						}
-						else {
-							free(new_dir);
-						}
-						free(FileDirExpanded);
+						_chdir(HomeDir);
 					}
-					SetCurrentDirectoryW(current_dir);
-					free(current_dir);
-					if (OK) {
-						EndDialog(Dialog, 1);
-					}
-					else {
-						static const TTMessageBoxInfoW info = {
-							"Tera Term",
-							"MSG_TT_ERROR", L"Tera Term: Error",
-							"MSG_FIND_DIR_ERROR", L"Cannot find directory",
-							MB_ICONEXCLAMATION
-						};
-						TTMessageBoxW(Dialog, &info, ts->UILanguageFileW);
-					}
+					EndDialog(Dialog, 1);
 					return TRUE;
-				}
 
 				case IDCANCEL:
 					EndDialog(Dialog, 0);
 					return TRUE;
 
 				case IDC_SELECT_DIR: {
-					PTTSet ts = (PTTSet)GetWindowLongPtr(Dialog,DWLP_USER);
-					wchar_t *uimsgW;
-					wchar_t *buf;
-					wchar_t *FileDirExpanded;
-					GetI18nStrWW("Tera Term", "DLG_SELECT_DIR_TITLE", L"Select new directory", ts->UILanguageFileW, &uimsgW);
-					hGetDlgItemTextW(Dialog, IDC_DIRNEW, &buf);
-					if (buf[0] == 0) {
-						free(buf);
-						hGetDlgItemTextW(Dialog, IDC_DIRCURRENT, &buf);
-					}
-					hExpandEnvironmentStringsW(buf, &FileDirExpanded);
-					free(buf);
-					if (doSelectFolderW(Dialog, FileDirExpanded, uimsgW, &buf)) {
-						SetDlgItemTextW(Dialog, IDC_DIRNEW, buf);
+					wchar_t uimsgW[MAX_UIMSG];
+					wchar_t *buf, *buf2;
+					get_lang_msgW("DLG_SELECT_DIR_TITLE", uimsgW, _countof(uimsgW),
+								  L"Select new directory", UILanguageFile);
+					{
+						wchar_t FileDirExpanded[MAX_PATH];
+						hGetDlgItemTextW(Dialog, IDC_DIRNEW, &buf);
+						ExpandEnvironmentStringsW(buf, FileDirExpanded, _countof(FileDirExpanded));
+						if (doSelectFolderW(Dialog, FileDirExpanded, uimsgW, &buf2)) {
+							SetDlgItemTextW(Dialog, IDC_DIRNEW, buf2);
+							free(buf2);
+						}
 						free(buf);
 					}
-					free(FileDirExpanded);
-					free(uimsgW);
 					return TRUE;
 				}
 
@@ -3165,12 +3153,12 @@ BOOL WINAPI _GetHostName(HWND WndParent, PGetHNRec GetHNRec)
 		                     WndParent, HostDlg, (LPARAM)GetHNRec);
 }
 
-BOOL WINAPI _ChangeDirectory(HWND WndParent, PTTSet ts)
+BOOL WINAPI _ChangeDirectory(HWND WndParent, PCHAR CurDir)
 {
 	return
 		(BOOL)DialogBoxParam(hInst,
 		                     MAKEINTRESOURCE(IDD_DIRDLG),
-		                     WndParent, DirDlg, (LPARAM)ts);
+		                     WndParent, DirDlg, (LPARAM)CurDir);
 }
 
 BOOL WINAPI _AboutDialog(HWND WndParent)
