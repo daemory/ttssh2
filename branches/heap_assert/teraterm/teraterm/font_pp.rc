@@ -1,0 +1,129 @@
+// Microsoft Visual C++ generated resource script.
+//
+#include "font_pp_res.h"
+
+#define APSTUDIO_READONLY_SYMBOLS
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 2 resource.
+//
+#include <winresrc.h>
+#define IDC_STATIC -1
+/////////////////////////////////////////////////////////////////////////////
+#undef APSTUDIO_READONLY_SYMBOLS
+
+/////////////////////////////////////////////////////////////////////////////
+// âpåÍ (ïƒçë) resources
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ENU)
+LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_US
+#pragma code_page(1252)
+
+#ifdef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// TEXTINCLUDE
+//
+
+1 TEXTINCLUDE 
+BEGIN
+    "font_pp_res.h\0"
+END
+
+2 TEXTINCLUDE 
+BEGIN
+    "#include <winresrc.h>\r\n"
+    "#define IDC_STATIC -1\0"
+END
+
+3 TEXTINCLUDE 
+BEGIN
+    "\r\n"
+    "\0"
+END
+
+#endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Dialog
+//
+
+IDD_TABSHEET_FONT DIALOGEX 0, 0, 309, 267
+STYLE DS_SETFONT | DS_FIXEDSYS | DS_CONTROL | WS_CHILD | WS_CAPTION | WS_SYSMENU
+CAPTION "font"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    LTEXT           "&VTWindow Font",IDC_VTWINFONT,7,7,115,8
+    EDITTEXT        IDC_VTFONT_EDIT,19,27,148,12,ES_AUTOHSCROLL | ES_READONLY
+    PUSHBUTTON      "&Select...",IDC_VTFONT_CHOOSE,177,26,50,14
+    LTEXT           "API for drawing",IDC_VTFONT_TITLE,19,50,123,8
+    CONTROL         "&Unicode API",IDC_VTFONT_UNICODE,"Button",BS_AUTORADIOBUTTON,31,64,93,10
+    CONTROL         "&ANSI API",IDC_VTFONT_ANSI,"Button",BS_AUTORADIOBUTTON,31,82,88,10
+    LTEXT           "&Code page for display character conversion",IDC_VTFONT_CODEPAGE_LABEL,43,97,131,8
+    EDITTEXT        IDC_VTFONT_CODEPAGE_EDIT,44,108,40,12,ES_AUTOHSCROLL
+    LTEXT           "&Font Quality",IDC_FONT_QUALITY_LABEL,19,129,91,8
+    COMBOBOX        IDC_FONT_QUALITY,30,141,87,69,CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "&Dialog font",IDC_DLGFONT,7,162,115,8
+    EDITTEXT        IDC_DLGFONT_EDIT,19,177,148,12,ES_AUTOHSCROLL | ES_READONLY
+    PUSHBUTTON      "Select...",IDC_DLGFONT_CHOOSE,177,176,50,14
+    PUSHBUTTON      "&default",IDC_DLGFONT_DEFAULT,231,176,50,14
+    CONTROL         "List &hidden fonts in font dialog",IDC_LIST_HIDDEN_FONTS,
+                    "Button",BS_AUTOCHECKBOX | WS_TABSTOP,7,194,234,10
+    CONTROL         "List &proportional fonts in font dialog",IDC_LIST_PRO_FONTS,
+                    "Button",BS_AUTOCHECKBOX | WS_DISABLED | WS_TABSTOP,7,209,240,10
+    LTEXT           "character space",IDC_CHARACTER_SPACE_TITLE,187,51,115,8,WS_DISABLED
+    EDITTEXT        IDC_SPACE_TOP,224,68,40,14,ES_AUTOHSCROLL | WS_DISABLED
+    EDITTEXT        IDC_SPACE_BOTTOM,224,87,40,14,ES_AUTOHSCROLL | WS_DISABLED
+    EDITTEXT        IDC_SPACE_LEFT,224,105,40,14,ES_AUTOHSCROLL | WS_DISABLED
+    EDITTEXT        IDC_SPACE_RIGHT,224,123,40,14,ES_AUTOHSCROLL | WS_DISABLED
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// DESIGNINFO
+//
+
+#ifdef APSTUDIO_INVOKED
+GUIDELINES DESIGNINFO
+BEGIN
+    IDD_TABSHEET_FONT, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 302
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 260
+        HORZGUIDE, 33
+        HORZGUIDE, 183
+    END
+END
+#endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// AFX_DIALOG_LAYOUT
+//
+
+IDD_TABSHEET_FONT AFX_DIALOG_LAYOUT
+BEGIN
+    0
+END
+
+#endif    // âpåÍ (ïƒçë) resources
+/////////////////////////////////////////////////////////////////////////////
+
+
+
+#ifndef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 3 resource.
+//
+
+
+/////////////////////////////////////////////////////////////////////////////
+#endif    // not APSTUDIO_INVOKED
+
